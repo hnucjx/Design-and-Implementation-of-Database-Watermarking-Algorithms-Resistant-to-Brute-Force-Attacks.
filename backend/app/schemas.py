@@ -1,0 +1,122 @@
+from typing import Literal
+
+from pydantic import BaseModel, Field, HttpUrl
+
+
+DownloadMode = Literal["video_subtitles", "video_only", "subtitles_only"]
+SubtitleSource = Literal["human", "auto", "both"]
+SubtitleFormat = Literal["best", "srt", "vtt"]
+
+
+class AnalyzeRequest(BaseModel):
+    url: str = Field(min_length=1)
+    cookies_enabled: bool = True
+
+
+class FormatOption(BaseModel):
+    format_id: str
+    label: str
+    height: int | None = None
+    ext: str | None = None
+    fps: float | None = None
+    filesize: int | None = None
+
+
+class SubtitleOption(BaseModel):
+    language: str
+    name: str | None = None
+    formats: list[str] = Field(default_factory=list)
+
+
+class VideoEntry(BaseModel):
+    index: int
+    id: str | None = None
+    title: str
+    url: str
+    duration: float | None = None
+    thumbnail: str | None = None
+
+
+class AnalyzeResponse(BaseModel):
+    url: str
+    title: str
+    is_playlist: bool
+    duration: float | None = None
+    thumbnail: str | None = None
+    entries: list[VideoEntry] = Field(default_factory=list)
+    formats: list[FormatOption] = Field(default_factory=list)
+    subtitles: list[SubtitleOption] = Field(default_factory=list)
+    automatic_subtitles: list[SubtitleOption] = Field(default_factory=list)
+    ffmpeg: dict[str, bool] = Field(default_factory=dict)
+
+
+class DownloadOptions(BaseModel):
+    mode: DownloadMode = "video_subtitles"
+    resolution: str = "best"
+    format_id: str | None = None
+    subtitle_languages: list[str] = Field(default_factory=list)
+    subtitle_source: SubtitleSource = "human"
+    subtitle_format: SubtitleFormat = "best"
+    playlist_items: list[int] | None = None
+    write_metadata: bool = False
+    write_thumbnail: bool = False
+    skip_existing: bool = True
+    speed_limit_kbps: int | None = Field(default=None, ge=1)
+    retries: int = Field(default=3, ge=0, le=20)
+    notify_on_complete: bool = False
+
+
+class CreateJobRequest(BaseModel):
+    url: str = Field(min_length=1)
+    options: DownloadOptions = Field(default_factory=DownloadOptions)
+
+
+class JobItemRead(BaseModel):
+    id: str
+    job_id: str
+    source_url: str
+    title: str
+    index: int
+    status: str
+    progress: float
+    downloaded_bytes: int | None = None
+    total_bytes: int | None = None
+    speed: float | None = None
+    eta: int | None = None
+    output_path: str | None = None
+    error: str | None = None
+
+
+class JobRead(BaseModel):
+    id: str
+    url: str
+    title: str
+    status: str
+    progress: float
+    total_items: int
+    completed_items: int
+    failed_items: int
+    current_item_title: str | None = None
+    error: str | None = None
+    items: list[JobItemRead] = Field(default_factory=list)
+
+
+class SettingsRead(BaseModel):
+    download_dir: str
+    default_concurrency: int
+    default_subtitle_languages: list[str]
+    default_resolution: str
+    cookies_enabled: bool
+    ffmpeg: dict[str, bool]
+
+
+class SettingsUpdate(BaseModel):
+    download_dir: str | None = None
+    default_concurrency: int | None = Field(default=None, ge=1, le=8)
+    default_subtitle_languages: list[str] | None = None
+    default_resolution: str | None = None
+
+
+class CookieStatus(BaseModel):
+    enabled: bool
+    filename: str | None = None

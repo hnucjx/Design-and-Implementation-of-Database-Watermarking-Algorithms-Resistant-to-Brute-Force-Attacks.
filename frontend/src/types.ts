@@ -1,0 +1,95 @@
+export type DownloadMode = "video_subtitles" | "video_only" | "subtitles_only";
+export type SubtitleSource = "human" | "auto" | "both";
+export type SubtitleFormat = "best" | "srt" | "vtt";
+
+export interface FormatOption {
+  format_id: string;
+  label: string;
+  height: number | null;
+  ext: string | null;
+  fps: number | null;
+  filesize: number | null;
+}
+
+export interface SubtitleOption {
+  language: string;
+  name: string | null;
+  formats: string[];
+}
+
+export interface VideoEntry {
+  index: number;
+  id: string | null;
+  title: string;
+  url: string;
+  duration: number | null;
+  thumbnail: string | null;
+}
+
+export interface AnalyzeResponse {
+  url: string;
+  title: string;
+  is_playlist: boolean;
+  duration: number | null;
+  thumbnail: string | null;
+  entries: VideoEntry[];
+  formats: FormatOption[];
+  subtitles: SubtitleOption[];
+  automatic_subtitles: SubtitleOption[];
+  ffmpeg: Record<string, boolean>;
+}
+
+export interface DownloadOptions {
+  mode: DownloadMode;
+  resolution: string;
+  format_id?: string | null;
+  subtitle_languages: string[];
+  subtitle_source: SubtitleSource;
+  subtitle_format: SubtitleFormat;
+  playlist_items: number[] | null;
+  write_metadata: boolean;
+  write_thumbnail: boolean;
+  skip_existing: boolean;
+  speed_limit_kbps: number | null;
+  retries: number;
+  notify_on_complete: boolean;
+}
+
+export interface JobItem {
+  id: string;
+  job_id: string;
+  source_url: string;
+  title: string;
+  index: number;
+  status: string;
+  progress: number;
+  downloaded_bytes: number | null;
+  total_bytes: number | null;
+  speed: number | null;
+  eta: number | null;
+  output_path: string | null;
+  error: string | null;
+}
+
+export interface Job {
+  id: string;
+  url: string;
+  title: string;
+  status: string;
+  progress: number;
+  total_items: number;
+  completed_items: number;
+  failed_items: number;
+  current_item_title: string | null;
+  error: string | null;
+  items: JobItem[];
+}
+
+export interface Settings {
+  download_dir: string;
+  default_concurrency: number;
+  default_subtitle_languages: string[];
+  default_resolution: string;
+  cookies_enabled: boolean;
+  ffmpeg: Record<string, boolean>;
+}

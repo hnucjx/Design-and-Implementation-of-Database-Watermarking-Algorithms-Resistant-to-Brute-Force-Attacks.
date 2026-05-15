@@ -77,8 +77,10 @@ class YtDlpService:
 
         ydl_opts["skip_download"] = options.mode == "subtitles_only"
         if options.mode != "subtitles_only":
-            ydl_opts["format"] = self._format_selector(options)
-            ydl_opts["merge_output_format"] = "mp4"
+            ffmpeg_available = self.get_ffmpeg_status()["ffmpeg"]
+            ydl_opts["format"] = self._format_selector(options, allow_merge=ffmpeg_available)
+            if ffmpeg_available:
+                ydl_opts["merge_output_format"] = "mp4"
 
         if options.mode in {"video_subtitles", "subtitles_only"}:
             ydl_opts.update(self._subtitle_options(options))
@@ -104,7 +106,9 @@ class YtDlpService:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-    def _format_selector(self, options: DownloadOptions) -> str:
+    def _format_selector(self, options: DownloadOptions, allow_merge: bool = True) -> str:
+        if not allow_merge:
+            return self._single_file_format_selector(options)
         if options.format_id:
             return f"{options.format_id}+ba/best"
         if options.resolution == "best":
@@ -113,6 +117,14 @@ class YtDlpService:
             height = int(options.resolution[:-1])
             return f"bv*[height<={height}]+ba/b[height<={height}]/best[height<={height}]/best"
         return "bv*+ba/b"
+
+    def _single_file_format_selector(self, options: DownloadOptions) -> str:
+        if options.format_id:
+            return f"{options.format_id}/best[ext=mp4]/best"
+        if options.resolution.endswith("p") and options.resolution[:-1].isdigit():
+            height = int(options.resolution[:-1])
+            return f"best[height<={height}][ext=mp4]/best[height<={height}]/best"
+        return "best[ext=mp4]/best"
 
     def _subtitle_options(self, options: DownloadOptions) -> dict[str, Any]:
         languages = options.subtitle_languages or ["all"]

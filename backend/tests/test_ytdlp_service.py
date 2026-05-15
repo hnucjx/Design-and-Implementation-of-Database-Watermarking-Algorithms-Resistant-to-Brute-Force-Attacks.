@@ -4,8 +4,9 @@ from app.schemas import DownloadOptions
 from app.ytdlp_service import YtDlpService
 
 
-def test_resolution_option_limits_best_video_height(tmp_path: Path) -> None:
+def test_resolution_option_limits_best_video_height(monkeypatch, tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "get_ffmpeg_status", lambda: {"ffmpeg": True, "ffprobe": True})
     opts = service.build_download_options(
         DownloadOptions(mode="video_subtitles", resolution="720p"),
         cookies_path=None,
@@ -34,6 +35,20 @@ def test_subtitle_only_options_skip_video_and_include_languages(tmp_path: Path) 
     assert opts["subtitleslangs"] == ["en", "zh-Hans"]
     assert opts["subtitlesformat"] == "srt"
     assert opts["cookiefile"] == str(tmp_path / "cookies.txt")
+
+
+def test_video_options_do_not_request_format_merging_without_ffmpeg(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "get_ffmpeg_status", lambda: {"ffmpeg": False, "ffprobe": False})
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+    )
+
+    assert "+" not in opts["format"]
+    assert opts["format"] == "best[height<=720][ext=mp4]/best[height<=720]/best"
+    assert "merge_output_format" not in opts
 
 
 def test_extract_metadata_maps_playlist_entries_formats_and_subtitles(monkeypatch, tmp_path: Path) -> None:

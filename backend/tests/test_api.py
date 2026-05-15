@@ -14,6 +14,16 @@ class FakeYtDlpService:
     def get_ffmpeg_status(self):
         return {"ffmpeg": True, "ffprobe": True}
 
+    def get_dependency_status(self):
+        return {
+            "ffmpeg": True,
+            "ffprobe": True,
+            "js_runtime": True,
+            "js_runtime_name": "node",
+            "js_runtime_version": "v20.11.1",
+            "yt_dlp_version": "test",
+        }
+
     def extract_metadata(self, url, cookies_path=None):
         if "playlist" in url:
             return AnalyzeResponse(
@@ -107,3 +117,15 @@ def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path
     payload = cookie_response.json()
     assert payload["enabled"] is True
     assert "SECRET_COOKIE_VALUE" not in str(payload)
+
+
+def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.get("/api/diagnostics")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cookies_enabled"] is False
+    assert payload["dependencies"]["ffmpeg"] is True
+    assert payload["dependencies"]["js_runtime_name"] == "node"

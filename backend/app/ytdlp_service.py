@@ -1,9 +1,11 @@
 from collections.abc import Callable
 from pathlib import Path
 import shutil
+import subprocess
 from typing import Any
 
 import yt_dlp
+from yt_dlp.version import __version__ as yt_dlp_version
 
 from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
 
@@ -19,6 +21,17 @@ class YtDlpService:
     def get_ffmpeg_status(self) -> dict[str, bool]:
         return {"ffmpeg": shutil.which("ffmpeg") is not None, "ffprobe": shutil.which("ffprobe") is not None}
 
+    def get_dependency_status(self) -> dict[str, bool | str | None]:
+        ffmpeg = self.get_ffmpeg_status()
+        runtime = self._detect_js_runtime()
+        return {
+            **ffmpeg,
+            "js_runtime": runtime is not None,
+            "js_runtime_name": runtime[0] if runtime else None,
+            "js_runtime_version": runtime[2] if runtime else None,
+            "yt_dlp_version": yt_dlp_version,
+        }
+
     def extract_metadata(self, url: str, cookies_path: Path | None = None) -> AnalyzeResponse:
         opts: dict[str, Any] = {
             "quiet": True,
@@ -26,7 +39,9 @@ class YtDlpService:
             "ignoreerrors": False,
             "extract_flat": False,
             "skip_download": True,
+            "color": "no_color",
         }
+        opts.update(self._javascript_runtime_options())
         if cookies_path:
             opts["cookiefile"] = str(cookies_path)
 
@@ -63,7 +78,9 @@ class YtDlpService:
             "continuedl": options.skip_existing,
             "overwrites": not options.skip_existing,
             "outtmpl": str(self.download_dir / "%(title).200B [%(id)s].%(ext)s"),
+            "color": "no_color",
         }
+        ydl_opts.update(self._javascript_runtime_options())
 
         if options.speed_limit_kbps:
             ydl_opts["ratelimit"] = options.speed_limit_kbps * 1024
@@ -125,6 +142,46 @@ class YtDlpService:
             height = int(options.resolution[:-1])
             return f"best[height<={height}][ext=mp4]/best[height<={height}]/best"
         return "best[ext=mp4]/best"
+
+    def _javascript_runtime_options(self) -> dict[str, Any]:
+        runtime = self._detect_js_runtime()
+        if not runtime:
+            return {}
+        name, path, _version = runtime
+        return {"js_runtimes": {name: {"path": path}}}
+
+    def _detect_js_runtime(self) -> tuple[str, str, str | None] | None:
+        deno_path = shutil.which("deno")
+        if deno_path:
+            return ("deno", deno_path, self._runtime_version(deno_path))
+
+        node_path = shutil.which("node")
+        if node_path:
+            version = self._runtime_version(node_path)
+            if self._node_version_supported(version):
+                return ("node", node_path, version)
+        return None
+
+    def _runtime_version(self, executable: str) -> str | None:
+        try:
+            completed = subprocess.run(
+                [executable, "--version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        output = (completed.stdout or completed.stderr).strip().splitlines()
+        return output[0] if output else None
+
+    def _node_version_supported(self, version: str | None) -> bool:
+        if not version:
+            return False
+        normalized = version.strip().lstrip("v")
+        major = normalized.split(".", 1)[0]
+        return major.isdigit() and int(major) >= 20
 
     def _subtitle_options(self, options: DownloadOptions) -> dict[str, Any]:
         languages = options.subtitle_languages or ["all"]

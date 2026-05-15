@@ -120,3 +120,8 @@ class SettingsUpdate(BaseModel):
 class CookieStatus(BaseModel):
     enabled: bool
     filename: str | None = None
+
+
+class DiagnosticsRead(BaseModel):
+    cookies_enabled: bool
+    dependencies: dict[str, bool | str | None]

@@ -18,6 +18,7 @@ from .schemas import (
     AnalyzeResponse,
     CookieStatus,
     CreateJobRequest,
+    DiagnosticsRead,
     JobItemRead,
     JobRead,
     SettingsRead,
@@ -59,6 +60,15 @@ def create_app(settings: AppSettings | None = None, ytdlp_service: YtDlpService 
     @app.get("/health")
     def health() -> dict[str, bool]:
         return {"ok": True}
+
+    @app.get("/api/diagnostics", response_model=DiagnosticsRead)
+    def diagnostics() -> DiagnosticsRead:
+        dependencies = (
+            service.get_dependency_status()
+            if hasattr(service, "get_dependency_status")
+            else {**service.get_ffmpeg_status(), "yt_dlp_version": None, "js_runtime": False}
+        )
+        return DiagnosticsRead(cookies_enabled=app_settings.cookies_path.exists(), dependencies=dependencies)
 
     @app.post("/api/analyze", response_model=AnalyzeResponse)
     def analyze(request: AnalyzeRequest) -> AnalyzeResponse:

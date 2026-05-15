@@ -51,6 +51,19 @@ def test_video_options_do_not_request_format_merging_without_ffmpeg(monkeypatch,
     assert "merge_output_format" not in opts
 
 
+def test_download_options_enable_supported_js_runtime(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "get_ffmpeg_status", lambda: {"ffmpeg": False, "ffprobe": False})
+    monkeypatch.setattr(service, "_detect_js_runtime", lambda: ("node", "C:/Program Files/nodejs/node.exe", "v20.11.1"))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="best"),
+        cookies_path=None,
+    )
+
+    assert opts["js_runtimes"] == {"node": {"path": "C:/Program Files/nodejs/node.exe"}}
+
+
 def test_extract_metadata_maps_playlist_entries_formats_and_subtitles(monkeypatch, tmp_path: Path) -> None:
     captured_opts = {}
 

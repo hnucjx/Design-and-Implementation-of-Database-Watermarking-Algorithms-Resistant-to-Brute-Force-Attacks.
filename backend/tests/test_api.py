@@ -140,6 +140,7 @@ def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path
     )
     assert settings_response.status_code == 200
     assert settings_response.json()["default_concurrency"] == 3
+    assert settings_response.json()["default_resolution"] == "1080p"
 
     cookie_response = client.post(
         "/api/cookies",

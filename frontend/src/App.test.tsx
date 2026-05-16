@@ -22,6 +22,8 @@ const analyzePayload = {
   ffmpeg: { ffmpeg: true, ffprobe: true }
 };
 
+let currentAnalyzePayload = analyzePayload;
+
 const jobPayload = {
   id: "job-running",
   url: "https://youtu.be/running",
@@ -75,6 +77,7 @@ const pausedJobPayload = {
 
 describe("App", () => {
   beforeEach(() => {
+    currentAnalyzePayload = analyzePayload;
     vi.stubGlobal("EventSource", class {
       onmessage: ((event: MessageEvent) => void) | null = null;
       close = vi.fn();
@@ -90,7 +93,7 @@ describe("App", () => {
             download_dir: "downloads",
             default_concurrency: 2,
             default_subtitle_languages: ["en"],
-            default_resolution: "best",
+            default_resolution: "1080p",
             cookies_enabled: false,
             ffmpeg: { ffmpeg: true, ffprobe: true }
           });
@@ -114,7 +117,7 @@ describe("App", () => {
           return new Response(null, { status: 204 });
         }
         if (url.endsWith("/api/analyze")) {
-          return Response.json(analyzePayload);
+          return Response.json(currentAnalyzePayload);
         }
         return Response.json({});
       })
@@ -138,10 +141,10 @@ describe("App", () => {
     expect(await screen.findByText("Batch")).toBeInTheDocument();
     expect(screen.getByText("One")).toBeInTheDocument();
     expect(screen.getByText("Two")).toBeInTheDocument();
+    expect(screen.getByLabelText("清晰度 / 格式")).toHaveValue("resolution:1080p");
 
     await user.click(screen.getByLabelText("选择 One"));
     await user.selectOptions(screen.getByLabelText("下载模式"), "subtitles_only");
-    await user.selectOptions(screen.getByLabelText("分辨率"), "720p");
     expect(screen.getByRole("option", { name: "22 · 720p · mp4 · 10.0 MB" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "137 · 1080p · 30fps · mp4 · 大小未知" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /选择字幕语言/ }));
@@ -181,9 +184,47 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "解析链接" }));
 
     await screen.findByText("Batch");
-    await user.selectOptions(screen.getByLabelText("具体格式"), "22");
+    await user.selectOptions(screen.getByLabelText("清晰度 / 格式"), "format:22");
 
     expect(screen.getByText("已选格式：22 · 720p · mp4 · 10.0 MB")).toBeInTheDocument();
+  });
+
+  test("falls back to highest available resolution when 1080p is unsupported", async () => {
+    currentAnalyzePayload = {
+      ...analyzePayload,
+      formats: [
+        { format_id: "22", label: "720p mp4", height: 720, ext: "mp4", filesize: 10_485_760, fps: null },
+        { format_id: "135", label: "480p mp4", height: 480, ext: "mp4", filesize: 5_242_880, fps: null }
+      ]
+    };
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    expect(screen.getByLabelText("清晰度 / 格式")).toHaveValue("resolution:720p");
+  });
+
+  test("submits a concrete format selected from the unified quality selector", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    await user.selectOptions(screen.getByLabelText("清晰度 / 格式"), "format:22");
+    await user.click(screen.getByRole("button", { name: "加入下载队列" }));
+
+    await waitFor(() => {
+      const submittedBody = JSON.parse(
+        String((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body)
+      );
+      expect(submittedBody.options.format_id).toBe("22");
+      expect(submittedBody.options.resolution).toBe("1080p");
+    });
   });
 
   test("controls single and batch jobs from task center", async () => {

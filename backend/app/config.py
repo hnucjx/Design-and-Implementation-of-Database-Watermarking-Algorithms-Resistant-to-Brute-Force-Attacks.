@@ -16,7 +16,7 @@ class AppSettings(BaseSettings):
     database_path: Path = Field(default_factory=lambda: REPO_ROOT / "data" / "app.sqlite3")
     cookies_filename: str = "cookies.txt"
     default_concurrency: int = 2
-    default_resolution: str = "best"
+    default_resolution: str = "1080p"
     default_subtitle_languages: list[str] = Field(default_factory=lambda: ["en"])
 
     @property

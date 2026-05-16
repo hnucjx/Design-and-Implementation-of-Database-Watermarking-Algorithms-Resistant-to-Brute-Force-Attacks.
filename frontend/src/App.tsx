@@ -47,7 +47,7 @@ const RESOLUTIONS = ["best", "2160p", "1440p", "1080p", "720p", "480p"];
 
 const INITIAL_OPTIONS: DownloadOptions = {
   mode: "video_subtitles",
-  resolution: "best",
+  resolution: "1080p",
   format_id: null,
   subtitle_languages: [],
   subtitle_source: "human",
@@ -109,7 +109,8 @@ export default function App() {
       setSelectedItems(new Set(result.entries.map((entry) => entry.index)));
       setOptions((current) => ({
         ...current,
-        resolution: settings?.default_resolution ?? current.resolution,
+        resolution: chooseAvailableResolution(result, settings?.default_resolution ?? current.resolution),
+        format_id: null,
         subtitle_languages: settings?.default_subtitle_languages ?? current.subtitle_languages
       }));
     } catch (err) {
@@ -142,6 +143,10 @@ export default function App() {
 
   function updateOption<K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) {
     setOptions((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateQuality(resolution: string, formatId: string | null) {
+    setOptions((current) => ({ ...current, resolution, format_id: formatId }));
   }
 
   function updateJobInList(job: Job) {
@@ -242,6 +247,7 @@ export default function App() {
               isSubmitting={isSubmitting}
               onCreateJob={handleCreateJob}
               onOptionChange={updateOption}
+              onQualityChange={updateQuality}
             />
             {settings && <SettingsPanel settings={settings} onSettingsChange={setSettings} />}
             {settings && <CookieManager settings={settings} onSettingsChange={setSettings} />}
@@ -380,7 +386,8 @@ function DownloadOptionsPanel({
   subtitleLanguages,
   isSubmitting,
   onCreateJob,
-  onOptionChange
+  onOptionChange,
+  onQualityChange
 }: {
   analysis: AnalyzeResponse | null;
   options: DownloadOptions;
@@ -388,8 +395,11 @@ function DownloadOptionsPanel({
   isSubmitting: boolean;
   onCreateJob: () => void;
   onOptionChange: <K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) => void;
+  onQualityChange: (resolution: string, formatId: string | null) => void;
 }) {
   const selectedFormat = analysis?.formats.find((format) => format.format_id === options.format_id) ?? null;
+  const resolutionOptions = buildResolutionOptions(analysis);
+  const qualityValue = selectedFormat ? `format:${selectedFormat.format_id}` : `resolution:${options.resolution}`;
 
   return (
     <section className="panel options-panel">
@@ -415,35 +425,36 @@ function DownloadOptionsPanel({
       </label>
 
       <label className="field">
-        <span>分辨率</span>
+        <span>清晰度 / 格式</span>
         <select
-          aria-label="分辨率"
-          value={options.resolution}
-          onChange={(event) => onOptionChange("resolution", event.target.value)}
+          aria-label="清晰度 / 格式"
+          value={qualityValue}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value.startsWith("format:")) {
+              onQualityChange(options.resolution, value.replace("format:", ""));
+              return;
+            }
+            onQualityChange(value.replace("resolution:", ""), null);
+          }}
           disabled={options.mode === "subtitles_only"}
         >
-          {RESOLUTIONS.map((resolution) => (
-            <option key={resolution} value={resolution}>
-              {resolution === "best" ? "最佳可用" : resolution}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label className="field">
-        <span>具体格式</span>
-        <select
-          aria-label="具体格式"
-          value={options.format_id ?? ""}
-          onChange={(event) => onOptionChange("format_id", event.target.value || null)}
-          disabled={!analysis || options.mode === "subtitles_only"}
-        >
-          <option value="">跟随分辨率策略</option>
-          {analysis?.formats.map((format) => (
-            <option key={format.format_id} value={format.format_id}>
-              {formatFormatOption(format)}
-            </option>
-          ))}
+          <optgroup label="清晰度策略">
+            {resolutionOptions.map((resolution) => (
+              <option key={resolution} value={`resolution:${resolution}`}>
+                {formatResolutionLabel(resolution)}
+              </option>
+            ))}
+          </optgroup>
+          {analysis && (
+            <optgroup label="具体格式">
+              {analysis.formats.map((format) => (
+                <option key={format.format_id} value={`format:${format.format_id}`}>
+                  {formatFormatOption(format)}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         {selectedFormat && <p className="hint">已选格式：{formatFormatOption(selectedFormat)}</p>}
       </label>
@@ -644,9 +655,9 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
           />
         </label>
         <label className="field">
-          <span>默认分辨率</span>
+          <span>默认清晰度</span>
           <select value={draft.default_resolution} onChange={(event) => setDraft({ ...draft, default_resolution: event.target.value })}>
-            {RESOLUTIONS.map((resolution) => <option key={resolution} value={resolution}>{resolution}</option>)}
+            {RESOLUTIONS.map((resolution) => <option key={resolution} value={resolution}>{formatResolutionLabel(resolution)}</option>)}
           </select>
         </label>
       </div>
@@ -797,6 +808,44 @@ function formatDuration(seconds: number | null): string {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
   return `${mins}:${secs}`;
+}
+
+function formatResolutionLabel(resolution: string): string {
+  return resolution === "best" ? "最佳可用" : resolution;
+}
+
+function resolutionHeight(resolution: string): number | null {
+  if (!resolution.endsWith("p")) return null;
+  const value = Number(resolution.slice(0, -1));
+  return Number.isFinite(value) ? value : null;
+}
+
+function formatHeights(analysis: AnalyzeResponse | null): number[] {
+  return Array.from(
+    new Set((analysis?.formats ?? []).map((format) => format.height).filter((height): height is number => Boolean(height)))
+  ).sort((a, b) => b - a);
+}
+
+function buildResolutionOptions(analysis: AnalyzeResponse | null): string[] {
+  const heights = new Set<number>();
+  for (const resolution of RESOLUTIONS) {
+    const height = resolutionHeight(resolution);
+    if (height) heights.add(height);
+  }
+  for (const height of formatHeights(analysis)) {
+    heights.add(height);
+  }
+  return ["best", ...Array.from(heights).sort((a, b) => b - a).map((height) => `${height}p`)];
+}
+
+function chooseAvailableResolution(analysis: AnalyzeResponse, preferredResolution: string): string {
+  if (preferredResolution === "best") return preferredResolution;
+  const preferredHeight = resolutionHeight(preferredResolution);
+  const heights = formatHeights(analysis);
+  if (!preferredHeight || !heights.length || heights.includes(preferredHeight)) {
+    return preferredResolution;
+  }
+  return `${heights[0]}p`;
 }
 
 function formatPercent(value: number | null | undefined): string {

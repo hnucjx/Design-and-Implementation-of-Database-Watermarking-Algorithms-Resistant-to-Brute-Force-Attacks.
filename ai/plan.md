@@ -167,3 +167,27 @@ Thumbs.db
 - 并发数默认等于完整 CPU core 数量，不设上限。
 - 合集任务运行中或失败时自动展开。
 - 现有 API 的 `DownloadOptions.resolution` + `format_id` wire shape 保持兼容。
+
+---
+
+## 2026-05-16 +08:00 - Main 分支开发、Playlist 输出目录与任务删除增强计划
+
+### Summary
+后续开发切换到 `main` 分支进行。实现 playlist 自动下载到同名子文件夹、单视频任务中心去重显示、删除任务时可选择同时删除已下载文件。执行时先将本计划追加到 `ai/plan.md`，并同步更新 `README.md`。每个功能完成后验证、commit、push。
+
+### Key Changes
+- 分支策略：先确认工作区干净，切换到 `main`，拉取 `origin/main`，将当前 `feature/audit-format-metadata` 已完成并 push 的功能快进合入 `main`，之后所有本次改动都在 `main` 上提交并推送。
+- Playlist 输出目录：设置里的下载目录继续表示基础根目录；playlist 任务自动下载到 `<下载根目录>/<playlist名称>/`；单视频仍保存到下载根目录。
+- 任务中心单视频去重显示：`total_items === 1` 的单视频任务不再渲染重复的 `items[0]` 子项详情；playlist 才显示可展开的子视频列表。
+- 删除任务时同时删除文件：删除任务支持 `delete_files=false` 选项；开启后删除该任务已下载文件及空的 playlist 子文件夹，默认只删除任务记录。
+
+### Test Plan
+- 每个 task 先跑 targeted tests，再跑完整验证。
+- 完整验证命令：`python -m pytest backend\tests -q`、`npm test`、`npm run build`、`git diff --check`。
+- 手动验收：创建 playlist 任务，确认下载到 `<下载目录>/<playlist名称>/`；创建单视频任务，确认任务中心不重复显示同一个视频；分别验证删除任务时文件保留和文件删除两种路径。
+
+### Assumptions
+- 采用用户确认的方案 1：设置里的下载目录保持为基础根目录，playlist 自动使用其下同名子文件夹。
+- 后续默认在 `main` 分支开发，除非用户明确指定其他分支。
+- 不新增远程文件管理功能；删除文件仅限本机已下载产物。
+- 对已有历史任务，如果没有任务级下载目录，则按当前基础下载目录兼容处理。

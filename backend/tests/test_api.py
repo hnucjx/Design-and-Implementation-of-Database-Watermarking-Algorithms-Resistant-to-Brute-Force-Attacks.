@@ -97,6 +97,18 @@ def seed_job(tmp_path: Path, job_id: str, status: str = "queued") -> None:
         session.commit()
 
 
+def test_default_concurrency_uses_cpu_core_count(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("app.config.os.cpu_count", lambda: 12)
+
+    settings = AppSettings(
+        data_dir=tmp_path / "data",
+        download_dir=tmp_path / "downloads",
+        database_path=tmp_path / "data" / "app.sqlite3",
+    )
+
+    assert settings.default_concurrency == 12
+
+
 def test_analyze_returns_video_metadata(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -136,10 +148,11 @@ def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path
 
     settings_response = client.put(
         "/api/settings",
-        json={"download_dir": str(tmp_path / "custom"), "default_concurrency": 3},
+        json={"download_dir": str(tmp_path / "custom"), "default_concurrency": 12},
     )
     assert settings_response.status_code == 200
-    assert settings_response.json()["default_concurrency"] == 3
+    assert settings_response.json()["default_concurrency"] == 12
+    assert settings_response.json()["default_resolution"] == "1080p"
 
     cookie_response = client.post(
         "/api/cookies",
@@ -167,6 +180,17 @@ def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
 def test_job_read_includes_realtime_progress_fields(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     seed_job(tmp_path, "job-progress", status="running")
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        item = session.get(JobItem, "job-progress-item")
+        assert item is not None
+        item.progress = 50.0
+        item.downloaded_bytes = 5_242_880
+        item.total_bytes = 10_485_760
+        item.speed = 2048
+        item.eta = 20
+        session.add(item)
+        session.commit()
 
     response = client.get("/api/jobs/job-progress")
 
@@ -176,6 +200,11 @@ def test_job_read_includes_realtime_progress_fields(tmp_path: Path) -> None:
         assert field in payload
     for field in ["created_at", "updated_at", "started_at", "finished_at", "elapsed_seconds"]:
         assert field in payload["items"][0]
+    assert payload["items"][0]["progress"] == 50.0
+    assert payload["items"][0]["downloaded_bytes"] == 5_242_880
+    assert payload["items"][0]["total_bytes"] == 10_485_760
+    assert payload["items"][0]["speed"] == 2048
+    assert payload["items"][0]["eta"] == 20
 
 
 def test_job_can_be_paused_restarted_and_deleted(tmp_path: Path) -> None:

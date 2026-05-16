@@ -501,6 +501,14 @@ th {
   color: #b24c38;
 }
 
+.expand-button svg {
+  transition: transform 0.16s ease;
+}
+
+.expand-button.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+
 .progress-bar {
   height: 8px;
   margin-top: 12px;
@@ -518,10 +526,53 @@ th {
 
 .item-list {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   margin-top: 12px;
   color: #667085;
   font-size: 13px;
+}
+
+.job-item-detail {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e4eaf4;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.item-row,
+.item-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.item-row {
+  justify-content: space-between;
+  color: #334155;
+  font-weight: 800;
+}
+
+.item-error {
+  color: #b24c38;
+}
+
+.item-metrics span {
+  min-height: 26px;
+  padding: 5px 8px;
+  border: 1px solid #e1e7f1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #48556a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.item-progress {
+  height: 6px;
+  margin-top: 0;
 }
 
 .spin {

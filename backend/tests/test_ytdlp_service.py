@@ -114,5 +114,6 @@ def test_extract_metadata_maps_playlist_entries_formats_and_subtitles(monkeypatc
     assert result.title == "Course"
     assert result.entries[0].title == "Intro"
     assert [fmt.format_id for fmt in result.formats] == ["22", "137"]
+    assert [fmt.filesize for fmt in result.formats] == [10_000, 20_000]
     assert result.subtitles[0].language == "en"
     assert result.automatic_subtitles[0].language == "zh-Hans"

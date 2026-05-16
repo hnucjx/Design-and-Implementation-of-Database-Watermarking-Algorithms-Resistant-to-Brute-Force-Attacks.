@@ -35,6 +35,7 @@ import type {
   AnalyzeResponse,
   DownloadMode,
   DownloadOptions,
+  FormatOption,
   Job,
   JobBatchAction,
   Settings,
@@ -46,7 +47,7 @@ const RESOLUTIONS = ["best", "2160p", "1440p", "1080p", "720p", "480p"];
 
 const INITIAL_OPTIONS: DownloadOptions = {
   mode: "video_subtitles",
-  resolution: "best",
+  resolution: "1080p",
   format_id: null,
   subtitle_languages: [],
   subtitle_source: "human",
@@ -108,7 +109,8 @@ export default function App() {
       setSelectedItems(new Set(result.entries.map((entry) => entry.index)));
       setOptions((current) => ({
         ...current,
-        resolution: settings?.default_resolution ?? current.resolution,
+        resolution: chooseAvailableResolution(result, settings?.default_resolution ?? current.resolution),
+        format_id: null,
         subtitle_languages: settings?.default_subtitle_languages ?? current.subtitle_languages
       }));
     } catch (err) {
@@ -141,6 +143,10 @@ export default function App() {
 
   function updateOption<K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) {
     setOptions((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateQuality(resolution: string, formatId: string | null) {
+    setOptions((current) => ({ ...current, resolution, format_id: formatId }));
   }
 
   function updateJobInList(job: Job) {
@@ -241,6 +247,7 @@ export default function App() {
               isSubmitting={isSubmitting}
               onCreateJob={handleCreateJob}
               onOptionChange={updateOption}
+              onQualityChange={updateQuality}
             />
             {settings && <SettingsPanel settings={settings} onSettingsChange={setSettings} />}
             {settings && <CookieManager settings={settings} onSettingsChange={setSettings} />}
@@ -379,7 +386,8 @@ function DownloadOptionsPanel({
   subtitleLanguages,
   isSubmitting,
   onCreateJob,
-  onOptionChange
+  onOptionChange,
+  onQualityChange
 }: {
   analysis: AnalyzeResponse | null;
   options: DownloadOptions;
@@ -387,7 +395,12 @@ function DownloadOptionsPanel({
   isSubmitting: boolean;
   onCreateJob: () => void;
   onOptionChange: <K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) => void;
+  onQualityChange: (resolution: string, formatId: string | null) => void;
 }) {
+  const selectedFormat = analysis?.formats.find((format) => format.format_id === options.format_id) ?? null;
+  const resolutionOptions = buildResolutionOptions(analysis);
+  const qualityValue = selectedFormat ? `format:${selectedFormat.format_id}` : `resolution:${options.resolution}`;
+
   return (
     <section className="panel options-panel">
       <div className="panel-title">
@@ -412,36 +425,38 @@ function DownloadOptionsPanel({
       </label>
 
       <label className="field">
-        <span>分辨率</span>
+        <span>清晰度 / 格式</span>
         <select
-          aria-label="分辨率"
-          value={options.resolution}
-          onChange={(event) => onOptionChange("resolution", event.target.value)}
+          aria-label="清晰度 / 格式"
+          value={qualityValue}
+          onChange={(event) => {
+            const value = event.target.value;
+            if (value.startsWith("format:")) {
+              onQualityChange(options.resolution, value.replace("format:", ""));
+              return;
+            }
+            onQualityChange(value.replace("resolution:", ""), null);
+          }}
           disabled={options.mode === "subtitles_only"}
         >
-          {RESOLUTIONS.map((resolution) => (
-            <option key={resolution} value={resolution}>
-              {resolution === "best" ? "最佳可用" : resolution}
-            </option>
-          ))}
+          <optgroup label="清晰度策略">
+            {resolutionOptions.map((resolution) => (
+              <option key={resolution} value={`resolution:${resolution}`}>
+                {formatResolutionLabel(resolution)}
+              </option>
+            ))}
+          </optgroup>
+          {analysis && (
+            <optgroup label="具体格式">
+              {analysis.formats.map((format) => (
+                <option key={format.format_id} value={`format:${format.format_id}`}>
+                  {formatFormatOption(format)}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
-      </label>
-
-      <label className="field">
-        <span>具体格式</span>
-        <select
-          aria-label="具体格式"
-          value={options.format_id ?? ""}
-          onChange={(event) => onOptionChange("format_id", event.target.value || null)}
-          disabled={!analysis || options.mode === "subtitles_only"}
-        >
-          <option value="">跟随分辨率策略</option>
-          {analysis?.formats.map((format) => (
-            <option key={format.format_id} value={format.format_id}>
-              {format.label}
-            </option>
-          ))}
-        </select>
+        {selectedFormat && <p className="hint">已选格式：{formatFormatOption(selectedFormat)}</p>}
       </label>
 
       <SearchableLanguageSelect
@@ -634,15 +649,15 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
           <input
             type="number"
             min={1}
-            max={8}
             value={draft.default_concurrency}
             onChange={(event) => setDraft({ ...draft, default_concurrency: Number(event.target.value) })}
           />
+          <span className="hint">默认跟随 CPU core 数量，可按需覆盖。</span>
         </label>
         <label className="field">
-          <span>默认分辨率</span>
+          <span>默认清晰度</span>
           <select value={draft.default_resolution} onChange={(event) => setDraft({ ...draft, default_resolution: event.target.value })}>
-            {RESOLUTIONS.map((resolution) => <option key={resolution} value={resolution}>{resolution}</option>)}
+            {RESOLUTIONS.map((resolution) => <option key={resolution} value={resolution}>{formatResolutionLabel(resolution)}</option>)}
           </select>
         </label>
       </div>
@@ -704,6 +719,19 @@ function JobQueue({
   onToggleJobSelection: (jobId: string) => void;
 }) {
   const selectedCount = selectedJobIds.size;
+  const [expandedJobIds, setExpandedJobIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setExpandedJobIds((current) => {
+      const availableJobIds = new Set(jobs.map((job) => job.id));
+      const next = Object.fromEntries(Object.entries(current).filter(([jobId]) => availableJobIds.has(jobId)));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [jobs]);
+
+  function toggleExpanded(jobId: string, isExpanded: boolean) {
+    setExpandedJobIds((current) => ({ ...current, [jobId]: !isExpanded }));
+  }
 
   return (
     <section className="panel">
@@ -734,6 +762,9 @@ function JobQueue({
       <div className="job-list">
         {jobs.map((job) => {
           const title = job.title || "未命名任务";
+          const isPlaylist = job.total_items > 1;
+          const defaultExpanded = isPlaylist && ["running", "failed"].includes(job.status);
+          const isExpanded = isPlaylist ? expandedJobIds[job.id] ?? defaultExpanded : true;
           return (
           <article key={job.id} className="job-card">
             <div className="job-row">
@@ -749,6 +780,18 @@ function JobQueue({
                 <p>{job.status} · {job.completed_items}/{job.total_items} 完成{job.error ? ` · ${job.error}` : ""}</p>
               </div>
               <div className="job-actions">
+                {isPlaylist && (
+                  <button
+                    className={`icon-button expand-button ${isExpanded ? "is-expanded" : "is-collapsed"}`}
+                    type="button"
+                    title={isExpanded ? "折叠" : "展开"}
+                    aria-label={`${isExpanded ? "折叠" : "展开"} ${title}`}
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleExpanded(job.id, isExpanded)}
+                  >
+                    <ChevronDown size={18} />
+                  </button>
+                )}
                 {["queued", "running"].includes(job.status) && (
                   <button className="icon-button" type="button" title="暂停" aria-label={`暂停 ${title}`} onClick={() => onPause(job.id)}>
                     <Pause size={18} />
@@ -773,10 +816,25 @@ function JobQueue({
             <div className="progress-bar">
               <span style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} />
             </div>
-            {job.items.length > 0 && (
+            {job.items.length > 0 && (!isPlaylist || isExpanded) && (
               <div className="item-list">
                 {job.items.map((item) => (
-                  <span key={item.id}>{item.index}. {item.title} · {item.status}</span>
+                  <div key={item.id} className="job-item-detail">
+                    <div className="item-row">
+                      <span>{item.index}. {item.title} · {item.status}</span>
+                      {item.error && <span className="item-error">{item.error}</span>}
+                    </div>
+                    <div className="item-metrics">
+                      <span>{formatPercent(item.progress)}</span>
+                      <span>{formatFileSize(item.downloaded_bytes)} / {formatFileSize(item.total_bytes)}</span>
+                      <span>已用 {formatClock(item.elapsed_seconds)}</span>
+                      <span>剩余 {formatClock(item.eta)}</span>
+                      {item.speed ? <span>{formatBytesPerSecond(item.speed)}</span> : <span>-- KB/s</span>}
+                    </div>
+                    <div className="progress-bar item-progress">
+                      <span style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }} />
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -795,6 +853,44 @@ function formatDuration(seconds: number | null): string {
   return `${mins}:${secs}`;
 }
 
+function formatResolutionLabel(resolution: string): string {
+  return resolution === "best" ? "最佳可用" : resolution;
+}
+
+function resolutionHeight(resolution: string): number | null {
+  if (!resolution.endsWith("p")) return null;
+  const value = Number(resolution.slice(0, -1));
+  return Number.isFinite(value) ? value : null;
+}
+
+function formatHeights(analysis: AnalyzeResponse | null): number[] {
+  return Array.from(
+    new Set((analysis?.formats ?? []).map((format) => format.height).filter((height): height is number => Boolean(height)))
+  ).sort((a, b) => b - a);
+}
+
+function buildResolutionOptions(analysis: AnalyzeResponse | null): string[] {
+  const heights = new Set<number>();
+  for (const resolution of RESOLUTIONS) {
+    const height = resolutionHeight(resolution);
+    if (height) heights.add(height);
+  }
+  for (const height of formatHeights(analysis)) {
+    heights.add(height);
+  }
+  return ["best", ...Array.from(heights).sort((a, b) => b - a).map((height) => `${height}p`)];
+}
+
+function chooseAvailableResolution(analysis: AnalyzeResponse, preferredResolution: string): string {
+  if (preferredResolution === "best") return preferredResolution;
+  const preferredHeight = resolutionHeight(preferredResolution);
+  const heights = formatHeights(analysis);
+  if (!preferredHeight || !heights.length || heights.includes(preferredHeight)) {
+    return preferredResolution;
+  }
+  return `${heights[0]}p`;
+}
+
 function formatPercent(value: number | null | undefined): string {
   return `${Math.max(0, Math.min(100, value ?? 0)).toFixed(1)}%`;
 }
@@ -805,6 +901,30 @@ function formatClock(seconds: number | null | undefined): string {
   const minutes = Math.floor((safeSeconds % 3600) / 60).toString().padStart(2, "0");
   const secs = Math.floor(safeSeconds % 60).toString().padStart(2, "0");
   return hours ? `${hours}:${minutes}:${secs}` : `${minutes}:${secs}`;
+}
+
+function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes == null) return "大小未知";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatFormatOption(format: FormatOption): string {
+  const parts = [
+    format.format_id,
+    format.height ? `${format.height}p` : null,
+    format.fps ? `${Number.isInteger(format.fps) ? format.fps.toFixed(0) : format.fps}fps` : null,
+    format.ext,
+    formatFileSize(format.filesize)
+  ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 function formatBytesPerSecond(bytes: number): string {

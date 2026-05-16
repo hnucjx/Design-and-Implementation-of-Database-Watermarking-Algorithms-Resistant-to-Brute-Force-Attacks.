@@ -13,11 +13,16 @@ const analyzePayload = {
     { index: 1, id: "one", title: "One", url: "https://youtu.be/one", duration: 60, thumbnail: null },
     { index: 2, id: "two", title: "Two", url: "https://youtu.be/two", duration: 90, thumbnail: null }
   ],
-  formats: [{ format_id: "22", label: "720p mp4", height: 720, ext: "mp4", filesize: 1000, fps: null }],
+  formats: [
+    { format_id: "22", label: "720p mp4", height: 720, ext: "mp4", filesize: 10_485_760, fps: null },
+    { format_id: "137", label: "1080p mp4", height: 1080, ext: "mp4", filesize: null, fps: 30 }
+  ],
   subtitles: [{ language: "en", name: null, formats: ["vtt"] }],
   automatic_subtitles: [{ language: "zh-Hans", name: null, formats: ["vtt"] }],
   ffmpeg: { ffmpeg: true, ffprobe: true }
 };
+
+let currentAnalyzePayload = analyzePayload;
 
 const jobPayload = {
   id: "job-running",
@@ -70,8 +75,47 @@ const pausedJobPayload = {
   items: [{ ...jobPayload.items[0], id: "item-paused", job_id: "job-paused", title: "Paused video", status: "paused" }]
 };
 
+const playlistJobPayload = {
+  ...jobPayload,
+  id: "job-playlist",
+  title: "Playlist batch",
+  total_items: 2,
+  completed_items: 0,
+  failed_items: 0,
+  items: [
+    {
+      ...jobPayload.items[0],
+      id: "item-playlist-1",
+      job_id: "job-playlist",
+      title: "Part one",
+      index: 1,
+      progress: 50,
+      downloaded_bytes: 5_242_880,
+      total_bytes: 10_485_760,
+      speed: 2048,
+      eta: 20,
+      elapsed_seconds: 42
+    },
+    {
+      ...jobPayload.items[0],
+      id: "item-playlist-2",
+      job_id: "job-playlist",
+      title: "Part two",
+      index: 2,
+      progress: 0,
+      status: "queued",
+      downloaded_bytes: null,
+      total_bytes: null,
+      speed: null,
+      eta: null,
+      elapsed_seconds: 0
+    }
+  ]
+};
+
 describe("App", () => {
   beforeEach(() => {
+    currentAnalyzePayload = analyzePayload;
     vi.stubGlobal("EventSource", class {
       onmessage: ((event: MessageEvent) => void) | null = null;
       close = vi.fn();
@@ -87,7 +131,7 @@ describe("App", () => {
             download_dir: "downloads",
             default_concurrency: 2,
             default_subtitle_languages: ["en"],
-            default_resolution: "best",
+            default_resolution: "1080p",
             cookies_enabled: false,
             ffmpeg: { ffmpeg: true, ffprobe: true }
           });
@@ -96,7 +140,7 @@ describe("App", () => {
           if (init?.method === "POST") {
             return Response.json({ id: "job-1", status: "queued", total_items: 1, items: [] }, { status: 201 });
           }
-          return Response.json([jobPayload, pausedJobPayload]);
+          return Response.json([jobPayload, pausedJobPayload, playlistJobPayload]);
         }
         if (url.endsWith("/api/jobs/batch")) {
           return Response.json({ affected_job_ids: ["job-running", "job-paused"], jobs: [] });
@@ -111,7 +155,7 @@ describe("App", () => {
           return new Response(null, { status: 204 });
         }
         if (url.endsWith("/api/analyze")) {
-          return Response.json(analyzePayload);
+          return Response.json(currentAnalyzePayload);
         }
         return Response.json({});
       })
@@ -135,10 +179,12 @@ describe("App", () => {
     expect(await screen.findByText("Batch")).toBeInTheDocument();
     expect(screen.getByText("One")).toBeInTheDocument();
     expect(screen.getByText("Two")).toBeInTheDocument();
+    expect(screen.getByLabelText("清晰度 / 格式")).toHaveValue("resolution:1080p");
 
     await user.click(screen.getByLabelText("选择 One"));
     await user.selectOptions(screen.getByLabelText("下载模式"), "subtitles_only");
-    await user.selectOptions(screen.getByLabelText("分辨率"), "720p");
+    expect(screen.getByRole("option", { name: "22 · 720p · mp4 · 10.0 MB" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "137 · 1080p · 30fps · mp4 · 大小未知" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /选择字幕语言/ }));
     const search = screen.getByLabelText("搜索字幕语言");
     await user.type(search, "zh");
@@ -166,6 +212,57 @@ describe("App", () => {
       String((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body)
     );
     expect(submittedBody.options.subtitle_languages).toEqual(expect.arrayContaining(["en", "zh-Hans"]));
+  });
+
+  test("shows selected format resolution and filesize details", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    await user.selectOptions(screen.getByLabelText("清晰度 / 格式"), "format:22");
+
+    expect(screen.getByText("已选格式：22 · 720p · mp4 · 10.0 MB")).toBeInTheDocument();
+  });
+
+  test("falls back to highest available resolution when 1080p is unsupported", async () => {
+    currentAnalyzePayload = {
+      ...analyzePayload,
+      formats: [
+        { format_id: "22", label: "720p mp4", height: 720, ext: "mp4", filesize: 10_485_760, fps: null },
+        { format_id: "135", label: "480p mp4", height: 480, ext: "mp4", filesize: 5_242_880, fps: null }
+      ]
+    };
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    expect(screen.getByLabelText("清晰度 / 格式")).toHaveValue("resolution:720p");
+  });
+
+  test("submits a concrete format selected from the unified quality selector", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    await user.selectOptions(screen.getByLabelText("清晰度 / 格式"), "format:22");
+    await user.click(screen.getByRole("button", { name: "加入下载队列" }));
+
+    await waitFor(() => {
+      const submittedBody = JSON.parse(
+        String((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body)
+      );
+      expect(submittedBody.options.format_id).toBe("22");
+      expect(submittedBody.options.resolution).toBe("1080p");
+    });
   });
 
   test("controls single and batch jobs from task center", async () => {
@@ -202,5 +299,36 @@ describe("App", () => {
     expect(screen.getAllByText("已用 00:42").length).toBeGreaterThan(0);
     expect(screen.getAllByText("剩余 00:10").length).toBeGreaterThan(0);
     expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
+  });
+
+  test("expands and collapses playlist jobs in task center", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    const collapseButton = screen.getByRole("button", { name: "折叠 Playlist batch" });
+    expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
+
+    await user.click(collapseButton);
+    expect(screen.queryByText("1. Part one · running")).not.toBeInTheDocument();
+    const expandButton = screen.getByRole("button", { name: "展开 Playlist batch" });
+    expect(expandButton).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(expandButton);
+    expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
+  });
+
+  test("shows playlist item size progress timing and speed details", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
+    expect(screen.getByText("50.0%")).toBeInTheDocument();
+    expect(screen.getByText("5.0 MB / 10.0 MB")).toBeInTheDocument();
+    expect(screen.getAllByText("已用 00:42").length).toBeGreaterThan(0);
+    expect(screen.getByText("剩余 00:20")).toBeInTheDocument();
+    expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
+    expect(screen.getByText("大小未知 / 大小未知")).toBeInTheDocument();
   });
 });

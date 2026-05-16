@@ -254,6 +254,75 @@ def test_job_can_be_paused_restarted_and_deleted(tmp_path: Path) -> None:
     assert client.get(f"/api/jobs/{job_id}").status_code == 404
 
 
+def test_playlist_item_can_be_restarted_individually(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist",
+                url="https://youtube.com/playlist?list=abc",
+                title="Playlist",
+                status="failed",
+                options_json="{}",
+                total_items=2,
+                completed_items=1,
+                failed_items=1,
+                progress=50.0,
+                download_dir=str(tmp_path / "downloads" / "Playlist"),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-done",
+                job_id="job-playlist",
+                source_url="https://youtu.be/done",
+                title="Done",
+                index=1,
+                status="succeeded",
+                progress=100.0,
+                output_path=str(tmp_path / "downloads" / "Playlist" / "done.mp4"),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-failed",
+                job_id="job-playlist",
+                source_url="https://youtu.be/failed",
+                title="Failed",
+                index=2,
+                status="failed",
+                progress=42.0,
+                downloaded_bytes=42,
+                total_bytes=100,
+                speed=2048,
+                eta=10,
+                output_path=str(tmp_path / "downloads" / "Playlist" / "failed.mp4"),
+                error="boom",
+            )
+        )
+        session.commit()
+
+    response = client.post("/api/jobs/job-playlist/items/item-failed/restart")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    assert payload["completed_items"] == 1
+    assert payload["failed_items"] == 0
+    restarted = next(item for item in payload["items"] if item["id"] == "item-failed")
+    assert restarted["status"] == "queued"
+    assert restarted["progress"] == 0.0
+    assert restarted["downloaded_bytes"] is None
+    assert restarted["total_bytes"] is None
+    assert restarted["speed"] is None
+    assert restarted["eta"] is None
+    assert restarted["output_path"] is None
+    assert restarted["error"] is None
+    preserved = next(item for item in payload["items"] if item["id"] == "item-done")
+    assert preserved["status"] == "succeeded"
+
+
 def test_delete_job_keeps_downloaded_file_by_default(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     output_file = tmp_path / "downloads" / "video.mp4"

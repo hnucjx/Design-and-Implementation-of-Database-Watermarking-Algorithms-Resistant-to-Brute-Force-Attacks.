@@ -124,6 +124,44 @@ class JobManager:
         assert self._queue is not None
         self._queue.put_nowait(job_id)
 
+    async def restart_item(self, job_id: str, item_id: str) -> bool:
+        self._paused.discard(job_id)
+        self._cancelled.discard(job_id)
+        self._deleted.discard(job_id)
+        with Session(self.engine) as session:
+            job = session.get(Job, job_id)
+            item = session.get(JobItem, item_id)
+            if not job or not item or item.job_id != job_id:
+                return False
+            item.status = JobStatus.queued.value
+            item.progress = 0.0
+            item.downloaded_bytes = None
+            item.total_bytes = None
+            item.speed = None
+            item.eta = None
+            item.output_path = None
+            item.error = None
+            item.started_at = None
+            item.finished_at = None
+            item.updated_at = utc_now()
+            job.status = JobStatus.queued.value
+            job.speed = None
+            job.eta = None
+            job.current_item_title = None
+            job.error = None
+            job.started_at = None
+            job.finished_at = None
+            job.updated_at = utc_now()
+            session.add(item)
+            session.add(job)
+            session.commit()
+            self._refresh_job_counts(session, job)
+        await self.start()
+        await self._publish({"type": "item_restarted", "job_id": job_id, "item_id": item_id})
+        assert self._queue is not None
+        self._queue.put_nowait(job_id)
+        return True
+
     async def delete(self, job_id: str, delete_files: bool = False) -> None:
         self._deleted.add(job_id)
         self._paused.discard(job_id)
@@ -211,6 +249,8 @@ class JobManager:
             options = DownloadOptions.model_validate(json.loads(job.options_json))
             download_dir = Path(job.download_dir) if job.download_dir else self.settings.download_dir
             for item in items:
+                if item.status != JobStatus.queued.value:
+                    continue
                 if job_id in self._deleted:
                     return
                 if job_id in self._paused:

@@ -56,6 +56,10 @@ export function restartJob(jobId: string): Promise<Job> {
   return request<Job>(`/api/jobs/${jobId}/restart`, { method: "POST" });
 }
 
+export function restartJobItem(jobId: string, itemId: string): Promise<Job> {
+  return request<Job>(`/api/jobs/${jobId}/items/${itemId}/restart`, { method: "POST" });
+}
+
 export function deleteJob(jobId: string, deleteFiles = false): Promise<void> {
   const query = deleteFiles ? "?delete_files=true" : "";
   return request<void>(`/api/jobs/${jobId}${query}`, { method: "DELETE" });

@@ -156,6 +156,16 @@ describe("App", () => {
         if (url.endsWith("/api/jobs/job-paused/restart")) {
           return Response.json({ ...pausedJobPayload, status: "queued" });
         }
+        if (url.endsWith("/api/jobs/job-playlist/items/item-playlist-2/restart")) {
+          return Response.json({
+            ...playlistJobPayload,
+            status: "queued",
+            items: [
+              playlistJobPayload.items[0],
+              { ...playlistJobPayload.items[1], status: "queued", progress: 0, error: null }
+            ]
+          });
+        }
         if ((url.endsWith("/api/jobs/job-running") || url.endsWith("/api/jobs/job-running?delete_files=true")) && init?.method === "DELETE") {
           return new Response(null, { status: 204 });
         }
@@ -405,5 +415,18 @@ describe("App", () => {
     expect(screen.getByText("剩余 00:20")).toBeInTheDocument();
     expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
     expect(screen.getByText("大小未知 / 大小未知")).toBeInTheDocument();
+  });
+
+  test("restarts a single playlist item from task center", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重启 Part two" }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-playlist/items/item-playlist-2/restart",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 });

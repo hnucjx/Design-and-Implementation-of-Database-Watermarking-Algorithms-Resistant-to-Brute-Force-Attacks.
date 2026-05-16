@@ -177,6 +177,13 @@ def create_app(settings: AppSettings | None = None, ytdlp_service: YtDlpService 
         session.expire_all()
         return _read_job(session, job_id)
 
+    @app.post("/api/jobs/{job_id}/items/{item_id}/restart", response_model=JobRead)
+    async def restart_job_item(job_id: str, item_id: str, session: SessionDep) -> JobRead:
+        if not await manager.restart_item(job_id, item_id):
+            raise HTTPException(status_code=404, detail="Job item not found.")
+        session.expire_all()
+        return _read_job(session, job_id)
+
     @app.delete("/api/jobs/{job_id}", status_code=204)
     async def delete_job(job_id: str, session: SessionDep, delete_files: bool = False) -> Response:
         if not session.get(Job, job_id):

@@ -28,6 +28,7 @@ import {
   listJobs,
   pauseJob,
   restartJob,
+  restartJobItem,
   updateSettings,
   uploadCookies
 } from "./api";
@@ -171,6 +172,10 @@ export default function App() {
     updateJobInList(await restartJob(jobId));
   }
 
+  async function handleRestartJobItem(jobId: string, itemId: string) {
+    updateJobInList(await restartJobItem(jobId, itemId));
+  }
+
   async function handleDeleteJob(jobId: string) {
     await deleteJob(jobId, deleteFilesWithJobs);
     setJobs((current) => current.filter((job) => job.id !== jobId));
@@ -238,6 +243,7 @@ export default function App() {
               onDelete={(jobId) => void handleDeleteJob(jobId).catch((err) => setError(err.message))}
               onPause={(jobId) => void handlePauseJob(jobId).catch((err) => setError(err.message))}
               onRestart={(jobId) => void handleRestartJob(jobId).catch((err) => setError(err.message))}
+              onRestartItem={(jobId, itemId) => void handleRestartJobItem(jobId, itemId).catch((err) => setError(err.message))}
               onToggleJobSelection={toggleJobSelection}
             />
           </div>
@@ -707,6 +713,7 @@ function JobQueue({
   onDelete,
   onPause,
   onRestart,
+  onRestartItem,
   onToggleJobSelection
 }: {
   jobs: Job[];
@@ -717,6 +724,7 @@ function JobQueue({
   onDelete: (jobId: string) => void;
   onPause: (jobId: string) => void;
   onRestart: (jobId: string) => void;
+  onRestartItem: (jobId: string, itemId: string) => void;
   onToggleJobSelection: (jobId: string) => void;
 }) {
   const selectedCount = selectedJobIds.size;
@@ -831,7 +839,20 @@ function JobQueue({
                   <div key={item.id} className="job-item-detail">
                     <div className="item-row">
                       <span>{item.index}. {item.title} · {item.status}</span>
-                      {item.error && <span className="item-error">{item.error}</span>}
+                      <div className="item-actions">
+                        {item.error && <span className="item-error">{item.error}</span>}
+                        {item.status !== "running" && (
+                          <button
+                            className="icon-button item-action-button"
+                            type="button"
+                            title="重启"
+                            aria-label={`重启 ${item.title}`}
+                            onClick={() => onRestartItem(job.id, item.id)}
+                          >
+                            <RotateCcw size={16} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <div className="item-metrics">
                       <span>{formatPercent(item.progress)}</span>

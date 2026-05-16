@@ -593,6 +593,17 @@ th {
   color: #b24c38;
 }
 
+.item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-action-button {
+  width: 30px;
+  min-height: 30px;
+}
+
 .item-metrics span {
   min-height: 26px;
   padding: 5px 8px;

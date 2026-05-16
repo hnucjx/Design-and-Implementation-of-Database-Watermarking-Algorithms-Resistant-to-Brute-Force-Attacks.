@@ -106,11 +106,11 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 ```powershell
 $env:YTDL_DOWNLOAD_DIR="D:\Videos\YouTube"
-$env:YTDL_DEFAULT_CONCURRENCY="2"
+$env:YTDL_DEFAULT_CONCURRENCY="8"
 $env:YTDL_DEFAULT_RESOLUTION="1080p"
 ```
 
-前端设置面板也支持修改下载目录、并发数和默认清晰度。
+前端设置面板也支持修改下载目录、并发数和默认清晰度。未保存自定义值时，并发数默认使用本机逻辑 CPU core 数量，最低为 1，不额外设置上限。
 
 ## API 摘要
 

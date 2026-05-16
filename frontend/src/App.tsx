@@ -649,10 +649,10 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
           <input
             type="number"
             min={1}
-            max={8}
             value={draft.default_concurrency}
             onChange={(event) => setDraft({ ...draft, default_concurrency: Number(event.target.value) })}
           />
+          <span className="hint">默认跟随 CPU core 数量，可按需覆盖。</span>
         </label>
         <label className="field">
           <span>默认清晰度</span>

@@ -97,6 +97,18 @@ def seed_job(tmp_path: Path, job_id: str, status: str = "queued") -> None:
         session.commit()
 
 
+def test_default_concurrency_uses_cpu_core_count(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("app.config.os.cpu_count", lambda: 12)
+
+    settings = AppSettings(
+        data_dir=tmp_path / "data",
+        download_dir=tmp_path / "downloads",
+        database_path=tmp_path / "data" / "app.sqlite3",
+    )
+
+    assert settings.default_concurrency == 12
+
+
 def test_analyze_returns_video_metadata(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -136,10 +148,10 @@ def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path
 
     settings_response = client.put(
         "/api/settings",
-        json={"download_dir": str(tmp_path / "custom"), "default_concurrency": 3},
+        json={"download_dir": str(tmp_path / "custom"), "default_concurrency": 12},
     )
     assert settings_response.status_code == 200
-    assert settings_response.json()["default_concurrency"] == 3
+    assert settings_response.json()["default_concurrency"] == 12
     assert settings_response.json()["default_resolution"] == "1080p"
 
     cookie_response = client.post(

@@ -136,7 +136,7 @@ class SettingsRead(BaseModel):
 
 class SettingsUpdate(BaseModel):
     download_dir: str | None = None
-    default_concurrency: int | None = Field(default=None, ge=1, le=8)
+    default_concurrency: int | None = Field(default=None, ge=1)
     default_subtitle_languages: list[str] | None = None
     default_resolution: str | None = None
 

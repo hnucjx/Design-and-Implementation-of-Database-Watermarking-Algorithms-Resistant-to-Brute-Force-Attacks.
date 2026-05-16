@@ -13,7 +13,10 @@ const analyzePayload = {
     { index: 1, id: "one", title: "One", url: "https://youtu.be/one", duration: 60, thumbnail: null },
     { index: 2, id: "two", title: "Two", url: "https://youtu.be/two", duration: 90, thumbnail: null }
   ],
-  formats: [{ format_id: "22", label: "720p mp4", height: 720, ext: "mp4", filesize: 1000, fps: null }],
+  formats: [
+    { format_id: "22", label: "720p mp4", height: 720, ext: "mp4", filesize: 10_485_760, fps: null },
+    { format_id: "137", label: "1080p mp4", height: 1080, ext: "mp4", filesize: null, fps: 30 }
+  ],
   subtitles: [{ language: "en", name: null, formats: ["vtt"] }],
   automatic_subtitles: [{ language: "zh-Hans", name: null, formats: ["vtt"] }],
   ffmpeg: { ffmpeg: true, ffprobe: true }
@@ -139,6 +142,8 @@ describe("App", () => {
     await user.click(screen.getByLabelText("选择 One"));
     await user.selectOptions(screen.getByLabelText("下载模式"), "subtitles_only");
     await user.selectOptions(screen.getByLabelText("分辨率"), "720p");
+    expect(screen.getByRole("option", { name: "22 · 720p · mp4 · 10.0 MB" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "137 · 1080p · 30fps · mp4 · 大小未知" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /选择字幕语言/ }));
     const search = screen.getByLabelText("搜索字幕语言");
     await user.type(search, "zh");
@@ -166,6 +171,19 @@ describe("App", () => {
       String((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body)
     );
     expect(submittedBody.options.subtitle_languages).toEqual(expect.arrayContaining(["en", "zh-Hans"]));
+  });
+
+  test("shows selected format resolution and filesize details", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    await user.selectOptions(screen.getByLabelText("具体格式"), "22");
+
+    expect(screen.getByText("已选格式：22 · 720p · mp4 · 10.0 MB")).toBeInTheDocument();
   });
 
   test("controls single and batch jobs from task center", async () => {

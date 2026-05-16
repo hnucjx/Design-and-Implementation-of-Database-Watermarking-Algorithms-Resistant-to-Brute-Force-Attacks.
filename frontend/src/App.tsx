@@ -35,6 +35,7 @@ import type {
   AnalyzeResponse,
   DownloadMode,
   DownloadOptions,
+  FormatOption,
   Job,
   JobBatchAction,
   Settings,
@@ -388,6 +389,8 @@ function DownloadOptionsPanel({
   onCreateJob: () => void;
   onOptionChange: <K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) => void;
 }) {
+  const selectedFormat = analysis?.formats.find((format) => format.format_id === options.format_id) ?? null;
+
   return (
     <section className="panel options-panel">
       <div className="panel-title">
@@ -438,10 +441,11 @@ function DownloadOptionsPanel({
           <option value="">跟随分辨率策略</option>
           {analysis?.formats.map((format) => (
             <option key={format.format_id} value={format.format_id}>
-              {format.label}
+              {formatFormatOption(format)}
             </option>
           ))}
         </select>
+        {selectedFormat && <p className="hint">已选格式：{formatFormatOption(selectedFormat)}</p>}
       </label>
 
       <SearchableLanguageSelect
@@ -805,6 +809,30 @@ function formatClock(seconds: number | null | undefined): string {
   const minutes = Math.floor((safeSeconds % 3600) / 60).toString().padStart(2, "0");
   const secs = Math.floor(safeSeconds % 60).toString().padStart(2, "0");
   return hours ? `${hours}:${minutes}:${secs}` : `${minutes}:${secs}`;
+}
+
+function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes == null) return "大小未知";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatFormatOption(format: FormatOption): string {
+  const parts = [
+    format.format_id,
+    format.height ? `${format.height}p` : null,
+    format.fps ? `${Number.isInteger(format.fps) ? format.fps.toFixed(0) : format.fps}fps` : null,
+    format.ext,
+    formatFileSize(format.filesize)
+  ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 function formatBytesPerSecond(bytes: number): string {

@@ -75,6 +75,19 @@ const pausedJobPayload = {
   items: [{ ...jobPayload.items[0], id: "item-paused", job_id: "job-paused", title: "Paused video", status: "paused" }]
 };
 
+const playlistJobPayload = {
+  ...jobPayload,
+  id: "job-playlist",
+  title: "Playlist batch",
+  total_items: 2,
+  completed_items: 0,
+  failed_items: 0,
+  items: [
+    { ...jobPayload.items[0], id: "item-playlist-1", job_id: "job-playlist", title: "Part one", index: 1 },
+    { ...jobPayload.items[0], id: "item-playlist-2", job_id: "job-playlist", title: "Part two", index: 2, progress: 0, status: "queued" }
+  ]
+};
+
 describe("App", () => {
   beforeEach(() => {
     currentAnalyzePayload = analyzePayload;
@@ -102,7 +115,7 @@ describe("App", () => {
           if (init?.method === "POST") {
             return Response.json({ id: "job-1", status: "queued", total_items: 1, items: [] }, { status: 201 });
           }
-          return Response.json([jobPayload, pausedJobPayload]);
+          return Response.json([jobPayload, pausedJobPayload, playlistJobPayload]);
         }
         if (url.endsWith("/api/jobs/batch")) {
           return Response.json({ affected_job_ids: ["job-running", "job-paused"], jobs: [] });
@@ -261,5 +274,23 @@ describe("App", () => {
     expect(screen.getAllByText("已用 00:42").length).toBeGreaterThan(0);
     expect(screen.getAllByText("剩余 00:10").length).toBeGreaterThan(0);
     expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
+  });
+
+  test("expands and collapses playlist jobs in task center", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    const collapseButton = screen.getByRole("button", { name: "折叠 Playlist batch" });
+    expect(collapseButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
+
+    await user.click(collapseButton);
+    expect(screen.queryByText("1. Part one · running")).not.toBeInTheDocument();
+    const expandButton = screen.getByRole("button", { name: "展开 Playlist batch" });
+    expect(expandButton).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(expandButton);
+    expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
   });
 });

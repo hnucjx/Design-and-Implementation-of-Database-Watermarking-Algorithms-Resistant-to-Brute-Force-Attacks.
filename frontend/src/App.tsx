@@ -719,6 +719,19 @@ function JobQueue({
   onToggleJobSelection: (jobId: string) => void;
 }) {
   const selectedCount = selectedJobIds.size;
+  const [expandedJobIds, setExpandedJobIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setExpandedJobIds((current) => {
+      const availableJobIds = new Set(jobs.map((job) => job.id));
+      const next = Object.fromEntries(Object.entries(current).filter(([jobId]) => availableJobIds.has(jobId)));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+  }, [jobs]);
+
+  function toggleExpanded(jobId: string, isExpanded: boolean) {
+    setExpandedJobIds((current) => ({ ...current, [jobId]: !isExpanded }));
+  }
 
   return (
     <section className="panel">
@@ -749,6 +762,9 @@ function JobQueue({
       <div className="job-list">
         {jobs.map((job) => {
           const title = job.title || "未命名任务";
+          const isPlaylist = job.total_items > 1;
+          const defaultExpanded = isPlaylist && ["running", "failed"].includes(job.status);
+          const isExpanded = isPlaylist ? expandedJobIds[job.id] ?? defaultExpanded : true;
           return (
           <article key={job.id} className="job-card">
             <div className="job-row">
@@ -764,6 +780,18 @@ function JobQueue({
                 <p>{job.status} · {job.completed_items}/{job.total_items} 完成{job.error ? ` · ${job.error}` : ""}</p>
               </div>
               <div className="job-actions">
+                {isPlaylist && (
+                  <button
+                    className={`icon-button expand-button ${isExpanded ? "is-expanded" : "is-collapsed"}`}
+                    type="button"
+                    title={isExpanded ? "折叠" : "展开"}
+                    aria-label={`${isExpanded ? "折叠" : "展开"} ${title}`}
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleExpanded(job.id, isExpanded)}
+                  >
+                    <ChevronDown size={18} />
+                  </button>
+                )}
                 {["queued", "running"].includes(job.status) && (
                   <button className="icon-button" type="button" title="暂停" aria-label={`暂停 ${title}`} onClick={() => onPause(job.id)}>
                     <Pause size={18} />
@@ -788,7 +816,7 @@ function JobQueue({
             <div className="progress-bar">
               <span style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} />
             </div>
-            {job.items.length > 0 && (
+            {job.items.length > 0 && (!isPlaylist || isExpanded) && (
               <div className="item-list">
                 {job.items.map((item) => (
                   <span key={item.id}>{item.index}. {item.title} · {item.status}</span>

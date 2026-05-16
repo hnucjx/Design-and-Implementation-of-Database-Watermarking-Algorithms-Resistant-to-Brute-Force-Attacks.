@@ -501,6 +501,14 @@ th {
   color: #b24c38;
 }
 
+.expand-button svg {
+  transition: transform 0.16s ease;
+}
+
+.expand-button.is-collapsed svg {
+  transform: rotate(-90deg);
+}
+
 .progress-bar {
   height: 8px;
   margin-top: 12px;

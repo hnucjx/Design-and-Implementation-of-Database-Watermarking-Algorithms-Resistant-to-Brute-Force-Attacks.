@@ -359,6 +359,15 @@ describe("App", () => {
     expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
   });
 
+  test("places task count on the task center title row", async () => {
+    render(<App />);
+
+    const heading = await screen.findByRole("heading", { name: "任务中心" });
+    const titleRow = heading.closest(".job-title-row");
+    expect(titleRow).toBeInTheDocument();
+    expect(titleRow?.querySelector(".job-count-badge")).toHaveTextContent("3 个任务");
+  });
+
   test("does not repeat single video item details in task center", async () => {
     render(<App />);
 

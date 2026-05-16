@@ -133,6 +133,22 @@ button {
   align-items: center;
 }
 
+.job-title-row {
+  justify-content: space-between;
+}
+
+.job-title-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.job-count-badge {
+  color: #657187;
+  font-size: 13px;
+  font-weight: 850;
+}
+
 .panel-title svg {
   color: #1f6feb;
 }

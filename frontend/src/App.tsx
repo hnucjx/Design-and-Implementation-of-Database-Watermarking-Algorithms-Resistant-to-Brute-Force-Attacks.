@@ -736,12 +736,12 @@ function JobQueue({
 
   return (
     <section className="panel">
-      <div className="panel-title">
-        <Gauge size={20} />
-        <div>
+      <div className="panel-title job-title-row">
+        <div className="job-title-main">
+          <Gauge size={20} />
           <h2>任务中心</h2>
-          <p>{jobs.length ? `${jobs.length} 个任务` : "暂无任务"}</p>
         </div>
+        <span className="job-count-badge">{jobs.length ? `${jobs.length} 个任务` : "暂无任务"}</span>
       </div>
       <label className="delete-files-toggle">
         <input

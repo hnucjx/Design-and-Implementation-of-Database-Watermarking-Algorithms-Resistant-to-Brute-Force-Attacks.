@@ -112,6 +112,7 @@ class JobRead(BaseModel):
     failed_items: int
     current_item_title: str | None = None
     error: str | None = None
+    download_dir: str | None = None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None = None

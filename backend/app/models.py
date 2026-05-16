@@ -43,6 +43,7 @@ class Job(SQLModel, table=True):
     failed_items: int = 0
     current_item_title: Optional[str] = None
     error: Optional[str] = None
+    download_dir: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     started_at: Optional[datetime] = None

@@ -53,7 +53,8 @@ class FakeYtDlpService:
             ffmpeg={"ffmpeg": True, "ffprobe": True},
         )
 
-    def download(self, url, options, progress_hook, should_cancel):
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.downloads.append({"url": url, "download_dir": download_dir})
         progress_hook({"status": "finished", "filename": f"{url}.mp4"})
 
 
@@ -141,6 +142,24 @@ def test_create_playlist_job_filters_selected_entries(tmp_path: Path) -> None:
     assert payload["status"] == "queued"
     assert payload["total_items"] == 1
     assert payload["items"][0]["title"] == "Two"
+    assert payload["download_dir"] == str(tmp_path / "downloads" / "Batch")
+
+
+def test_create_single_video_job_uses_root_download_dir(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.post(
+        "/api/jobs",
+        json={
+            "url": "https://youtu.be/single",
+            "options": {"mode": "video_subtitles", "resolution": "720p"},
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["title"] == "Single"
+    assert payload["download_dir"] == str(tmp_path / "downloads")
 
 
 def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path) -> None:

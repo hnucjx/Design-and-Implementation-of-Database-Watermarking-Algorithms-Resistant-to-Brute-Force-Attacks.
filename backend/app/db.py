@@ -25,6 +25,7 @@ def _ensure_columns(engine: Engine) -> None:
             "eta": "INTEGER",
             "started_at": "DATETIME",
             "finished_at": "DATETIME",
+            "download_dir": "TEXT",
         },
         "jobitem": {
             "started_at": "DATETIME",

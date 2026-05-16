@@ -17,6 +17,20 @@ def test_resolution_option_limits_best_video_height(monkeypatch, tmp_path: Path)
     assert opts["skip_download"] is False
 
 
+def test_download_options_accept_task_specific_download_dir(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path / "root")
+    target_dir = tmp_path / "root" / "Course"
+    monkeypatch.setattr(service, "get_ffmpeg_status", lambda: {"ffmpeg": True, "ffprobe": True})
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+        download_dir=target_dir,
+    )
+
+    assert opts["outtmpl"] == str(target_dir / "%(title).200B [%(id)s].%(ext)s")
+
+
 def test_subtitle_only_options_skip_video_and_include_languages(tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
     opts = service.build_download_options(

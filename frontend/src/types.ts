@@ -90,6 +90,7 @@ export interface Job {
   failed_items: number;
   current_item_title: string | null;
   error: string | null;
+  download_dir: string | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;

@@ -14,6 +14,7 @@ from .db import create_app_engine, init_db, session_dependency
 from .events import EventBroker
 from .job_manager import JobManager, new_id
 from .models import Job, JobItem, Setting, utc_now
+from .paths import safe_path_name
 from .schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -95,12 +96,15 @@ def create_app(settings: AppSettings | None = None, ytdlp_service: YtDlpService 
         if not entries:
             raise HTTPException(status_code=400, detail="No downloadable playlist entries were selected.")
 
+        job_id = new_id()
+        download_dir = _job_download_dir(app_settings.download_dir, analysis, job_id)
         job = Job(
-            id=new_id(),
+            id=job_id,
             url=request.url,
             title=analysis.title,
             options_json=request.options.model_dump_json(),
             total_items=len(entries),
+            download_dir=str(download_dir),
         )
         session.add(job)
         session.commit()
@@ -272,6 +276,7 @@ def _read_job(session: Session, job_id: str) -> JobRead:
         failed_items=job.failed_items,
         current_item_title=job.current_item_title,
         error=job.error,
+        download_dir=job.download_dir,
         created_at=job.created_at,
         updated_at=job.updated_at,
         started_at=job.started_at,
@@ -309,6 +314,13 @@ def _elapsed_seconds(started_at: datetime | None, finished_at: datetime | None) 
     start = _as_aware_utc(started_at)
     finish = _as_aware_utc(finished_at) if finished_at else utc_now()
     return max(0, int((finish - start).total_seconds()))
+
+
+def _job_download_dir(root_dir: Path, analysis: AnalyzeResponse, job_id: str) -> Path:
+    if not analysis.is_playlist:
+        return root_dir
+    folder = safe_path_name(analysis.title, fallback=f"playlist-{job_id[:8]}")
+    return root_dir / folder
 
 
 def _as_aware_utc(value: datetime) -> datetime:

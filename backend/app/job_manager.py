@@ -171,6 +171,7 @@ class JobManager:
 
             items = session.exec(select(JobItem).where(JobItem.job_id == job_id).order_by(JobItem.index)).all()
             options = DownloadOptions.model_validate(json.loads(job.options_json))
+            download_dir = Path(job.download_dir) if job.download_dir else self.settings.download_dir
             for item in items:
                 if job_id in self._deleted:
                     return
@@ -186,11 +187,18 @@ class JobManager:
                     session.add(item)
                     session.commit()
                     break
-                self._run_item(session, job, item, options)
+                self._run_item(session, job, item, options, download_dir)
 
             self._finish_job(session, job)
 
-    def _run_item(self, session: Session, job: Job, item: JobItem, options: DownloadOptions) -> None:
+    def _run_item(
+        self,
+        session: Session,
+        job: Job,
+        item: JobItem,
+        options: DownloadOptions,
+        download_dir: Path,
+    ) -> None:
         now = utc_now()
         item.status = JobStatus.running.value
         item.progress = 0.0
@@ -254,6 +262,7 @@ class JobManager:
                 progress_hook,
                 should_cancel=lambda: job.id in self._cancelled or job.id in self._paused or job.id in self._deleted,
                 cookies_path=self._cookies_path(),
+                download_dir=download_dir,
             )
         except DownloadCancelled:
             if job.id in self._paused:

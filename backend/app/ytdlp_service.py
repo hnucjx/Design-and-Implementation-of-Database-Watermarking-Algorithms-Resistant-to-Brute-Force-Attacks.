@@ -67,8 +67,14 @@ class YtDlpService:
             ffmpeg=self.get_ffmpeg_status(),
         )
 
-    def build_download_options(self, options: DownloadOptions, cookies_path: Path | None) -> dict[str, Any]:
-        self.download_dir.mkdir(parents=True, exist_ok=True)
+    def build_download_options(
+        self,
+        options: DownloadOptions,
+        cookies_path: Path | None,
+        download_dir: Path | None = None,
+    ) -> dict[str, Any]:
+        target_dir = download_dir or self.download_dir
+        target_dir.mkdir(parents=True, exist_ok=True)
         ydl_opts: dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
@@ -77,7 +83,7 @@ class YtDlpService:
             "retries": options.retries,
             "continuedl": options.skip_existing,
             "overwrites": not options.skip_existing,
-            "outtmpl": str(self.download_dir / "%(title).200B [%(id)s].%(ext)s"),
+            "outtmpl": str(target_dir / "%(title).200B [%(id)s].%(ext)s"),
             "color": "no_color",
         }
         ydl_opts.update(self._javascript_runtime_options())
@@ -111,8 +117,9 @@ class YtDlpService:
         progress_hook: Callable[[dict[str, Any]], None],
         should_cancel: Callable[[], bool],
         cookies_path: Path | None = None,
+        download_dir: Path | None = None,
     ) -> None:
-        ydl_opts = self.build_download_options(options, cookies_path)
+        ydl_opts = self.build_download_options(options, cookies_path, download_dir=download_dir)
 
         def guarded_hook(payload: dict[str, Any]) -> None:
             if should_cancel():

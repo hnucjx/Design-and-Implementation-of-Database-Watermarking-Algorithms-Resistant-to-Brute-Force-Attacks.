@@ -180,6 +180,17 @@ def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
 def test_job_read_includes_realtime_progress_fields(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     seed_job(tmp_path, "job-progress", status="running")
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        item = session.get(JobItem, "job-progress-item")
+        assert item is not None
+        item.progress = 50.0
+        item.downloaded_bytes = 5_242_880
+        item.total_bytes = 10_485_760
+        item.speed = 2048
+        item.eta = 20
+        session.add(item)
+        session.commit()
 
     response = client.get("/api/jobs/job-progress")
 
@@ -189,6 +200,11 @@ def test_job_read_includes_realtime_progress_fields(tmp_path: Path) -> None:
         assert field in payload
     for field in ["created_at", "updated_at", "started_at", "finished_at", "elapsed_seconds"]:
         assert field in payload["items"][0]
+    assert payload["items"][0]["progress"] == 50.0
+    assert payload["items"][0]["downloaded_bytes"] == 5_242_880
+    assert payload["items"][0]["total_bytes"] == 10_485_760
+    assert payload["items"][0]["speed"] == 2048
+    assert payload["items"][0]["eta"] == 20
 
 
 def test_job_can_be_paused_restarted_and_deleted(tmp_path: Path) -> None:

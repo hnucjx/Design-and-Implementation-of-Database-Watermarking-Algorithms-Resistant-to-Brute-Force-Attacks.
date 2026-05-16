@@ -83,8 +83,33 @@ const playlistJobPayload = {
   completed_items: 0,
   failed_items: 0,
   items: [
-    { ...jobPayload.items[0], id: "item-playlist-1", job_id: "job-playlist", title: "Part one", index: 1 },
-    { ...jobPayload.items[0], id: "item-playlist-2", job_id: "job-playlist", title: "Part two", index: 2, progress: 0, status: "queued" }
+    {
+      ...jobPayload.items[0],
+      id: "item-playlist-1",
+      job_id: "job-playlist",
+      title: "Part one",
+      index: 1,
+      progress: 50,
+      downloaded_bytes: 5_242_880,
+      total_bytes: 10_485_760,
+      speed: 2048,
+      eta: 20,
+      elapsed_seconds: 42
+    },
+    {
+      ...jobPayload.items[0],
+      id: "item-playlist-2",
+      job_id: "job-playlist",
+      title: "Part two",
+      index: 2,
+      progress: 0,
+      status: "queued",
+      downloaded_bytes: null,
+      total_bytes: null,
+      speed: null,
+      eta: null,
+      elapsed_seconds: 0
+    }
   ]
 };
 
@@ -292,5 +317,18 @@ describe("App", () => {
 
     await user.click(expandButton);
     expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
+  });
+
+  test("shows playlist item size progress timing and speed details", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
+    expect(screen.getByText("50.0%")).toBeInTheDocument();
+    expect(screen.getByText("5.0 MB / 10.0 MB")).toBeInTheDocument();
+    expect(screen.getAllByText("已用 00:42").length).toBeGreaterThan(0);
+    expect(screen.getByText("剩余 00:20")).toBeInTheDocument();
+    expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
+    expect(screen.getByText("大小未知 / 大小未知")).toBeInTheDocument();
   });
 });

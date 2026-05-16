@@ -819,7 +819,22 @@ function JobQueue({
             {job.items.length > 0 && (!isPlaylist || isExpanded) && (
               <div className="item-list">
                 {job.items.map((item) => (
-                  <span key={item.id}>{item.index}. {item.title} · {item.status}</span>
+                  <div key={item.id} className="job-item-detail">
+                    <div className="item-row">
+                      <span>{item.index}. {item.title} · {item.status}</span>
+                      {item.error && <span className="item-error">{item.error}</span>}
+                    </div>
+                    <div className="item-metrics">
+                      <span>{formatPercent(item.progress)}</span>
+                      <span>{formatFileSize(item.downloaded_bytes)} / {formatFileSize(item.total_bytes)}</span>
+                      <span>已用 {formatClock(item.elapsed_seconds)}</span>
+                      <span>剩余 {formatClock(item.eta)}</span>
+                      {item.speed ? <span>{formatBytesPerSecond(item.speed)}</span> : <span>-- KB/s</span>}
+                    </div>
+                    <div className="progress-bar item-progress">
+                      <span style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }} />
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

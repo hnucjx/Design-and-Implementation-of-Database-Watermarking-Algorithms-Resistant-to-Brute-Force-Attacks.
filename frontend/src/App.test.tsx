@@ -113,6 +113,15 @@ const playlistJobPayload = {
   ]
 };
 
+const settingsPayload = {
+  download_dir: "downloads",
+  default_concurrency: 2,
+  default_subtitle_languages: ["en"],
+  default_resolution: "1080p",
+  cookies_enabled: false,
+  ffmpeg: { ffmpeg: true, ffprobe: true }
+};
+
 describe("App", () => {
   beforeEach(() => {
     currentAnalyzePayload = analyzePayload;
@@ -127,14 +136,10 @@ describe("App", () => {
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         if (url.endsWith("/api/settings") && (!init || init.method === "GET")) {
-          return Response.json({
-            download_dir: "downloads",
-            default_concurrency: 2,
-            default_subtitle_languages: ["en"],
-            default_resolution: "1080p",
-            cookies_enabled: false,
-            ffmpeg: { ffmpeg: true, ffprobe: true }
-          });
+          return Response.json(settingsPayload);
+        }
+        if (url.endsWith("/api/settings") && init?.method === "PUT") {
+          return Response.json({ ...settingsPayload, ...JSON.parse(String(init.body)) });
         }
         if (url.endsWith("/api/jobs")) {
           if (init?.method === "POST") {
@@ -223,6 +228,28 @@ describe("App", () => {
     expect(screen.queryByText("支持单视频和 playlist")).not.toBeInTheDocument();
     expect(screen.queryByText("视频、字幕和批量策略")).not.toBeInTheDocument();
     expect(screen.queryByText("本机下载默认值")).not.toBeInTheDocument();
+  });
+
+  test("keeps settings focused on directory and concurrency", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
+    expect(screen.getByLabelText("下载目录")).toBeInTheDocument();
+    expect(screen.getByLabelText(/并发/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/默认清晰度/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "保存设置" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/settings",
+        expect.objectContaining({
+          method: "PUT",
+          body: expect.not.stringContaining("default_resolution")
+        })
+      );
+    });
   });
 
   test("shows selected format resolution and filesize details", async () => {

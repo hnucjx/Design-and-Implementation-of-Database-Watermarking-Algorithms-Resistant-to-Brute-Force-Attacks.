@@ -625,7 +625,12 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
   async function save() {
     setSaving(true);
     try {
-      onSettingsChange(await updateSettings(draft));
+      onSettingsChange(
+        await updateSettings({
+          download_dir: draft.download_dir,
+          default_concurrency: draft.default_concurrency
+        })
+      );
     } finally {
       setSaving(false);
     }
@@ -641,26 +646,18 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
       </div>
       <label className="field">
         <span>下载目录</span>
-        <input value={draft.download_dir} onChange={(event) => setDraft({ ...draft, download_dir: event.target.value })} />
+        <input value={draft.download_dir ?? ""} onChange={(event) => setDraft({ ...draft, download_dir: event.target.value })} />
       </label>
-      <div className="two-col">
-        <label className="field">
-          <span>并发</span>
-          <input
-            type="number"
-            min={1}
-            value={draft.default_concurrency}
-            onChange={(event) => setDraft({ ...draft, default_concurrency: Number(event.target.value) })}
-          />
-          <span className="hint">默认跟随 CPU core 数量，可按需覆盖。</span>
-        </label>
-        <label className="field">
-          <span>默认清晰度</span>
-          <select value={draft.default_resolution} onChange={(event) => setDraft({ ...draft, default_resolution: event.target.value })}>
-            {RESOLUTIONS.map((resolution) => <option key={resolution} value={resolution}>{formatResolutionLabel(resolution)}</option>)}
-          </select>
-        </label>
-      </div>
+      <label className="field settings-number-field">
+        <span>并发</span>
+        <input
+          type="number"
+          min={1}
+          value={draft.default_concurrency ?? 1}
+          onChange={(event) => setDraft({ ...draft, default_concurrency: Number(event.target.value) })}
+        />
+        <span className="hint">默认跟随 CPU core 数量，可按需覆盖。</span>
+      </label>
       <button className="ghost-button full" type="button" onClick={save} disabled={saving}>
         <Folder size={17} />
         保存设置

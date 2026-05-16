@@ -286,6 +286,10 @@ th {
   gap: 12px;
 }
 
+.settings-number-field input {
+  max-width: 160px;
+}
+
 .toggle-row {
   display: inline-flex;
   gap: 8px;

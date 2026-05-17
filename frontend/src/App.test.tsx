@@ -161,6 +161,16 @@ describe("App", () => {
           currentSettingsPayload = { ...currentSettingsPayload, cookies_enabled: true };
           return Response.json({ enabled: true, filename: "cookies.txt" });
         }
+        if (url.endsWith("/api/cookies/from-browser") && init?.method === "POST") {
+          currentSettingsPayload = { ...currentSettingsPayload, cookies_enabled: true };
+          return Response.json({
+            enabled: true,
+            filename: "cookies.txt",
+            source: "browser",
+            browser: "edge",
+            imported_count: 4
+          });
+        }
         if (url.endsWith("/api/cookies") && init?.method === "DELETE") {
           currentSettingsPayload = { ...currentSettingsPayload, cookies_enabled: false };
           return Response.json({ enabled: false, filename: null });
@@ -288,6 +298,26 @@ describe("App", () => {
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith("/api/cookies", expect.objectContaining({ method: "DELETE" }));
     });
+  });
+
+  test("imports browser cookies from the analyzer panel", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const analyzer = (await screen.findByRole("heading", { name: "解析链接" })).closest("form") as HTMLElement;
+    await user.selectOptions(within(analyzer).getByLabelText("浏览器 cookies 来源"), "edge");
+    await user.click(within(analyzer).getByRole("button", { name: "从浏览器导入" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/cookies/from-browser",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ browser: "edge" })
+        })
+      );
+    });
+    expect(await within(analyzer).findByText("已启用 cookies")).toBeInTheDocument();
   });
 
   test("autosaves concurrency without a save settings button", async () => {

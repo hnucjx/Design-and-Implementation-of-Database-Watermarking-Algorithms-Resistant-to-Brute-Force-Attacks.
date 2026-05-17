@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Callable
+from typing import Annotated, Any, Callable
 
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +19,7 @@ from .paths import safe_path_name
 from .schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    BrowserCookieImportRequest,
     CookieStatus,
     CreateJobRequest,
     DiagnosticsRead,
@@ -69,6 +70,19 @@ def create_app(
 
     SessionDep = Annotated[Session, Depends(get_session)]
 
+    def _extract_metadata_with_cookies(url: str, cookies_enabled: bool) -> AnalyzeResponse:
+        cookies_path = app_settings.cookies_path if cookies_enabled and app_settings.cookies_path.exists() else None
+        try:
+            return service.extract_metadata(url, cookies_path=cookies_path)
+        except Exception as exc:
+            if not cookies_enabled or not _is_cookie_required_error(exc):
+                raise
+            try:
+                service.import_browser_cookies("auto", app_settings.cookies_path)
+            except Exception as import_exc:
+                raise RuntimeError(f"{exc} Browser cookies import failed: {import_exc}") from import_exc
+            return service.extract_metadata(url, cookies_path=app_settings.cookies_path)
+
     @app.get("/health")
     def health() -> dict[str, bool]:
         return {"ok": True}
@@ -85,18 +99,14 @@ def create_app(
     @app.post("/api/analyze", response_model=AnalyzeResponse)
     def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
         try:
-            cookies_path = app_settings.cookies_path if request.cookies_enabled and app_settings.cookies_path.exists() else None
-            return service.extract_metadata(request.url, cookies_path=cookies_path)
+            return _extract_metadata_with_cookies(request.url, request.cookies_enabled)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/jobs", response_model=JobRead, status_code=201)
     async def create_job(request: CreateJobRequest, session: SessionDep) -> JobRead:
         try:
-            analysis = service.extract_metadata(
-                request.url,
-                cookies_path=app_settings.cookies_path if app_settings.cookies_path.exists() else None,
-            )
+            analysis = _extract_metadata_with_cookies(request.url, True)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -254,13 +264,21 @@ def create_app(
         content = await file.read()
         app_settings.data_dir.mkdir(parents=True, exist_ok=True)
         app_settings.cookies_path.write_bytes(content)
-        return CookieStatus(enabled=True, filename=file.filename or app_settings.cookies_filename)
+        return CookieStatus(enabled=True, filename=file.filename or app_settings.cookies_filename, source="file")
+
+    @app.post("/api/cookies/from-browser", response_model=CookieStatus)
+    async def import_cookies_from_browser(request: BrowserCookieImportRequest) -> CookieStatus:
+        try:
+            result = await asyncio.to_thread(service.import_browser_cookies, request.browser, app_settings.cookies_path)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _cookie_status_from_import(result)
 
     @app.delete("/api/cookies", response_model=CookieStatus)
     def delete_cookies() -> CookieStatus:
         if app_settings.cookies_path.exists():
             app_settings.cookies_path.unlink()
-        return CookieStatus(enabled=False, filename=None)
+        return CookieStatus(enabled=False, filename=None, source="none")
 
     frontend_dist = REPO_ROOT / "frontend" / "dist"
     if frontend_dist.exists():
@@ -271,6 +289,23 @@ def create_app(
             return FileResponse(frontend_dist / "index.html")
 
     return app
+
+
+def _cookie_status_from_import(result: Any) -> CookieStatus:
+    if isinstance(result, dict):
+        return CookieStatus(**result)
+    return CookieStatus(
+        enabled=True,
+        filename=getattr(result, "filename", None),
+        source="browser",
+        browser=getattr(result, "browser", None),
+        imported_count=getattr(result, "imported_count", None),
+    )
+
+
+def _is_cookie_required_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "sign in to confirm" in message and ("cookies-from-browser" in message or "cookies" in message)
 
 
 def _selected_entries(url: str, analysis: AnalyzeResponse, playlist_items: list[int] | None) -> list[VideoEntry]:

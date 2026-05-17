@@ -74,6 +74,36 @@ class BlockingYtDlpService(FakeYtDlpService):
         progress_hook({"status": "finished", "filename": f"{url}.mp4"})
 
 
+class BrowserImportYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.imports: list[str] = []
+
+    def import_browser_cookies(self, browser, target_path):
+        self.imports.append(browser)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        target_path.write_text("SECRET_COOKIE_VALUE", encoding="utf-8")
+        return {
+            "enabled": True,
+            "filename": target_path.name,
+            "source": "browser",
+            "browser": "edge",
+            "imported_count": 4,
+        }
+
+
+class BotChallengeYtDlpService(BrowserImportYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.extract_calls: list[Path | None] = []
+
+    def extract_metadata(self, url, cookies_path=None):
+        self.extract_calls.append(cookies_path)
+        if cookies_path is None or not Path(cookies_path).exists():
+            raise RuntimeError("Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies")
+        return super().extract_metadata(url, cookies_path=cookies_path)
+
+
 def make_settings(tmp_path: Path) -> AppSettings:
     return AppSettings(
         data_dir=tmp_path / "data",
@@ -282,6 +312,36 @@ def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path
     payload = cookie_response.json()
     assert payload["enabled"] is True
     assert "SECRET_COOKIE_VALUE" not in str(payload)
+
+
+def test_import_browser_cookies_endpoint_does_not_expose_cookie_body(tmp_path: Path) -> None:
+    service = BrowserImportYtDlpService()
+    client = make_client(tmp_path, service=service)
+
+    response = client.post("/api/cookies/from-browser", json={"browser": "auto"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enabled"] is True
+    assert payload["source"] == "browser"
+    assert payload["browser"] == "edge"
+    assert payload["imported_count"] == 4
+    assert "SECRET_COOKIE_VALUE" not in str(payload)
+    assert service.imports == ["auto"]
+    assert (tmp_path / "data" / "cookies.txt").exists()
+
+
+def test_analyze_auto_imports_browser_cookies_for_playlist_bot_challenge(tmp_path: Path) -> None:
+    service = BotChallengeYtDlpService()
+    client = make_client(tmp_path, service=service)
+
+    response = client.post("/api/analyze", json={"url": "https://youtube.com/playlist?list=abc"})
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Batch"
+    assert service.imports == ["auto"]
+    assert service.extract_calls[0] is None
+    assert service.extract_calls[1] == tmp_path / "data" / "cookies.txt"
 
 
 def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:

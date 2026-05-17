@@ -1,8 +1,10 @@
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+from http.cookiejar import Cookie
 
 import pytest
+from yt_dlp.cookies import YoutubeDLCookieJar
 
 from app.schemas import DownloadOptions
 from app.ytdlp_service import YtDlpService
@@ -142,6 +144,32 @@ def test_empty_speed_limit_means_unlimited(tmp_path: Path) -> None:
     assert "ratelimit" not in opts
 
 
+def test_import_browser_cookies_saves_only_youtube_related_cookies(monkeypatch, tmp_path: Path) -> None:
+    jar = YoutubeDLCookieJar()
+    jar.set_cookie(_cookie(".youtube.com", "VISITOR_INFO1_LIVE", "YOUTUBE_SECRET"))
+    jar.set_cookie(_cookie(".google.com", "SID", "GOOGLE_SECRET"))
+    jar.set_cookie(_cookie(".example.com", "SESSION", "UNRELATED_SECRET"))
+    attempted: list[str] = []
+
+    def fake_extract(browser_name, profile=None, logger=None, *, keyring=None, container=None):
+        attempted.append(browser_name)
+        if browser_name == "edge":
+            raise RuntimeError("edge is not available")
+        return jar
+
+    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+
+    result = YtDlpService(download_dir=tmp_path).import_browser_cookies("auto", tmp_path / "cookies.txt")
+
+    content = (tmp_path / "cookies.txt").read_text(encoding="utf-8")
+    assert result.browser == "chrome"
+    assert result.imported_count == 2
+    assert attempted[:2] == ["edge", "chrome"]
+    assert "YOUTUBE_SECRET" in content
+    assert "GOOGLE_SECRET" in content
+    assert "UNRELATED_SECRET" not in content
+
+
 def test_extract_metadata_maps_playlist_entries_formats_and_subtitles(monkeypatch, tmp_path: Path) -> None:
     captured_opts = {}
 
@@ -195,3 +223,25 @@ def test_extract_metadata_maps_playlist_entries_formats_and_subtitles(monkeypatc
     assert [fmt.filesize for fmt in result.formats] == [10_000, 20_000]
     assert result.subtitles[0].language == "en"
     assert result.automatic_subtitles[0].language == "zh-Hans"
+
+
+def _cookie(domain: str, name: str, value: str) -> Cookie:
+    return Cookie(
+        version=0,
+        name=name,
+        value=value,
+        port=None,
+        port_specified=False,
+        domain=domain,
+        domain_specified=True,
+        domain_initial_dot=domain.startswith("."),
+        path="/",
+        path_specified=True,
+        secure=True,
+        expires=None,
+        discard=True,
+        comment=None,
+        comment_url=None,
+        rest={},
+        rfc2109=False,
+    )

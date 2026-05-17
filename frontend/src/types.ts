@@ -115,3 +115,11 @@ export interface Settings {
   cookies_enabled: boolean;
   ffmpeg: Record<string, boolean>;
 }
+
+export interface CookieStatus {
+  enabled: boolean;
+  filename: string | null;
+  source?: "none" | "file" | "browser";
+  browser?: string | null;
+  imported_count?: number | null;
+}

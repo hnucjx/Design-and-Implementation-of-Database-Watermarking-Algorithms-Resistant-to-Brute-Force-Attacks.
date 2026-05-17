@@ -8,6 +8,7 @@ DownloadMode = Literal["video_subtitles", "video_only", "subtitles_only"]
 SubtitleSource = Literal["human", "auto", "both"]
 SubtitleFormat = Literal["best", "srt", "vtt"]
 JobBatchAction = Literal["pause", "restart", "delete"]
+CookieSource = Literal["none", "file", "browser"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -149,6 +150,13 @@ class SettingsUpdate(BaseModel):
 class CookieStatus(BaseModel):
     enabled: bool
     filename: str | None = None
+    source: CookieSource = "none"
+    browser: str | None = None
+    imported_count: int | None = None
+
+
+class BrowserCookieImportRequest(BaseModel):
+    browser: str = "auto"
 
 
 class DiagnosticsRead(BaseModel):

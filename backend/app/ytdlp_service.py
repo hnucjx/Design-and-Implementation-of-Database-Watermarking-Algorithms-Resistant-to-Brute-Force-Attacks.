@@ -1,4 +1,6 @@
 from collections.abc import Callable
+from copy import copy
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import shutil
@@ -6,13 +8,25 @@ import subprocess
 from typing import Any
 
 import yt_dlp
+from yt_dlp.cookies import YoutubeDLCookieJar, extract_cookies_from_browser
 from yt_dlp.version import __version__ as yt_dlp_version
 
 from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
 
 
+AUTO_BROWSER_COOKIE_CANDIDATES = ["edge", "chrome", "firefox", "brave", "chromium", "vivaldi", "opera"]
+YOUTUBE_COOKIE_DOMAIN_SUFFIXES = ("youtube.com", "google.com")
+
+
 class DownloadCancelled(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class BrowserCookieImportResult:
+    browser: str
+    imported_count: int
+    filename: str
 
 
 class YtDlpService:
@@ -32,6 +46,39 @@ class YtDlpService:
             "js_runtime_version": runtime[2] if runtime else None,
             "yt_dlp_version": yt_dlp_version,
         }
+
+    def import_browser_cookies(self, browser: str, target_path: Path) -> BrowserCookieImportResult:
+        candidates = AUTO_BROWSER_COOKIE_CANDIDATES if browser == "auto" else [browser]
+        errors: list[str] = []
+
+        for candidate in candidates:
+            try:
+                imported = extract_cookies_from_browser(candidate)
+            except Exception as exc:
+                errors.append(f"{candidate}: {exc}")
+                continue
+
+            filtered = YoutubeDLCookieJar(target_path)
+            imported_count = 0
+            for cookie in imported:
+                if self._is_youtube_related_cookie(cookie.domain):
+                    filtered.set_cookie(copy(cookie))
+                    imported_count += 1
+
+            if imported_count == 0:
+                errors.append(f"{candidate}: no YouTube or Google cookies found")
+                continue
+
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            filtered.save(target_path, ignore_discard=True, ignore_expires=True)
+            return BrowserCookieImportResult(
+                browser=candidate,
+                imported_count=imported_count,
+                filename=target_path.name,
+            )
+
+        detail = "; ".join(errors) if errors else "no supported browser candidates were available"
+        raise RuntimeError(f"Could not import YouTube cookies from browser: {detail}")
 
     def extract_metadata(self, url: str, cookies_path: Path | None = None) -> AnalyzeResponse:
         opts: dict[str, Any] = {
@@ -271,6 +318,10 @@ class YtDlpService:
         except (TypeError, ValueError):
             return None
         return parsed if parsed > 0 else None
+
+    def _is_youtube_related_cookie(self, domain: str) -> bool:
+        normalized = domain.lower().lstrip(".")
+        return any(normalized == suffix or normalized.endswith(f".{suffix}") for suffix in YOUTUBE_COOKIE_DOMAIN_SUFFIXES)
 
     def _node_version_supported(self, version: str | None) -> bool:
         if not version:

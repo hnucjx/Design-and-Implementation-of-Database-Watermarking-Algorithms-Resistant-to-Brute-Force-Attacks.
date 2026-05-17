@@ -382,3 +382,42 @@ Thumbs.db
 - “不填写限速”定义为不限速；默认值改为预填 `2048 KB/s`，用户清空才发送 `null`。
 - 分辨率大小只使用 analyze 已返回的格式大小，不额外请求 YouTube 估算。
 - Cookies 只做 UI 整合，不改变 cookies 文件存储路径、接口或安全策略。
+
+# 2026-05-17 16:46:26 +08:00 - 浏览器 YouTube Cookies 自动导入计划
+
+## Summary
+针对 YouTube 返回 `Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies` 的场景，补齐自动通过 yt-dlp 从本机浏览器导入 cookies 的能力。功能入口放在“解析链接”面板，因为 cookies 直接影响单视频和 playlist 的解析与后续下载；playlist 解析失败时也走同一套自动导入与重试逻辑。实现后同步更新 `README.md`，验证通过后提交并 `git push origin main`。
+
+## Key Changes
+- 后端新增浏览器 cookies 导入能力：
+  - 使用 yt-dlp 的 `extract_cookies_from_browser()` 从 Edge/Chrome/Firefox/Brave/Chromium 等浏览器读取 cookies。
+  - 自动导入只保存 YouTube/Google 相关域名 cookies 到现有 `data/cookies.txt`，继续沿用当前 `cookiefile` 下载链路。
+  - `POST /api/cookies/from-browser` 支持 `browser=auto` 或指定浏览器；返回来源浏览器和导入数量，不回显 cookie 内容。
+  - `/api/analyze` 和创建任务前的 playlist 分析遇到 bot 登录错误时，如果当前 cookies 不可用，会自动尝试浏览器导入并重试一次。
+- 前端 UI：
+  - 在“解析链接”面板的 cookies 状态行增加紧凑的“从浏览器导入”按钮和浏览器选择框。
+  - 保留手动上传/清除 `cookies.txt`，导入后刷新 settings，单视频和 playlist 都复用同一个 cookies 状态。
+- 文档与测试：
+  - 后端测试覆盖浏览器导入端点、自动重试和不暴露 cookie 内容。
+  - 前端测试覆盖解析区导入按钮、API 调用和导入后状态刷新。
+  - README 补充自动导入 cookies 的用途、风险和仍可手动上传的替代方式。
+
+## Test Plan
+- 后端：
+  - `YtDlpService.import_browser_cookies("auto", target)` 能尝试候选浏览器、保存过滤后的 cookies 文件，并返回导入来源。
+  - `POST /api/cookies/from-browser` 返回 `enabled=true`、`source=browser`，且不包含 cookie value。
+  - `/api/analyze` 在无 cookies 文件且收到 bot 登录错误时自动导入并重试；playlist URL 同样适用。
+  - 全量运行 `python -m pytest backend\tests -q`。
+- 前端：
+  - “解析链接”面板展示手动上传、清除、浏览器选择和“从浏览器导入”。
+  - 点击导入调用 `/api/cookies/from-browser` 并刷新 settings。
+  - 全量运行 `npm test` 和 `npm run build`。
+- 最终：
+  - `git diff --check`
+  - `git commit -m "feat: import youtube cookies from browser"`
+  - `git push origin main`
+
+## Assumptions
+- 自动导入只针对本机单用户环境；不会读取远程浏览器或绕过 DRM。
+- 若浏览器未安装、未登录 YouTube、cookie 数据库被浏览器锁定或系统密钥链不可用，导入会失败并在 UI 中显示错误。
+- 手动上传的 `cookies.txt` 与浏览器导入共用同一个本地 `data/cookies.txt`，清除 cookies 会删除该文件。

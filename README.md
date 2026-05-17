@@ -10,7 +10,7 @@
 - Playlist 批量下载：支持全选/多选条目，单项失败不会阻断整批；playlist 会自动保存到下载目录下的同名子文件夹。
 - 清晰度选择：默认 1080p；若视频不支持 1080p，会自动选用可用的最高分辨率。下载选项用一个“清晰度 / 格式”下拉同时支持分辨率策略和具体 `format_id`，具体格式会显示分辨率、fps、扩展名和文件大小，缺失时标注“大小未知”；解析结果标题区也会随当前选择显示对应大小。明确选择 1440p、1080p、360p 等清晰度时，后端会要求实际下载高度匹配；无法匹配时任务失败，不再静默降级到低清。
 - 字幕下载：支持视频+字幕、仅视频、仅字幕；字幕语言为可搜索下拉多选；支持人工字幕、自动字幕或两者都要。
-- Cookies 文件：在“解析链接”面板内支持手动上传/清除 `cookies.txt`，用于需要登录态或年龄验证的视频；不会在 UI 或日志中回显内容。
+- Cookies：在“解析链接”面板内支持手动上传/清除 `cookies.txt`，也支持通过 yt-dlp 从本机浏览器自动导入 YouTube/Google 相关 cookies；用于需要登录态、年龄验证或 bot 校验的视频，不会在 UI 或日志中回显内容。
 - 界面简化：解析、下载选项和设置面板保留标题与核心控件，去掉重复说明文案。
 - 任务中心：任务数量显示在标题同行右侧；每个任务显示开始时间、结束时间和实际下载分辨率，playlist 合集行会统一显示具体分辨率或“混合分辨率”；支持单任务和批量暂停、重启、删除；删除任务默认保留已下载文件，也可勾选“删除任务时同时删除已下载视频”；单视频任务不重复显示子项详情；playlist 任务支持展开/折叠，运行中或失败时自动展开，并显示每个子视频的百分比、大小、已用时、预计剩余时间、下载速度、状态、失败原因和单项重启按钮。
 - 可靠性选项：跳过已下载、限速、重试次数、保存 metadata、保存缩略图、完成后通知开关；限速默认 2048 KB/s，清空输入表示不限速。
@@ -93,7 +93,9 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 ## Cookies
 
-如果视频需要登录态、地区/年龄确认，先从浏览器导出 Netscape 格式的 `cookies.txt`，再在“解析链接”面板内上传。文件会保存到本地 `data/cookies.txt`，该目录已在 `.gitignore` 中排除。
+如果视频需要登录态、地区/年龄确认或出现 `Sign in to confirm you’re not a bot`，可以在“解析链接”面板内点击“从浏览器导入”。应用会调用 yt-dlp 从本机 Edge、Chrome、Firefox、Brave、Chromium 等浏览器读取 cookies，过滤后只保存 YouTube/Google 相关 cookies 到本地 `data/cookies.txt`。单视频和 playlist 解析都使用同一套 cookies；当解析阶段遇到 bot 校验且当前 cookies 不可用时，后端会自动尝试导入并重试一次。
+
+也可以手动从浏览器导出 Netscape 格式的 `cookies.txt` 后上传。文件会保存到本地 `data/cookies.txt`，该目录已在 `.gitignore` 中排除。
 
 清除 cookies 后，后续分析和下载会回到无登录态模式。
 
@@ -130,6 +132,7 @@ $env:YTDL_DEFAULT_RESOLUTION="1080p"
 - `GET /api/settings`、`PUT /api/settings`：读取/更新设置。
 - `POST /api/settings/download-dir/select`：打开本机文件夹选择对话框并保存下载根目录。
 - `POST /api/cookies`、`DELETE /api/cookies`：上传/清除 cookies。
+- `POST /api/cookies/from-browser`：通过 yt-dlp 从本机浏览器导入 YouTube/Google cookies；请求体可传 `{ "browser": "auto" }` 或指定 `edge`、`chrome`、`firefox` 等浏览器。
 - `GET /api/diagnostics`：依赖和运行状态诊断。
 
 ## 测试
@@ -156,7 +159,7 @@ npm run build
 
 - 分析成功但下载失败：先检查 `GET /api/diagnostics` 或顶部状态，确认 `yt-dlp`、JS runtime、`ffmpeg` 和 cookies 是否可用；`ffprobe` 为可选诊断项，不影响常规下载。
 - 高分辨率不可用：YouTube 常把视频和音频分离，缺少可用 `ffmpeg` 时无法合并。系统会优先使用内置 `imageio-ffmpeg`；如果仍不可用或所选高度不存在，任务会失败并显示原因，不会降级成 360p。
-- 需要登录的视频失败：上传有效的 `cookies.txt` 后重新解析并创建任务。
+- 需要登录或遇到 bot 校验的视频失败：先在“解析链接”面板点击“从浏览器导入”；如果浏览器未登录 YouTube、浏览器 cookie 数据库被锁定或系统密钥链不可用，再改用手动上传有效的 `cookies.txt`。
 - 新任务立刻失败：查看任务中心失败原因；常见原因包括网络不可达、cookies 失效、视频不可用、格式被删除或 yt-dlp 需要更新。
 - 下载目录无文件：确认设置中的下载目录存在且有写入权限。
 

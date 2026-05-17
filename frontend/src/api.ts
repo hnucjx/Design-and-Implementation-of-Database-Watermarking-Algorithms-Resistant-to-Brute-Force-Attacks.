@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, DownloadOptions, Job, JobBatchAction, JobBatchActionResponse, Settings } from "./types";
+import type { AnalyzeResponse, CookieStatus, DownloadOptions, Job, JobBatchAction, JobBatchActionResponse, Settings } from "./types";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -76,15 +76,22 @@ export function batchJobAction(action: JobBatchAction, jobIds: string[], deleteF
   });
 }
 
-export function uploadCookies(file: File): Promise<{ enabled: boolean; filename: string | null }> {
+export function uploadCookies(file: File): Promise<CookieStatus> {
   const data = new FormData();
   data.append("file", file);
-  return request<{ enabled: boolean; filename: string | null }>("/api/cookies", {
+  return request<CookieStatus>("/api/cookies", {
     method: "POST",
     body: data
   });
 }
 
-export function deleteCookies(): Promise<{ enabled: boolean; filename: string | null }> {
-  return request<{ enabled: boolean; filename: string | null }>("/api/cookies", { method: "DELETE" });
+export function importBrowserCookies(browser: string): Promise<CookieStatus> {
+  return request<CookieStatus>("/api/cookies/from-browser", {
+    method: "POST",
+    body: JSON.stringify({ browser })
+  });
+}
+
+export function deleteCookies(): Promise<CookieStatus> {
+  return request<CookieStatus>("/api/cookies", { method: "DELETE" });
 }

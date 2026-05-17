@@ -354,6 +354,13 @@ th {
   gap: 8px;
 }
 
+.browser-cookie-import {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .cookie-inline-status {
   color: #48556a;
   font-size: 13px;
@@ -363,6 +370,21 @@ th {
 .compact-file-button {
   width: auto;
   margin-top: 0;
+}
+
+.compact-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #48556a;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.compact-select {
+  width: auto;
+  min-width: 128px;
+  padding: 8px 10px;
 }
 
 .toggle-row {

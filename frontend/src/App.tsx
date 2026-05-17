@@ -25,6 +25,7 @@ import {
   deleteJob,
   deleteCookies,
   getSettings,
+  importBrowserCookies,
   listJobs,
   pauseJob,
   restartJob,
@@ -46,6 +47,16 @@ import type {
 } from "./types";
 
 const RESOLUTIONS = ["best", "2160p", "1440p", "1080p", "720p", "480p"];
+const BROWSER_COOKIE_OPTIONS = [
+  { value: "auto", label: "自动检测" },
+  { value: "edge", label: "Edge" },
+  { value: "chrome", label: "Chrome" },
+  { value: "firefox", label: "Firefox" },
+  { value: "brave", label: "Brave" },
+  { value: "chromium", label: "Chromium" },
+  { value: "vivaldi", label: "Vivaldi" },
+  { value: "opera", label: "Opera" }
+];
 
 const INITIAL_OPTIONS: DownloadOptions = {
   mode: "video_subtitles",
@@ -163,6 +174,11 @@ export default function App() {
     setSettings(await getSettings());
   }
 
+  async function handleBrowserCookieImport(browser: string) {
+    await importBrowserCookies(browser);
+    setSettings(await getSettings());
+  }
+
   function updateJobInList(job: Job) {
     setJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
   }
@@ -237,6 +253,7 @@ export default function App() {
               duplicateWarning={duplicateWarning}
               isAnalyzing={isAnalyzing}
               onAnalyze={handleAnalyze}
+              onBrowserCookieImport={(browser) => handleBrowserCookieImport(browser).catch((err) => setError(err.message))}
               onCookieDelete={() => void handleCookieDelete().catch((err) => setError(err.message))}
               onCookieUpload={(file) => void handleCookieUpload(file).catch((err) => setError(err.message))}
               onUrlChange={setUrl}
@@ -297,6 +314,7 @@ function UrlAnalyzer({
   duplicateWarning,
   isAnalyzing,
   onAnalyze,
+  onBrowserCookieImport,
   onCookieDelete,
   onCookieUpload,
   onUrlChange
@@ -306,10 +324,23 @@ function UrlAnalyzer({
   duplicateWarning: boolean;
   isAnalyzing: boolean;
   onAnalyze: (event: FormEvent) => void;
+  onBrowserCookieImport: (browser: string) => Promise<void>;
   onCookieDelete: () => void;
   onCookieUpload: (file: File | null) => void;
   onUrlChange: (value: string) => void;
 }) {
+  const [browserCookieSource, setBrowserCookieSource] = useState("auto");
+  const [isImportingCookies, setIsImportingCookies] = useState(false);
+
+  async function handleBrowserImport() {
+    setIsImportingCookies(true);
+    try {
+      await onBrowserCookieImport(browserCookieSource);
+    } finally {
+      setIsImportingCookies(false);
+    }
+  }
+
   return (
     <form className="panel url-panel" onSubmit={onAnalyze}>
       <div className="panel-title">
@@ -339,6 +370,31 @@ function UrlAnalyzer({
           </label>
           <button className="ghost-button" type="button" onClick={onCookieDelete} disabled={!settings?.cookies_enabled}>
             清除 cookies
+          </button>
+        </div>
+        <div className="browser-cookie-import">
+          <label className="compact-select-label">
+            <span>浏览器 cookies 来源</span>
+            <select
+              aria-label="浏览器 cookies 来源"
+              className="compact-select"
+              value={browserCookieSource}
+              onChange={(event) => setBrowserCookieSource(event.target.value)}
+            >
+              {BROWSER_COOKIE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => void handleBrowserImport()}
+            disabled={isImportingCookies}
+          >
+            {isImportingCookies ? "导入中..." : "从浏览器导入"}
           </button>
         </div>
       </div>

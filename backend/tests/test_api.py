@@ -67,9 +67,11 @@ def make_settings(tmp_path: Path) -> AppSettings:
     )
 
 
-def make_client(tmp_path: Path, service=None):
+def make_client(tmp_path: Path, service=None, directory_picker=None):
     settings = make_settings(tmp_path)
-    return TestClient(create_app(settings=settings, ytdlp_service=service or FakeYtDlpService()))
+    return TestClient(
+        create_app(settings=settings, ytdlp_service=service or FakeYtDlpService(), directory_picker=directory_picker)
+    )
 
 
 def seed_job(
@@ -168,6 +170,32 @@ def test_create_single_video_job_uses_root_download_dir(tmp_path: Path) -> None:
     payload = response.json()
     assert payload["title"] == "Single"
     assert payload["download_dir"] == str(tmp_path / "downloads")
+
+
+def test_select_download_directory_updates_root_and_playlist_subfolder(tmp_path: Path) -> None:
+    selected_dir = tmp_path / "custom videos"
+    client = make_client(tmp_path, directory_picker=lambda current: selected_dir)
+
+    settings_response = client.post("/api/settings/download-dir/select")
+
+    assert settings_response.status_code == 200
+    assert settings_response.json()["download_dir"] == str(selected_dir)
+    assert selected_dir.exists()
+
+    job_response = client.post(
+        "/api/jobs",
+        json={
+            "url": "https://youtube.com/playlist?list=abc",
+            "options": {
+                "mode": "video_subtitles",
+                "resolution": "720p",
+                "playlist_items": [1, 2],
+            },
+        },
+    )
+
+    assert job_response.status_code == 201
+    assert job_response.json()["download_dir"] == str(selected_dir / "Batch")
 
 
 def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path) -> None:

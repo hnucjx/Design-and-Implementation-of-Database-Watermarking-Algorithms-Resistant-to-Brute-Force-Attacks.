@@ -6,6 +6,7 @@ import {
   Cookie,
   Download,
   FileText,
+  Folder,
   Gauge,
   ListVideo,
   Loader2,
@@ -28,6 +29,7 @@ import {
   pauseJob,
   restartJob,
   restartJobItem,
+  selectDownloadDirectory,
   updateSettings,
   uploadCookies
 } from "./api";
@@ -645,6 +647,20 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
     }
   }
 
+  async function chooseDownloadDirectory() {
+    setSaveMessage("选择中...");
+    try {
+      const updated = await selectDownloadDirectory();
+      onSettingsChange(updated);
+      setDraft(updated);
+      setSaveMessage("已更新");
+    } catch {
+      setSaveMessage("选择失败");
+    } finally {
+      window.setTimeout(() => setSaveMessage(""), 1800);
+    }
+  }
+
   return (
     <section className="panel compact-panel">
       <div className="panel-title">
@@ -655,7 +671,13 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
       </div>
       <label className="field">
         <span>下载目录</span>
-        <input value={draft.download_dir ?? ""} onChange={(event) => setDraft({ ...draft, download_dir: event.target.value })} />
+        <div className="directory-picker-row">
+          <input value={draft.download_dir ?? ""} readOnly />
+          <button className="ghost-button" type="button" onClick={() => void chooseDownloadDirectory()}>
+            <Folder size={16} />
+            选择文件夹
+          </button>
+        </div>
       </label>
       <label className="field settings-number-field">
         <span>并发 (默认跟随 CPU Core 数量，可按需调整。)</span>

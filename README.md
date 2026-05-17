@@ -113,7 +113,7 @@ $env:YTDL_DEFAULT_CONCURRENCY="8"
 $env:YTDL_DEFAULT_RESOLUTION="1080p"
 ```
 
-前端设置面板支持修改下载根目录和并发数；并发标签直接标注“默认跟随 CPU Core 数量，可按需调整”，修改后会自动保存。单次下载的清晰度由“下载选项”里的“清晰度 / 格式”决定。未保存自定义值时，并发数默认使用本机逻辑 CPU core 数量，最低为 1，不额外设置上限。Playlist 任务会在下载根目录下自动创建同名子文件夹；单视频任务仍直接使用下载根目录。
+前端设置面板支持通过系统文件夹对话框选择下载根目录，并支持修改并发数；并发标签直接标注“默认跟随 CPU Core 数量，可按需调整”，修改后会自动保存。单次下载的清晰度由“下载选项”里的“清晰度 / 格式”决定。未保存自定义值时，并发数默认使用本机逻辑 CPU core 数量，最低为 1，不额外设置上限。Playlist 任务会在下载根目录下自动创建同名子文件夹；如果选择的下载根目录为 `dir`，playlist 名称为 `list`，则保存到 `dir/list/`；单视频任务仍直接使用下载根目录。
 
 ## API 摘要
 
@@ -128,6 +128,7 @@ $env:YTDL_DEFAULT_RESOLUTION="1080p"
 - `POST /api/jobs/{id}/cancel`：保留的取消接口。
 - `GET /api/events`：SSE 任务事件流。
 - `GET /api/settings`、`PUT /api/settings`：读取/更新设置。
+- `POST /api/settings/download-dir/select`：打开本机文件夹选择对话框并保存下载根目录。
 - `POST /api/cookies`、`DELETE /api/cookies`：上传/清除 cookies。
 - `GET /api/diagnostics`：依赖和运行状态诊断。
 

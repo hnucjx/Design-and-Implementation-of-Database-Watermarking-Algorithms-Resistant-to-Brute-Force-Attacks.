@@ -26,6 +26,10 @@ export function updateSettings(settings: Partial<Settings>): Promise<Settings> {
   });
 }
 
+export function selectDownloadDirectory(): Promise<Settings> {
+  return request<Settings>("/api/settings/download-dir/select", { method: "POST" });
+}
+
 export function analyzeUrl(url: string): Promise<AnalyzeResponse> {
   return request<AnalyzeResponse>("/api/analyze", {
     method: "POST",

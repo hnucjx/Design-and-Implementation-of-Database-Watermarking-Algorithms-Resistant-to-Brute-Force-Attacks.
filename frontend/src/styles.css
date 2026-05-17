@@ -302,6 +302,16 @@ th {
   gap: 12px;
 }
 
+.directory-picker-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.directory-picker-row input[readonly] {
+  background: #f8fafc;
+}
+
 .settings-number-field input {
   max-width: 160px;
 }
@@ -676,6 +686,10 @@ th {
   }
 
   .two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .directory-picker-row {
     grid-template-columns: 1fr;
   }
 }

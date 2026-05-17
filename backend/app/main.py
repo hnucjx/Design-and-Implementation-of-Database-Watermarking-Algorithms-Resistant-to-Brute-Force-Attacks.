@@ -1,7 +1,8 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Callable
 
 from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,7 +33,11 @@ from .schemas import (
 from .ytdlp_service import YtDlpService
 
 
-def create_app(settings: AppSettings | None = None, ytdlp_service: YtDlpService | None = None) -> FastAPI:
+def create_app(
+    settings: AppSettings | None = None,
+    ytdlp_service: YtDlpService | None = None,
+    directory_picker: Callable[[Path], Path | None] | None = None,
+) -> FastAPI:
     app_settings = settings or get_settings()
     app_settings.ensure_directories()
     engine = create_app_engine(app_settings)
@@ -41,6 +46,7 @@ def create_app(settings: AppSettings | None = None, ytdlp_service: YtDlpService 
     service = ytdlp_service or YtDlpService(app_settings.download_dir)
     manager = JobManager(engine, app_settings, service, broker)
     get_session = session_dependency(engine)
+    pick_directory = directory_picker or _select_directory_with_tkinter
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -222,6 +228,24 @@ def create_app(settings: AppSettings | None = None, ytdlp_service: YtDlpService 
             _set_setting(session, "default_resolution", update.default_resolution)
         return _settings_response(session, app_settings, service)
 
+    @app.post("/api/settings/download-dir/select", response_model=SettingsRead)
+    async def select_download_dir(session: SessionDep) -> SettingsRead:
+        _settings_response(session, app_settings, service)
+        try:
+            selected = await asyncio.to_thread(pick_directory, app_settings.download_dir)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if selected is None:
+            return _settings_response(session, app_settings, service)
+
+        path = Path(selected).expanduser()
+        path.mkdir(parents=True, exist_ok=True)
+        app_settings.download_dir = path
+        service.download_dir = path
+        _set_setting(session, "download_dir", str(path))
+        return _settings_response(session, app_settings, service)
+
     @app.post("/api/cookies", response_model=CookieStatus)
     async def upload_cookies(file: UploadFile = File(...)) -> CookieStatus:
         content = await file.read()
@@ -341,6 +365,23 @@ def _set_setting(session: Session, key: str, value: str) -> None:
     setting.value = value
     session.add(setting)
     session.commit()
+
+
+def _select_directory_with_tkinter(initial_dir: Path) -> Path | None:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception as exc:
+        raise RuntimeError("Folder dialog is unavailable in this environment.") from exc
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(initialdir=str(initial_dir), title="选择下载目录")
+    finally:
+        root.destroy()
+    return Path(selected) if selected else None
 
 
 def _settings_response(session: Session, settings: AppSettings, service: YtDlpService) -> SettingsRead:

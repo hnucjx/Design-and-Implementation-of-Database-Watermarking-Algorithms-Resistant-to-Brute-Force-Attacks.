@@ -141,6 +141,9 @@ describe("App", () => {
         if (url.endsWith("/api/settings") && init?.method === "PUT") {
           return Response.json({ ...settingsPayload, ...JSON.parse(String(init.body)) });
         }
+        if (url.endsWith("/api/settings/download-dir/select")) {
+          return Response.json({ ...settingsPayload, download_dir: "D:\\Videos" });
+        }
         if (url.endsWith("/api/jobs")) {
           if (init?.method === "POST") {
             return Response.json({ id: "job-1", status: "queued", total_items: 1, items: [] }, { status: 201 });
@@ -265,6 +268,22 @@ describe("App", () => {
         })
       );
     });
+  });
+
+  test("selects download directory with a folder dialog", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("downloads")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "选择文件夹" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/settings/download-dir/select",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+    expect(screen.getByDisplayValue("D:\\Videos")).toBeInTheDocument();
   });
 
   test("shows selected format resolution and filesize details", async () => {

@@ -152,6 +152,17 @@ export default function App() {
     setOptions((current) => ({ ...current, resolution, format_id: formatId }));
   }
 
+  async function handleCookieUpload(file: File | null) {
+    if (!file) return;
+    await uploadCookies(file);
+    setSettings(await getSettings());
+  }
+
+  async function handleCookieDelete() {
+    await deleteCookies();
+    setSettings(await getSettings());
+  }
+
   function updateJobInList(job: Job) {
     setJobs((current) => current.map((item) => (item.id === job.id ? job : item)));
   }
@@ -221,10 +232,13 @@ export default function App() {
         <section className="grid">
           <div className="primary-column">
             <UrlAnalyzer
+              settings={settings}
               url={url}
               duplicateWarning={duplicateWarning}
               isAnalyzing={isAnalyzing}
               onAnalyze={handleAnalyze}
+              onCookieDelete={() => void handleCookieDelete().catch((err) => setError(err.message))}
+              onCookieUpload={(file) => void handleCookieUpload(file).catch((err) => setError(err.message))}
               onUrlChange={setUrl}
             />
             {analysis && (
@@ -260,7 +274,6 @@ export default function App() {
               onQualityChange={updateQuality}
             />
             {settings && <SettingsPanel settings={settings} onSettingsChange={setSettings} />}
-            {settings && <CookieManager settings={settings} onSettingsChange={setSettings} />}
           </aside>
         </section>
       </section>
@@ -278,16 +291,22 @@ function StatusPill({ ok, label }: { ok?: boolean; label: string }) {
 }
 
 function UrlAnalyzer({
+  settings,
   url,
   duplicateWarning,
   isAnalyzing,
   onAnalyze,
+  onCookieDelete,
+  onCookieUpload,
   onUrlChange
 }: {
+  settings: Settings | null;
   url: string;
   duplicateWarning: boolean;
   isAnalyzing: boolean;
   onAnalyze: (event: FormEvent) => void;
+  onCookieDelete: () => void;
+  onCookieUpload: (file: File | null) => void;
   onUrlChange: (value: string) => void;
 }) {
   return (
@@ -302,6 +321,26 @@ function UrlAnalyzer({
         <span>视频或 playlist 链接</span>
         <textarea value={url} onChange={(event) => onUrlChange(event.target.value)} rows={3} />
       </label>
+      <div className="cookie-inline">
+        <span className="cookie-inline-status">
+          <Cookie size={16} />
+          {settings?.cookies_enabled ? "已启用 cookies" : "未上传 cookies"}
+        </span>
+        <div className="cookie-inline-actions">
+          <label className="file-button compact-file-button">
+            选择 cookies.txt
+            <input
+              aria-label="选择 cookies.txt"
+              type="file"
+              accept=".txt"
+              onChange={(event) => onCookieUpload(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button className="ghost-button" type="button" onClick={onCookieDelete} disabled={!settings?.cookies_enabled}>
+            清除 cookies
+          </button>
+        </div>
+      </div>
       {duplicateWarning && <p className="hint">这个链接已经在下载历史中出现过。</p>}
       <button className="primary-button" type="submit" disabled={isAnalyzing || !url.trim()}>
         {isAnalyzing ? <Loader2 className="spin" size={18} /> : <Gauge size={18} />}
@@ -700,38 +739,6 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
         />
       </label>
       {saveMessage && <span className="settings-save-status">{saveMessage}</span>}
-    </section>
-  );
-}
-
-function CookieManager({ settings, onSettingsChange }: { settings: Settings; onSettingsChange: (settings: Settings) => void }) {
-  async function handleUpload(file: File | null) {
-    if (!file) return;
-    await uploadCookies(file);
-    onSettingsChange(await getSettings());
-  }
-
-  async function handleDelete() {
-    await deleteCookies();
-    onSettingsChange(await getSettings());
-  }
-
-  return (
-    <section className="panel compact-panel">
-      <div className="panel-title">
-        <Cookie size={19} />
-        <div>
-          <h2>Cookies</h2>
-          <p>{settings.cookies_enabled ? "已启用登录态文件" : "未上传 cookies"}</p>
-        </div>
-      </div>
-      <label className="file-button">
-        选择 cookies.txt
-        <input type="file" accept=".txt" onChange={(event) => void handleUpload(event.target.files?.[0] ?? null)} />
-      </label>
-      <button className="ghost-button full" type="button" onClick={handleDelete} disabled={!settings.cookies_enabled}>
-        清除 cookies
-      </button>
     </section>
   );
 }

@@ -332,6 +332,33 @@ th {
   line-height: 1.45;
 }
 
+.cookie-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0 0;
+}
+
+.cookie-inline-status,
+.cookie-inline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cookie-inline-status {
+  color: #48556a;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.compact-file-button {
+  width: auto;
+  margin-top: 0;
+}
+
 .toggle-row {
   display: inline-flex;
   gap: 8px;

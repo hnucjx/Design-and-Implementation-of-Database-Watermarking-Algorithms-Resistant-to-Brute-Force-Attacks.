@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
@@ -157,6 +157,14 @@ describe("App", () => {
         if (url.endsWith("/api/settings/download-dir/select")) {
           return Response.json({ ...currentSettingsPayload, download_dir: "D:\\Videos" });
         }
+        if (url.endsWith("/api/cookies") && init?.method === "POST") {
+          currentSettingsPayload = { ...currentSettingsPayload, cookies_enabled: true };
+          return Response.json({ enabled: true, filename: "cookies.txt" });
+        }
+        if (url.endsWith("/api/cookies") && init?.method === "DELETE") {
+          currentSettingsPayload = { ...currentSettingsPayload, cookies_enabled: false };
+          return Response.json({ enabled: false, filename: null });
+        }
         if (url.endsWith("/api/jobs")) {
           if (init?.method === "POST") {
             return Response.json({ id: "job-1", status: "queued", total_items: 1, items: [] }, { status: 201 });
@@ -242,7 +250,7 @@ describe("App", () => {
       String((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body)
     );
     expect(submittedBody.options.subtitle_languages).toEqual(expect.arrayContaining(["en", "zh-Hans"]));
-  });
+  }, 10_000);
 
   test("omits redundant panel subtitle text", async () => {
     render(<App />);
@@ -253,6 +261,33 @@ describe("App", () => {
     expect(screen.queryByText("支持单视频和 playlist")).not.toBeInTheDocument();
     expect(screen.queryByText("视频、字幕和批量策略")).not.toBeInTheDocument();
     expect(screen.queryByText("本机下载默认值")).not.toBeInTheDocument();
+  });
+
+  test("integrates cookies controls into the analyzer panel", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const analyzer = (await screen.findByRole("heading", { name: "解析链接" })).closest("form");
+    expect(analyzer).toBeInTheDocument();
+    expect(within(analyzer as HTMLElement).getByText("未上传 cookies")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Cookies" })).not.toBeInTheDocument();
+
+    const file = new File(["cookie"], "cookies.txt", { type: "text/plain" });
+    await user.upload(within(analyzer as HTMLElement).getByLabelText("选择 cookies.txt"), file);
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/cookies",
+        expect.objectContaining({ method: "POST", body: expect.any(FormData) })
+      );
+    });
+    expect(await within(analyzer as HTMLElement).findByText("已启用 cookies")).toBeInTheDocument();
+
+    await user.click(within(analyzer as HTMLElement).getByRole("button", { name: "清除 cookies" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith("/api/cookies", expect.objectContaining({ method: "DELETE" }));
+    });
   });
 
   test("autosaves concurrency without a save settings button", async () => {

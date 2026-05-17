@@ -1,13 +1,16 @@
+import queue
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from app.config import AppSettings
-from app.db import create_app_engine
+from app.db import create_app_engine, init_db
 from app.main import create_app
-from app.models import Job, JobItem
+from app.models import Job, JobItem, Setting
 from app.schemas import AnalyzeResponse, FormatOption, SubtitleOption, VideoEntry
 
 
@@ -56,6 +59,18 @@ class FakeYtDlpService:
 
     def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
         self.downloads.append({"url": url, "download_dir": download_dir})
+        progress_hook({"status": "finished", "filename": f"{url}.mp4"})
+
+
+class BlockingYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.started: queue.Queue[str] = queue.Queue()
+        self.release = threading.Event()
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.started.put(url)
+        self.release.wait(timeout=5)
         progress_hook({"status": "finished", "filename": f"{url}.mp4"})
 
 
@@ -119,6 +134,54 @@ def test_default_concurrency_uses_cpu_core_count(monkeypatch, tmp_path: Path) ->
     )
 
     assert settings.default_concurrency == 12
+
+
+def test_saved_concurrency_is_loaded_before_workers_start(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    engine = create_app_engine(settings)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(Setting(key="default_concurrency", value="2"))
+        session.commit()
+    service = BlockingYtDlpService()
+
+    with TestClient(create_app(settings=settings, ytdlp_service=service)) as client:
+        for url in ["https://youtu.be/first", "https://youtu.be/second"]:
+            response = client.post(
+                "/api/jobs",
+                json={"url": url, "options": {"mode": "video_subtitles", "resolution": "720p"}},
+            )
+            assert response.status_code == 201
+
+        started = {service.started.get(timeout=2), service.started.get(timeout=2)}
+        service.release.set()
+
+    assert started == {"https://youtu.be/first", "https://youtu.be/second"}
+
+
+def test_updating_concurrency_starts_additional_worker_without_restart(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    settings.default_concurrency = 1
+    service = BlockingYtDlpService()
+
+    with TestClient(create_app(settings=settings, ytdlp_service=service)) as client:
+        for url in ["https://youtu.be/first", "https://youtu.be/second"]:
+            response = client.post(
+                "/api/jobs",
+                json={"url": url, "options": {"mode": "video_subtitles", "resolution": "720p"}},
+            )
+            assert response.status_code == 201
+
+        assert service.started.get(timeout=2) == "https://youtu.be/first"
+        with pytest.raises(queue.Empty):
+            service.started.get(timeout=0.2)
+
+        update_response = client.put("/api/settings", json={"default_concurrency": 2})
+
+        assert update_response.status_code == 200
+        assert update_response.json()["default_concurrency"] == 2
+        assert service.started.get(timeout=2) == "https://youtu.be/second"
+        service.release.set()
 
 
 def test_analyze_returns_video_metadata(tmp_path: Path) -> None:

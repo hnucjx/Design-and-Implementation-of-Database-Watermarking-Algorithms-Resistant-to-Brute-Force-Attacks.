@@ -21,7 +21,7 @@ class JobManager:
         self.settings = settings
         self.service = service
         self.broker = broker
-        self._queue: asyncio.Queue[str] | None = None
+        self._queue: asyncio.Queue[str | None] | None = None
         self._workers: list[asyncio.Task[None]] = []
         self._cancelled: set[str] = set()
         self._paused: set[str] = set()
@@ -42,6 +42,20 @@ class JobManager:
         await asyncio.gather(*self._workers, return_exceptions=True)
         self._workers.clear()
         self._queue = None
+
+    async def set_concurrency(self, concurrency: int) -> None:
+        self.settings.default_concurrency = max(1, concurrency)
+        if self._queue is None:
+            return
+        self._workers = [worker for worker in self._workers if not worker.done()]
+        desired = self.settings.default_concurrency
+        current = len(self._workers)
+        if desired > current:
+            for worker_index in range(current, desired):
+                self._workers.append(asyncio.create_task(self._worker(worker_index)))
+            return
+        for _ in range(current - desired):
+            await self._queue.put(None)
 
     async def enqueue(self, job_id: str) -> None:
         await self.start()
@@ -223,6 +237,8 @@ class JobManager:
         while True:
             job_id = await self._queue.get()
             try:
+                if job_id is None:
+                    return
                 await asyncio.to_thread(self._run_job_sync, job_id)
             finally:
                 self._queue.task_done()

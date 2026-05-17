@@ -325,3 +325,60 @@ Thumbs.db
 - `ffprobe` 不作为必需依赖；当前应用用 `ffmpeg` 已能满足下载合并与必要探测。
 - playlist 合集行只需要一个统一分辨率显示；子视频展开区保留现有进度/大小信息，不额外强制显示每个子视频分辨率。
 - 已有历史任务若没有分辨率记录，界面显示 `检测中` 或 `--`，不做批量回填。
+
+---
+
+# 2026-05-17 +08:00 - 并发/限速审计与解析区 UI 整合计划
+
+## Summary
+- 实现前先将本计划追加到 `ai/plan.md`，功能变更同步更新 `README.md`。
+- 修复并发数只在 worker 启动时读取、设置修改后不生效的问题。
+- 将 Cookies 上传/清除整合进“解析链接”面板，移除独立 Cookies 卡片。
+- 在解析结果标题区显示当前所选清晰度/格式对应的视频大小。
+- 将限速默认值改为 `2048 KB/s`；清空限速输入仍表示不限速。
+
+## Key Changes
+- 并发数：
+  - 根因：`JobManager.start()` 只按启动时 `default_concurrency` 创建 worker，`PUT /api/settings` 更新后不会调整已运行 worker。
+  - 后端新增可动态调整并发的 manager 方法；`PUT /api/settings` 保存新并发后立即应用，无需重启服务。
+  - 启动时先加载 SQLite 中已保存的设置，再启动任务 manager，确保历史并发设置也生效。
+
+- Cookies UI：
+  - 删除右侧独立 `CookieManager` 卡片。
+  - 在“解析链接”面板内加入紧凑 cookies 状态行：状态文本、上传 `cookies.txt`、清除按钮。
+  - 保持现有 `/api/cookies` 上传/清除接口不变；上传后刷新 settings，解析请求继续默认使用 cookies。
+
+- 清晰度大小显示：
+  - `AnalysisPanel` 接收当前下载选项。
+  - 标题区在视频标题旁显示当前选择对应大小：具体 `format_id` 使用该格式大小；清晰度策略使用同高度格式中最大可用 `filesize/filesize_approx`；缺失时显示“大小未知”。
+  - 选择不同清晰度或具体格式时，标题区大小实时更新；`best` 显示“最佳可用 · 大小未知”。
+
+- 限速：
+  - `DownloadOptions.speed_limit_kbps` 后端默认改为 `2048`，前端初始值也改为 `2048`。
+  - 后端保持现有行为：`None/null` 不写入 yt-dlp `ratelimit`，表示不限速；`2048` 写入 `2048 * 1024` bytes/s。
+  - UI 文案明确“清空表示不限速”，避免把网络或 YouTube 侧速度波动误认为本地限速。
+
+## Test Plan
+- 后端：
+  - 新增 `JobManager` 并发测试：并发为 1 时两个阻塞任务只启动一个；更新为 2 后第二个无需重启服务即可启动。
+  - 新增设置加载测试：SQLite 中已有 `default_concurrency` 时，应用启动使用保存值。
+  - 扩展限速测试：默认 `DownloadOptions()` 生成 `ratelimit=2048*1024`；显式 `speed_limit_kbps=None` 时不包含 `ratelimit`。
+  - 运行 `python -m pytest backend\tests -q`。
+
+- 前端：
+  - 更新测试断言：Cookies 控件出现在“解析链接”面板内，独立 Cookies 卡片不再渲染；上传/清除仍调用原 API 并刷新 settings。
+  - 新增测试：切换 `1080p`、`720p`、具体 `format_id` 后，标题区显示对应大小或“大小未知”。
+  - 新增测试：限速输入默认显示 `2048`，清空后提交任务体为 `speed_limit_kbps: null`。
+  - 运行 `npm test` 和 `npm run build`。
+
+- 提交与推送：
+  - 完成并发修复后验证、提交 `fix: apply concurrency changes immediately`，`git push origin main`。
+  - 完成 Cookies UI 整合后验证、提交 `feat: integrate cookies into analyzer`，`git push origin main`。
+  - 完成标题区大小显示后验证、提交 `feat: show selected quality filesize`，`git push origin main`。
+  - 完成限速默认值后验证、提交 `fix: default speed limit to 2048 kbps`，`git push origin main`。
+  - 最终运行 `git diff --check` 并确认工作区干净。
+
+## Assumptions
+- “不填写限速”定义为不限速；默认值改为预填 `2048 KB/s`，用户清空才发送 `null`。
+- 分辨率大小只使用 analyze 已返回的格式大小，不额外请求 YouTube 估算。
+- Cookies 只做 UI 整合，不改变 cookies 文件存储路径、接口或安全策略。

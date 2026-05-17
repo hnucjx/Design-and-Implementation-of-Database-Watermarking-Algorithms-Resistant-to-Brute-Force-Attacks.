@@ -44,6 +44,8 @@ def create_app(
     init_db(engine)
     broker = EventBroker()
     service = ytdlp_service or YtDlpService(app_settings.download_dir)
+    with Session(engine) as session:
+        _apply_stored_settings(session, app_settings, service)
     manager = JobManager(engine, app_settings, service, broker)
     get_session = session_dependency(engine)
     pick_directory = directory_picker or _select_directory_with_tkinter
@@ -210,7 +212,7 @@ def create_app(
         return _settings_response(session, app_settings, service)
 
     @app.put("/api/settings", response_model=SettingsRead)
-    def update_app_settings(update: SettingsUpdate, session: SessionDep) -> SettingsRead:
+    async def update_app_settings(update: SettingsUpdate, session: SessionDep) -> SettingsRead:
         if update.download_dir is not None:
             path = Path(update.download_dir).expanduser()
             path.mkdir(parents=True, exist_ok=True)
@@ -220,6 +222,7 @@ def create_app(
         if update.default_concurrency is not None:
             app_settings.default_concurrency = update.default_concurrency
             _set_setting(session, "default_concurrency", str(update.default_concurrency))
+            await manager.set_concurrency(update.default_concurrency)
         if update.default_subtitle_languages is not None:
             app_settings.default_subtitle_languages = update.default_subtitle_languages
             _set_setting(session, "default_subtitle_languages", ",".join(update.default_subtitle_languages))
@@ -401,7 +404,7 @@ def _select_directory_with_tkinter(initial_dir: Path) -> Path | None:
     return Path(selected) if selected else None
 
 
-def _settings_response(session: Session, settings: AppSettings, service: YtDlpService) -> SettingsRead:
+def _apply_stored_settings(session: Session, settings: AppSettings, service: YtDlpService) -> None:
     stored = {setting.key: setting.value for setting in session.exec(select(Setting)).all()}
     if stored.get("download_dir"):
         settings.download_dir = Path(stored["download_dir"])
@@ -414,6 +417,10 @@ def _settings_response(session: Session, settings: AppSettings, service: YtDlpSe
         settings.default_subtitle_languages = [
             lang for lang in stored["default_subtitle_languages"].split(",") if lang
         ]
+
+
+def _settings_response(session: Session, settings: AppSettings, service: YtDlpService) -> SettingsRead:
+    _apply_stored_settings(session, settings, service)
     return SettingsRead(
         download_dir=str(settings.download_dir),
         default_concurrency=settings.default_concurrency,

@@ -32,6 +32,9 @@ def _ensure_columns(engine: Engine) -> None:
             "finished_at": "DATETIME",
             "actual_width": "INTEGER",
             "actual_height": "INTEGER",
+            "options_json": "TEXT",
+            "requested_resolution": "TEXT",
+            "fallback_resolution": "TEXT",
         },
     }
     with engine.begin() as connection:

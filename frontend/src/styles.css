@@ -639,6 +639,28 @@ th {
   background: linear-gradient(90deg, #1f6feb, #0ea5a4);
 }
 
+.resolution-fallback-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.resolution-fallback-note .ghost-button {
+  min-height: 32px;
+  padding: 7px 10px;
+  background: #ffffff;
+}
+
 .item-list {
   display: grid;
   gap: 10px;

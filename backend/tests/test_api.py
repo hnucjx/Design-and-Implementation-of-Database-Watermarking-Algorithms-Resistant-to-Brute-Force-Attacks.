@@ -1,5 +1,6 @@
 import queue
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from app.config import AppSettings
 from app.db import create_app_engine, init_db
 from app.main import create_app
 from app.models import Job, JobItem, Setting
-from app.schemas import AnalyzeResponse, FormatOption, SubtitleOption, VideoEntry
+from app.schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
 
 
 class FakeYtDlpService:
@@ -74,6 +75,29 @@ class BlockingYtDlpService(FakeYtDlpService):
         progress_hook({"status": "finished", "filename": f"{url}.mp4"})
 
 
+class FormatUnavailableYtDlpService(FakeYtDlpService):
+    def extract_metadata(self, url, cookies_path=None):
+        return AnalyzeResponse(
+            url=url,
+            title="Unsupported resolution",
+            is_playlist=False,
+            entries=[],
+            formats=[
+                FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+                FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4"),
+            ],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        raise RuntimeError(
+            "ERROR: [youtube] 84js0u7t2_g: Requested format is not available. "
+            "Use --list-formats for a list of available formats"
+        )
+
+
 class BrowserImportYtDlpService(FakeYtDlpService):
     def __init__(self):
         super().__init__()
@@ -126,8 +150,10 @@ def seed_job(
     status: str = "queued",
     output_path: Path | None = None,
     download_dir: Path | None = None,
+    options: DownloadOptions | None = None,
 ) -> None:
     engine = create_app_engine(make_settings(tmp_path))
+    init_db(engine)
     with Session(engine) as session:
         session.add(
             Job(
@@ -135,7 +161,7 @@ def seed_job(
                 url=f"https://youtu.be/{job_id}",
                 title=f"Job {job_id}",
                 status=status,
-                options_json="{}",
+                options_json=(options or DownloadOptions(mode="video_subtitles", resolution="1080p")).model_dump_json(),
                 total_items=1,
                 download_dir=str(download_dir or tmp_path / "downloads"),
             )
@@ -152,6 +178,17 @@ def seed_job(
             )
         )
         session.commit()
+
+
+def wait_for_job_status(client: TestClient, job_id: str, status: str) -> dict:
+    for _ in range(60):
+        response = client.get(f"/api/jobs/{job_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        if payload["status"] == status:
+            return payload
+        time.sleep(0.05)
+    raise AssertionError(f"Job {job_id} did not reach {status}")
 
 
 def test_default_concurrency_uses_cpu_core_count(monkeypatch, tmp_path: Path) -> None:
@@ -465,6 +502,120 @@ def test_playlist_job_read_reports_mixed_actual_resolution(tmp_path: Path) -> No
     assert response.status_code == 200
     payload = response.json()
     assert payload["actual_resolution"] == "混合分辨率"
+
+
+def test_failed_unavailable_resolution_reports_fallback(tmp_path: Path) -> None:
+    service = FormatUnavailableYtDlpService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/unsupported",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "failed")
+
+    item = payload["items"][0]
+    assert item["requested_resolution"] == "1080p"
+    assert item["fallback_resolution"] == "720p"
+    assert item["resolution_fallback"] == {
+        "requested_resolution": "1080p",
+        "fallback_resolution": "720p",
+        "message": "当前没有 1080p 的视频，低于选定分辨率的最高可用分辨率是 720p。",
+    }
+    assert payload["resolution_fallback"] == item["resolution_fallback"]
+    assert item["error"] == "当前没有 1080p 的视频，低于选定分辨率的最高可用分辨率是 720p。"
+
+
+def test_restart_job_with_resolution_updates_job_options(tmp_path: Path) -> None:
+    service = BlockingYtDlpService()
+    seed_job(tmp_path, "job-resolution", status="failed", options=DownloadOptions(resolution="1080p"))
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post("/api/jobs/job-resolution/restart", json={"resolution": "720p"})
+        service.release.set()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "queued"
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        job = session.get(Job, "job-resolution")
+        assert job is not None
+        options = DownloadOptions.model_validate_json(job.options_json)
+        assert options.resolution == "720p"
+        assert options.format_id is None
+        item = session.get(JobItem, "job-resolution-item")
+        assert item is not None
+        assert item.options_json is None
+        assert item.requested_resolution is None
+        assert item.fallback_resolution is None
+
+
+def test_restart_playlist_item_with_resolution_only_updates_item_options(tmp_path: Path) -> None:
+    service = BlockingYtDlpService()
+    settings = make_settings(tmp_path)
+    engine = create_app_engine(settings)
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist-resolution",
+                url="https://youtube.com/playlist?list=abc",
+                title="Playlist",
+                status="failed",
+                options_json=DownloadOptions(resolution="1080p").model_dump_json(),
+                total_items=2,
+                failed_items=1,
+                download_dir=str(tmp_path / "downloads" / "Playlist"),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-1",
+                job_id="job-playlist-resolution",
+                source_url="https://youtu.be/one",
+                title="One",
+                index=1,
+                status="succeeded",
+                progress=100.0,
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-2",
+                job_id="job-playlist-resolution",
+                source_url="https://youtu.be/two",
+                title="Two",
+                index=2,
+                status="failed",
+                progress=0.0,
+                requested_resolution="1080p",
+                fallback_resolution="720p",
+                error="当前没有 1080p 的视频，低于选定分辨率的最高可用分辨率是 720p。",
+            )
+        )
+        session.commit()
+
+    with TestClient(create_app(settings=settings, ytdlp_service=service)) as client:
+        response = client.post("/api/jobs/job-playlist-resolution/items/item-2/restart", json={"resolution": "720p"})
+        service.release.set()
+
+    assert response.status_code == 200
+    engine = create_app_engine(settings)
+    with Session(engine) as session:
+        job = session.get(Job, "job-playlist-resolution")
+        assert job is not None
+        assert DownloadOptions.model_validate_json(job.options_json).resolution == "1080p"
+        item = session.get(JobItem, "item-2")
+        assert item is not None
+        assert item.options_json is not None
+        assert DownloadOptions.model_validate_json(item.options_json).resolution == "720p"
+        assert item.requested_resolution is None
+        assert item.fallback_resolution is None
 
 
 def test_job_can_be_paused_restarted_and_deleted(tmp_path: Path) -> None:

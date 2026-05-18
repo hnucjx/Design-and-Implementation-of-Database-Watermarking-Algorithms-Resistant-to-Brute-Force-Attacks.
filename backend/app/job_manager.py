@@ -98,7 +98,7 @@ class JobManager:
             session.commit()
         await self._publish({"type": "job_paused", "job_id": job_id})
 
-    async def restart(self, job_id: str) -> None:
+    async def restart(self, job_id: str, resolution: str | None = None) -> None:
         self._paused.discard(job_id)
         self._cancelled.discard(job_id)
         self._deleted.discard(job_id)
@@ -106,6 +106,9 @@ class JobManager:
             job = session.get(Job, job_id)
             if not job:
                 return
+            if resolution:
+                options = self._options_with_resolution(DownloadOptions.model_validate_json(job.options_json), resolution)
+                job.options_json = options.model_dump_json()
             job.status = JobStatus.queued.value
             job.progress = 0.0
             job.speed = None
@@ -129,6 +132,9 @@ class JobManager:
                 item.output_path = None
                 item.actual_width = None
                 item.actual_height = None
+                item.options_json = None
+                item.requested_resolution = None
+                item.fallback_resolution = None
                 item.error = None
                 item.started_at = None
                 item.finished_at = None
@@ -140,7 +146,7 @@ class JobManager:
         assert self._queue is not None
         self._queue.put_nowait(job_id)
 
-    async def restart_item(self, job_id: str, item_id: str) -> bool:
+    async def restart_item(self, job_id: str, item_id: str, resolution: str | None = None) -> bool:
         self._paused.discard(job_id)
         self._cancelled.discard(job_id)
         self._deleted.discard(job_id)
@@ -158,6 +164,13 @@ class JobManager:
             item.output_path = None
             item.actual_width = None
             item.actual_height = None
+            item.options_json = (
+                self._options_with_resolution(DownloadOptions.model_validate_json(job.options_json), resolution).model_dump_json()
+                if resolution
+                else None
+            )
+            item.requested_resolution = None
+            item.fallback_resolution = None
             item.error = None
             item.started_at = None
             item.finished_at = None
@@ -285,7 +298,7 @@ class JobManager:
                     session.add(item)
                     session.commit()
                     break
-                self._run_item(session, job, item, options, download_dir)
+                self._run_item(session, job, item, self._item_options(item, options), download_dir)
 
             self._finish_job(session, job)
 
@@ -381,6 +394,7 @@ class JobManager:
         except Exception as exc:
             item.status = JobStatus.failed.value
             item.error = str(exc)
+            self._annotate_resolution_fallback(item, options, exc)
         else:
             session.refresh(item)
             if item.actual_width is None and item.actual_height is None and item.output_path:
@@ -473,6 +487,34 @@ class JobManager:
         if not items:
             return 0.0
         return sum(item.progress for item in items) / len(items)
+
+    def _item_options(self, item: JobItem, job_options: DownloadOptions) -> DownloadOptions:
+        if not item.options_json:
+            return job_options
+        return DownloadOptions.model_validate(json.loads(item.options_json))
+
+    def _options_with_resolution(self, options: DownloadOptions, resolution: str) -> DownloadOptions:
+        return options.model_copy(update={"resolution": resolution, "format_id": None})
+
+    def _annotate_resolution_fallback(self, item: JobItem, options: DownloadOptions, exc: Exception) -> None:
+        if options.format_id or not YtDlpService.is_requested_format_unavailable_error(exc):
+            return
+        fallback = self._fallback_resolution_for_item(item, options)
+        if not fallback:
+            return
+        item.requested_resolution = options.resolution
+        item.fallback_resolution = fallback
+        item.error = self._resolution_fallback_message(options.resolution, fallback)
+
+    def _fallback_resolution_for_item(self, item: JobItem, options: DownloadOptions) -> str | None:
+        try:
+            analysis = self.service.extract_metadata(item.source_url, cookies_path=self._cookies_path())
+        except Exception:
+            return None
+        return YtDlpService.suggest_lower_resolution(options.resolution, analysis.formats)
+
+    def _resolution_fallback_message(self, requested_resolution: str, fallback_resolution: str) -> str:
+        return f"当前没有 {requested_resolution} 的视频，低于选定分辨率的最高可用分辨率是 {fallback_resolution}。"
 
     def _cookies_path(self) -> Path | None:
         path = self.settings.cookies_path

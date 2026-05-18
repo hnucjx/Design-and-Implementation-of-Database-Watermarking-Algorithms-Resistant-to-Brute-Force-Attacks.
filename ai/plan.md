@@ -421,3 +421,36 @@ Thumbs.db
 - 自动导入只针对本机单用户环境；不会读取远程浏览器或绕过 DRM。
 - 若浏览器未安装、未登录 YouTube、cookie 数据库被浏览器锁定或系统密钥链不可用，导入会失败并在 UI 中显示错误。
 - 手动上传的 `cookies.txt` 与浏览器导入共用同一个本地 `data/cookies.txt`，清除 cookies 会删除该文件。
+
+# 2026-05-18 +08:00 - 不可用分辨率提示与降级重启计划
+
+## Summary
+修复 `Requested format is not available` 场景：当用户明确选择 `1440p/1080p/...` 但当前视频不支持该高度时，不静默降级，也不只显示 yt-dlp 原始错误；任务中心要显示“当前没有 xx 分辨率，低于该分辨率的最高可用分辨率是 yy”，并提供“以 yy 重启”按钮。单视频在任务卡片显示提示，playlist 在展开后的失败子视频行显示提示。完成后追加计划到 `ai/plan.md`、更新 `README.md`、提交并 `git push origin main`。
+
+## Key Changes
+- 后端识别 yt-dlp 的 `Requested format is not available` 错误，仅针对明确数字清晰度如 `1080p` 生效；具体 `format_id` 不做猜测，继续显示原错误。
+- 下载失败后用当前 cookies 对失败视频做一次 metadata 查询，计算低于请求高度的最高可用高度；例如请求 `1080p`，可用 `720p/360p`，则建议 `720p`。
+- 给 `job_items` 增加轻量迁移字段：`options_json`、`requested_resolution`、`fallback_resolution`；API 增加 `resolution_fallback` 结构，单视频 job 聚合子项提示，playlist 子项单独返回提示。
+- 重启接口保持兼容：`POST /api/jobs/{id}/restart` 和 `POST /api/jobs/{id}/items/{item_id}/restart` 可选请求体 `{ "resolution": "720p" }`；无请求体时保持原重启逻辑。
+- playlist 子视频使用 `job_items.options_json` 保存单项重启覆盖配置，避免“以 720p 重启某一集”影响同一 playlist 的其他视频。
+- 前端任务中心显示明确提示和按钮：单视频显示“以 720p 重启任务”；playlist 子项显示“以 720p 重启”。点击后调用对应 restart API 并传入 fallback resolution。
+
+## Test Plan
+- 后端 TDD：
+  - `YtDlpService` helper 能从 `1080p` 请求和可用 formats 中计算 `720p` fallback。
+  - job 下载遇到 `Requested format is not available` 后，失败 item 返回 `requested_resolution=1080p`、`fallback_resolution=720p` 和友好错误文案。
+  - 单视频 `restart` 传 `{resolution:"720p"}` 会更新 job options 并重新入队。
+  - playlist 单项 `restart` 传 `{resolution:"720p"}` 只更新该 item 的 `options_json`，不改整个 playlist job 的默认 options。
+- 前端 TDD：
+  - 单视频 failed job 显示无 `1080p`、建议 `720p`，点击“以 720p 重启任务”发送 restart body。
+  - playlist failed item 显示同样提示，点击“以 720p 重启”发送 item restart body。
+- 全量验证：
+  - `python -m pytest backend\tests -q`
+  - `npm test`
+  - `npm run build`
+  - `git diff --check`
+
+## Assumptions
+- 保持“不静默降级”的既有原则：只有用户点击 fallback 重启按钮后才会用较低分辨率重新下载。
+- fallback 只针对选择了数字清晰度策略的任务；如果用户选择的是具体 `format_id`，不自动推断替代格式。
+- 如果 metadata 查询也失败，或没有任何低于请求高度的格式，则任务中心显示原始失败原因，不提供 fallback 重启按钮。

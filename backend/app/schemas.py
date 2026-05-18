@@ -74,10 +74,20 @@ class CreateJobRequest(BaseModel):
     options: DownloadOptions = Field(default_factory=DownloadOptions)
 
 
+class RestartJobRequest(BaseModel):
+    resolution: str | None = None
+
+
 class JobBatchActionRequest(BaseModel):
     action: JobBatchAction
     job_ids: list[str] = Field(min_length=1)
     delete_files: bool = False
+
+
+class ResolutionFallback(BaseModel):
+    requested_resolution: str
+    fallback_resolution: str
+    message: str
 
 
 class JobItemRead(BaseModel):
@@ -95,6 +105,9 @@ class JobItemRead(BaseModel):
     output_path: str | None = None
     actual_width: int | None = None
     actual_height: int | None = None
+    requested_resolution: str | None = None
+    fallback_resolution: str | None = None
+    resolution_fallback: ResolutionFallback | None = None
     error: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -118,6 +131,7 @@ class JobRead(BaseModel):
     error: str | None = None
     download_dir: str | None = None
     actual_resolution: str | None = None
+    resolution_fallback: ResolutionFallback | None = None
     created_at: datetime
     updated_at: datetime
     started_at: datetime | None = None

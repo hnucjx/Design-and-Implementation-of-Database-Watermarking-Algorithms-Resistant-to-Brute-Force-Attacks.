@@ -41,6 +41,7 @@ import type {
   FormatOption,
   Job,
   JobBatchAction,
+  ResolutionFallback,
   Settings,
   SubtitleFormat,
   SubtitleSource
@@ -196,12 +197,12 @@ export default function App() {
     updateJobInList(await pauseJob(jobId));
   }
 
-  async function handleRestartJob(jobId: string) {
-    updateJobInList(await restartJob(jobId));
+  async function handleRestartJob(jobId: string, resolution?: string) {
+    updateJobInList(await restartJob(jobId, resolution));
   }
 
-  async function handleRestartJobItem(jobId: string, itemId: string) {
-    updateJobInList(await restartJobItem(jobId, itemId));
+  async function handleRestartJobItem(jobId: string, itemId: string, resolution?: string) {
+    updateJobInList(await restartJobItem(jobId, itemId, resolution));
   }
 
   async function handleDeleteJob(jobId: string) {
@@ -274,8 +275,8 @@ export default function App() {
               onDeleteFilesWithJobsChange={setDeleteFilesWithJobs}
               onDelete={(jobId) => void handleDeleteJob(jobId).catch((err) => setError(err.message))}
               onPause={(jobId) => void handlePauseJob(jobId).catch((err) => setError(err.message))}
-              onRestart={(jobId) => void handleRestartJob(jobId).catch((err) => setError(err.message))}
-              onRestartItem={(jobId, itemId) => void handleRestartJobItem(jobId, itemId).catch((err) => setError(err.message))}
+              onRestart={(jobId, resolution) => void handleRestartJob(jobId, resolution).catch((err) => setError(err.message))}
+              onRestartItem={(jobId, itemId, resolution) => void handleRestartJobItem(jobId, itemId, resolution).catch((err) => setError(err.message))}
               onToggleJobSelection={toggleJobSelection}
             />
           </div>
@@ -826,8 +827,8 @@ function JobQueue({
   onDeleteFilesWithJobsChange: (checked: boolean) => void;
   onDelete: (jobId: string) => void;
   onPause: (jobId: string) => void;
-  onRestart: (jobId: string) => void;
-  onRestartItem: (jobId: string, itemId: string) => void;
+  onRestart: (jobId: string, resolution?: string) => void;
+  onRestartItem: (jobId: string, itemId: string, resolution?: string) => void;
   onToggleJobSelection: (jobId: string) => void;
 }) {
   const selectedCount = selectedJobIds.size;
@@ -939,6 +940,14 @@ function JobQueue({
             <div className="progress-bar">
               <span style={{ width: `${Math.max(0, Math.min(100, job.progress))}%` }} />
             </div>
+            {!isPlaylist && job.resolution_fallback && (
+              <ResolutionFallbackNotice
+                fallback={job.resolution_fallback}
+                restartLabel={`以 ${job.resolution_fallback.fallback_resolution} 重启任务`}
+                restartAriaLabel={`以 ${job.resolution_fallback.fallback_resolution} 重启任务 ${title}`}
+                onRestart={() => onRestart(job.id, job.resolution_fallback?.fallback_resolution)}
+              />
+            )}
             {job.items.length > 0 && isPlaylist && isExpanded && (
               <div className="item-list">
                 {job.items.map((item) => (
@@ -946,7 +955,7 @@ function JobQueue({
                     <div className="item-row">
                       <span>{item.index}. {item.title} · {item.status}</span>
                       <div className="item-actions">
-                        {item.error && <span className="item-error">{item.error}</span>}
+                        {item.error && !item.resolution_fallback && <span className="item-error">{item.error}</span>}
                         {item.status !== "running" && (
                           <button
                             className="icon-button item-action-button"
@@ -967,6 +976,14 @@ function JobQueue({
                       <span>剩余 {formatClock(item.eta)}</span>
                       {item.speed ? <span>{formatBytesPerSecond(item.speed)}</span> : <span>-- KB/s</span>}
                     </div>
+                    {item.resolution_fallback && (
+                      <ResolutionFallbackNotice
+                        fallback={item.resolution_fallback}
+                        restartLabel={`以 ${item.resolution_fallback.fallback_resolution} 重启`}
+                        restartAriaLabel={`以 ${item.resolution_fallback.fallback_resolution} 重启 ${item.title}`}
+                        onRestart={() => onRestartItem(job.id, item.id, item.resolution_fallback?.fallback_resolution)}
+                      />
+                    )}
                     <div className="progress-bar item-progress">
                       <span style={{ width: `${Math.max(0, Math.min(100, item.progress))}%` }} />
                     </div>
@@ -979,6 +996,28 @@ function JobQueue({
         })}
       </div>
     </section>
+  );
+}
+
+function ResolutionFallbackNotice({
+  fallback,
+  restartLabel,
+  restartAriaLabel,
+  onRestart
+}: {
+  fallback: ResolutionFallback;
+  restartLabel: string;
+  restartAriaLabel: string;
+  onRestart: () => void;
+}) {
+  return (
+    <div className="resolution-fallback-note">
+      <span>{fallback.message}</span>
+      <button className="ghost-button" type="button" aria-label={restartAriaLabel} onClick={onRestart}>
+        <RotateCcw size={15} />
+        {restartLabel}
+      </button>
+    </div>
   );
 }
 

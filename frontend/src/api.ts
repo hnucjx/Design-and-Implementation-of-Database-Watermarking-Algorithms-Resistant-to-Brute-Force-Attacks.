@@ -56,12 +56,12 @@ export function pauseJob(jobId: string): Promise<Job> {
   return request<Job>(`/api/jobs/${jobId}/pause`, { method: "POST" });
 }
 
-export function restartJob(jobId: string): Promise<Job> {
-  return request<Job>(`/api/jobs/${jobId}/restart`, { method: "POST" });
+export function restartJob(jobId: string, resolution?: string): Promise<Job> {
+  return request<Job>(`/api/jobs/${jobId}/restart`, restartRequest(resolution));
 }
 
-export function restartJobItem(jobId: string, itemId: string): Promise<Job> {
-  return request<Job>(`/api/jobs/${jobId}/items/${itemId}/restart`, { method: "POST" });
+export function restartJobItem(jobId: string, itemId: string, resolution?: string): Promise<Job> {
+  return request<Job>(`/api/jobs/${jobId}/items/${itemId}/restart`, restartRequest(resolution));
 }
 
 export function deleteJob(jobId: string, deleteFiles = false): Promise<void> {
@@ -94,4 +94,10 @@ export function importBrowserCookies(browser: string): Promise<CookieStatus> {
 
 export function deleteCookies(): Promise<CookieStatus> {
   return request<CookieStatus>("/api/cookies", { method: "DELETE" });
+}
+
+function restartRequest(resolution?: string): RequestInit {
+  return resolution
+    ? { method: "POST", body: JSON.stringify({ resolution }) }
+    : { method: "POST" };
 }

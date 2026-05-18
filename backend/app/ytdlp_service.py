@@ -229,6 +229,24 @@ class YtDlpService:
             return None
         return int(match.group(1)), int(match.group(2))
 
+    @staticmethod
+    def suggest_lower_resolution(requested_resolution: str, formats: list[FormatOption]) -> str | None:
+        requested_height = YtDlpService._resolution_height(requested_resolution)
+        if requested_height is None:
+            return None
+        lower_heights = {
+            int(format.height)
+            for format in formats
+            if format.height is not None and int(format.height) < requested_height
+        }
+        if not lower_heights:
+            return None
+        return f"{max(lower_heights)}p"
+
+    @staticmethod
+    def is_requested_format_unavailable_error(exc: Exception) -> bool:
+        return "requested format is not available" in str(exc).lower()
+
     def _format_selector(self, options: DownloadOptions, allow_merge: bool = True) -> str:
         if not allow_merge:
             return self._single_file_format_selector(options)
@@ -318,6 +336,15 @@ class YtDlpService:
         except (TypeError, ValueError):
             return None
         return parsed if parsed > 0 else None
+
+    @staticmethod
+    def _resolution_height(resolution: str) -> int | None:
+        if not resolution.endswith("p"):
+            return None
+        value = resolution[:-1]
+        if not value.isdigit():
+            return None
+        return int(value)
 
     def _is_youtube_related_cookie(self, domain: str) -> bool:
         normalized = domain.lower().lstrip(".")

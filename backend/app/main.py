@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
-from fastapi import Depends, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import Body, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,8 @@ from .schemas import (
     JobBatchActionResponse,
     JobItemRead,
     JobRead,
+    ResolutionFallback,
+    RestartJobRequest,
     SettingsRead,
     SettingsUpdate,
     VideoEntry,
@@ -188,16 +190,25 @@ def create_app(
         return _read_job(session, job_id)
 
     @app.post("/api/jobs/{job_id}/restart", response_model=JobRead)
-    async def restart_job(job_id: str, session: SessionDep) -> JobRead:
+    async def restart_job(
+        job_id: str,
+        session: SessionDep,
+        request: RestartJobRequest | None = Body(default=None),
+    ) -> JobRead:
         if not session.get(Job, job_id):
             raise HTTPException(status_code=404, detail="Job not found.")
-        await manager.restart(job_id)
+        await manager.restart(job_id, resolution=request.resolution if request else None)
         session.expire_all()
         return _read_job(session, job_id)
 
     @app.post("/api/jobs/{job_id}/items/{item_id}/restart", response_model=JobRead)
-    async def restart_job_item(job_id: str, item_id: str, session: SessionDep) -> JobRead:
-        if not await manager.restart_item(job_id, item_id):
+    async def restart_job_item(
+        job_id: str,
+        item_id: str,
+        session: SessionDep,
+        request: RestartJobRequest | None = Body(default=None),
+    ) -> JobRead:
+        if not await manager.restart_item(job_id, item_id, resolution=request.resolution if request else None):
             raise HTTPException(status_code=404, detail="Job item not found.")
         session.expire_all()
         return _read_job(session, job_id)
@@ -347,6 +358,7 @@ def _read_job(session: Session, job_id: str) -> JobRead:
         error=job.error,
         download_dir=job.download_dir,
         actual_resolution=_actual_resolution(items),
+        resolution_fallback=_job_resolution_fallback(items),
         created_at=job.created_at,
         updated_at=job.updated_at,
         started_at=job.started_at,
@@ -368,6 +380,9 @@ def _read_job(session: Session, job_id: str) -> JobRead:
                 output_path=item.output_path,
                 actual_width=item.actual_width,
                 actual_height=item.actual_height,
+                requested_resolution=item.requested_resolution,
+                fallback_resolution=item.fallback_resolution,
+                resolution_fallback=_resolution_fallback(item.requested_resolution, item.fallback_resolution),
                 error=item.error,
                 created_at=item.created_at,
                 updated_at=item.updated_at,
@@ -392,6 +407,23 @@ def _actual_resolution(items: list[JobItem]) -> str | None:
         return "混合分辨率"
     width, height = next(iter(resolutions))
     return f"{width}x{height}"
+
+
+def _job_resolution_fallback(items: list[JobItem]) -> ResolutionFallback | None:
+    if len(items) != 1:
+        return None
+    item = items[0]
+    return _resolution_fallback(item.requested_resolution, item.fallback_resolution)
+
+
+def _resolution_fallback(requested_resolution: str | None, fallback_resolution: str | None) -> ResolutionFallback | None:
+    if not requested_resolution or not fallback_resolution:
+        return None
+    return ResolutionFallback(
+        requested_resolution=requested_resolution,
+        fallback_resolution=fallback_resolution,
+        message=f"当前没有 {requested_resolution} 的视频，低于选定分辨率的最高可用分辨率是 {fallback_resolution}。",
+    )
 
 
 def _elapsed_seconds(started_at: datetime | None, finished_at: datetime | None) -> int:

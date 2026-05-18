@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
+import type { Job } from "./types";
 
 const analyzePayload = {
   url: "https://youtube.com/playlist?list=abc",
@@ -24,7 +25,7 @@ const analyzePayload = {
 
 let currentAnalyzePayload = analyzePayload;
 
-const jobPayload = {
+const jobPayload: Job = {
   id: "job-running",
   url: "https://youtu.be/running",
   title: "Running video",
@@ -36,6 +37,7 @@ const jobPayload = {
   finished_at: null,
   elapsed_seconds: 42,
   actual_resolution: "1920x1080",
+  resolution_fallback: null,
   speed: 2048,
   eta: 10,
   total_items: 1,
@@ -43,6 +45,7 @@ const jobPayload = {
   failed_items: 0,
   current_item_title: "Running video",
   error: null,
+  download_dir: null,
   items: [
     {
       id: "item-running",
@@ -59,6 +62,9 @@ const jobPayload = {
       elapsed_seconds: 42,
       actual_width: 1920,
       actual_height: 1080,
+      requested_resolution: null,
+      fallback_resolution: null,
+      resolution_fallback: null,
       downloaded_bytes: 34,
       total_bytes: 100,
       speed: 2048,
@@ -69,7 +75,7 @@ const jobPayload = {
   ]
 };
 
-const pausedJobPayload = {
+const pausedJobPayload: Job = {
   ...jobPayload,
   id: "job-paused",
   title: "Paused video",
@@ -80,7 +86,7 @@ const pausedJobPayload = {
   items: [{ ...jobPayload.items[0], id: "item-paused", job_id: "job-paused", title: "Paused video", status: "paused" }]
 };
 
-const playlistJobPayload = {
+const playlistJobPayload: Job = {
   ...jobPayload,
   id: "job-playlist",
   title: "Playlist batch",
@@ -123,6 +129,53 @@ const playlistJobPayload = {
   ]
 };
 
+const resolutionFallback = {
+  requested_resolution: "1080p",
+  fallback_resolution: "720p",
+  message: "当前没有 1080p 的视频，低于选定分辨率的最高可用分辨率是 720p。"
+};
+
+const singleFallbackJobPayload: Job = {
+  ...jobPayload,
+  id: "job-format-failed",
+  title: "Unsupported resolution",
+  status: "failed",
+  progress: 0,
+  error: "1 item(s) failed.",
+  resolution_fallback: resolutionFallback,
+  items: [
+    {
+      ...jobPayload.items[0],
+      id: "item-format-failed",
+      job_id: "job-format-failed",
+      title: "Unsupported resolution",
+      status: "failed",
+      progress: 0,
+      error: resolutionFallback.message,
+      requested_resolution: "1080p",
+      fallback_resolution: "720p",
+      resolution_fallback: resolutionFallback
+    }
+  ]
+};
+
+const playlistFallbackJobPayload: Job = {
+  ...playlistJobPayload,
+  status: "failed",
+  failed_items: 1,
+  items: [
+    playlistJobPayload.items[0],
+    {
+      ...playlistJobPayload.items[1],
+      status: "failed",
+      error: resolutionFallback.message,
+      requested_resolution: "1080p",
+      fallback_resolution: "720p",
+      resolution_fallback: resolutionFallback
+    }
+  ]
+};
+
 const settingsPayload = {
   download_dir: "downloads",
   default_concurrency: 2,
@@ -132,11 +185,13 @@ const settingsPayload = {
   ffmpeg: { ffmpeg: true, ffprobe: true }
 };
 
+let currentJobsPayload: Job[] = [jobPayload, pausedJobPayload, playlistJobPayload];
 let currentSettingsPayload = settingsPayload;
 
 describe("App", () => {
   beforeEach(() => {
     currentAnalyzePayload = analyzePayload;
+    currentJobsPayload = [jobPayload, pausedJobPayload, playlistJobPayload];
     currentSettingsPayload = settingsPayload;
     vi.stubGlobal("EventSource", class {
       onmessage: ((event: MessageEvent) => void) | null = null;
@@ -179,7 +234,7 @@ describe("App", () => {
           if (init?.method === "POST") {
             return Response.json({ id: "job-1", status: "queued", total_items: 1, items: [] }, { status: 201 });
           }
-          return Response.json([jobPayload, pausedJobPayload, playlistJobPayload]);
+          return Response.json(currentJobsPayload);
         }
         if (url.endsWith("/api/jobs/batch")) {
           return Response.json({ affected_job_ids: ["job-running", "job-paused"], jobs: [] });
@@ -189,6 +244,9 @@ describe("App", () => {
         }
         if (url.endsWith("/api/jobs/job-paused/restart")) {
           return Response.json({ ...pausedJobPayload, status: "queued" });
+        }
+        if (url.endsWith("/api/jobs/job-format-failed/restart")) {
+          return Response.json({ ...singleFallbackJobPayload, status: "queued" });
         }
         if (url.endsWith("/api/jobs/job-playlist/items/item-playlist-2/restart")) {
           return Response.json({
@@ -601,6 +659,42 @@ describe("App", () => {
     expect(fetch).toHaveBeenCalledWith(
       "/api/jobs/job-playlist/items/item-playlist-2/restart",
       expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  test("shows single video resolution fallback and restarts with suggested resolution", async () => {
+    currentJobsPayload = [singleFallbackJobPayload];
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Unsupported resolution")).toBeInTheDocument();
+    expect(screen.getByText(resolutionFallback.message)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "以 720p 重启任务 Unsupported resolution" }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-format-failed/restart",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ resolution: "720p" })
+      })
+    );
+  });
+
+  test("shows playlist item resolution fallback and restarts item with suggested resolution", async () => {
+    currentJobsPayload = [playlistFallbackJobPayload];
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    expect(screen.getByText(resolutionFallback.message)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "以 720p 重启 Part two" }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-playlist/items/item-playlist-2/restart",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ resolution: "720p" })
+      })
     );
   });
 });

@@ -6,7 +6,7 @@ from http.cookiejar import Cookie
 import pytest
 from yt_dlp.cookies import YoutubeDLCookieJar
 
-from app.schemas import DownloadOptions
+from app.schemas import DownloadOptions, FormatOption
 from app.ytdlp_service import YtDlpService
 
 
@@ -61,6 +61,23 @@ def test_resolution_can_be_extracted_from_progress_payload_requested_formats(tmp
     )
 
     assert resolution == (1920, 1080)
+
+
+def test_suggests_highest_available_resolution_below_requested(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    fallback = service.suggest_lower_resolution(
+        "1080p",
+        [
+            FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+            FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4"),
+            FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4"),
+        ],
+    )
+
+    assert fallback == "720p"
+    assert service.suggest_lower_resolution("720p", []) is None
+    assert service.suggest_lower_resolution("best", [FormatOption(format_id="18", label="360p", height=360)]) is None
 
 
 def test_download_options_accept_task_specific_download_dir(monkeypatch, tmp_path: Path) -> None:

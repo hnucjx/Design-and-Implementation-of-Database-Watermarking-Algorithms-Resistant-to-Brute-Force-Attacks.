@@ -71,6 +71,9 @@ export interface JobItem {
   output_path: string | null;
   actual_width: number | null;
   actual_height: number | null;
+  requested_resolution: string | null;
+  fallback_resolution: string | null;
+  resolution_fallback: ResolutionFallback | null;
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -94,6 +97,7 @@ export interface Job {
   error: string | null;
   download_dir: string | null;
   actual_resolution: string | null;
+  resolution_fallback: ResolutionFallback | null;
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -122,4 +126,10 @@ export interface CookieStatus {
   source?: "none" | "file" | "browser";
   browser?: string | null;
   imported_count?: number | null;
+}
+
+export interface ResolutionFallback {
+  requested_resolution: string;
+  fallback_resolution: string;
+  message: string;
 }

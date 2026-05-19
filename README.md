@@ -8,7 +8,7 @@
 
 - 单视频下载：解析标题、封面、时长、可用清晰度、字幕语言和自动字幕语言。
 - Playlist 批量下载：支持全选/多选条目，单项失败不会阻断整批；playlist 会自动保存到下载目录下的同名子文件夹。
-- 清晰度选择：默认 1080p；下载选项只需要选择清晰度。后端会优先下载该清晰度下常见兼容格式（优先 mp4/H.264 + m4a），若某个视频没有目标高度，会自动降级到低于目标的最高可用清晰度；若没有任何更低可用清晰度，任务会失败并给出明确原因。
+- 清晰度选择：默认 1080p；下载选项只需要选择清晰度。后端会优先下载该清晰度下常见兼容格式（优先 mp4/H.264 + m4a），若下载前确认某个视频没有目标高度，会自动降级到低于目标且不低于 720p 的最高可用清晰度；若没有可用降级清晰度，任务会失败并给出明确原因。
 - 字幕下载：支持视频+字幕、仅视频、仅字幕；字幕语言为可搜索下拉多选；支持人工字幕、自动字幕或两者都要。
 - Cookies：在“解析链接”面板内支持手动上传/清除 `cookies.txt`，也支持通过 yt-dlp 从本机浏览器自动导入 YouTube/Google 相关 cookies；用于需要登录态、年龄验证或 bot 校验的视频，不会在 UI 或日志中回显内容。
 - 界面简化：解析、下载选项和设置面板保留标题与核心控件，去掉重复说明文案。
@@ -18,7 +18,7 @@
 
 ## 技术栈
 
-- 后端：Python 3.12+、FastAPI、SQLModel、SQLite、yt-dlp、imageio-ffmpeg。
+- 后端：Python 3.12+、FastAPI、SQLModel、SQLite、yt-dlp、curl_cffi、imageio-ffmpeg。
 - 前端：React 18、TypeScript、Vite、lucide-react、原生 CSS。
 - 下载引擎：通过 yt-dlp Python API 执行分析和下载，使用 progress hooks 写入任务进度。
 
@@ -26,6 +26,7 @@
 
 - Python 3.12 或更高版本。
 - Node.js 20+ 推荐；也可以安装 Deno。新版本 YouTube 页面解析有时需要 JS runtime，后端诊断页会提示状态。
+- `curl_cffi` 由后端依赖安装，用于 yt-dlp 的浏览器/TLS impersonation；遇到 YouTube 媒体流 `HTTP 403 Forbidden` 时，后台会在当前清晰度下用 anti-403 profile 重试。
 - `ffmpeg` 用于合并 YouTube 高分辨率音视频流；如果系统 PATH 中没有 `ffmpeg`，后端会使用 `imageio-ffmpeg` 提供的内置后备执行文件。`ffprobe` 不是当前下载流程的必需依赖，不会在顶部状态中作为警告显示。若没有 `ffmpeg` 且目标清晰度只能通过分离音视频流获得，任务会失败并在任务中心显示原因。
 
 Windows 可用 `winget` 安装常见依赖：
@@ -117,6 +118,14 @@ $env:YTDL_DEFAULT_CONCURRENCY="8"
 $env:YTDL_DEFAULT_RESOLUTION="1080p"
 ```
 
+高级 YouTube 排障可选配置：
+```powershell
+$env:YTDL_YOUTUBE_PO_TOKEN="<web gvs po token>"
+$env:YTDL_YOUTUBE_VISITOR_DATA="<visitor data>"
+```
+
+这两个值只会传给 yt-dlp 的 YouTube extractor，用于处理少数仍需要有效 PO token 的媒体流 403；不会在 UI 中展示。
+
 前端设置面板支持通过系统文件夹对话框选择下载根目录，并支持修改并发数；并发标签直接标注“默认跟随 CPU Core 数量，可按需调整”，修改后会自动保存并立即调整后台 worker 数，无需重启服务。单次下载的目标清晰度由“下载选项”里的“清晰度”决定，实际格式由后端自动选择并显示在任务中心。未保存自定义值时，并发数默认使用本机逻辑 CPU core 数量，最低为 1，不额外设置上限。Playlist 任务会在下载根目录下自动创建同名子文件夹；如果选择的下载根目录为 `dir`，playlist 名称为 `list`，则保存到 `dir/list/`；单视频任务仍直接使用下载根目录。
 
 ## API 摘要
@@ -135,7 +144,7 @@ $env:YTDL_DEFAULT_RESOLUTION="1080p"
 - `POST /api/settings/download-dir/select`：打开本机文件夹选择对话框并保存下载根目录。
 - `POST /api/cookies`、`DELETE /api/cookies`：上传/清除 cookies。
 - `POST /api/cookies/from-browser`：通过 yt-dlp 从本机浏览器导入 YouTube/Google cookies；请求体可传 `{ "browser": "auto" }` 或指定 `edge`、`chrome`、`firefox` 等浏览器；当 Edge 锁库时，可在用户确认后传 `{ "browser": "edge", "close_browser_if_locked": true }` 关闭 Edge 并重试导入。
-- `GET /api/diagnostics`：依赖和运行状态诊断。
+- `GET /api/diagnostics`：依赖和运行状态诊断；包含 `impersonation_available` 与 `impersonation_targets`，用于确认 `curl_cffi` 是否启用。
 
 ## 测试
 
@@ -159,8 +168,9 @@ npm run build
 
 ## 常见问题
 
-- 分析成功但下载失败：先检查 `GET /api/diagnostics` 或顶部状态，确认 `yt-dlp`、JS runtime、`ffmpeg` 和 cookies 是否可用；`ffprobe` 为可选诊断项，不影响常规下载。
-- 高分辨率不可用：YouTube 常把视频和音频分离，缺少可用 `ffmpeg` 时无法合并。系统会优先使用内置 `imageio-ffmpeg`；如果某个视频没有所选高度，任务会自动降级到低于目标的最高可用清晰度，并在任务中心显示“已从 xx 自动降级到 yy”。若没有任何更低可用清晰度，任务会失败并显示原因。
+- 分析成功但下载失败：先检查 `GET /api/diagnostics` 或顶部状态，确认 `yt-dlp`、JS runtime、`ffmpeg`、cookies 和 `impersonation_available` 是否可用；`ffprobe` 为可选诊断项，不影响常规下载。
+- 媒体流 403 或连接重置：后台会在当前清晰度下继续重试并使用浏览器 impersonation 的 anti-403 profile；若仍失败，不会在下载过程中自动改清晰度从头下载，而是在任务中心提示可尝试的较低清晰度，由你决定是否重启。若浏览器能正常播放但应用仍失败，重新导入 cookies；仍失败时再配置 `YTDL_YOUTUBE_PO_TOKEN` 和 `YTDL_YOUTUBE_VISITOR_DATA`。
+- 高分辨率不可用：YouTube 常把视频和音频分离，缺少可用 `ffmpeg` 时无法合并。系统会优先使用内置 `imageio-ffmpeg`；如果某个视频在下载前确认没有所选高度，任务会自动降级到低于目标且不低于 720p 的最高可用清晰度，并在任务中心显示“已从 xx 自动降级到 yy”。若没有 720p 或更高的可用降级清晰度，任务会失败并显示原因。
 - 需要登录或遇到 bot 校验的视频失败：先在“解析链接”面板点击“从浏览器导入”。如果 Edge 正在运行导致 cookie 数据库被锁定，界面会提示确认关闭 Edge 后再导入；后台下载任务不会擅自关闭浏览器，遇到锁库时会提示你回到解析面板确认导入后再重启任务。如果 yt-dlp 直接解密 Edge cookies 失败，应用会尝试临时 headless Edge DevTools fallback；如果浏览器未登录 YouTube、系统密钥链不可用、YouTube 已轮换或拒绝当前登录 cookies，或自动导入仍失败，再改用手动上传有效的 `cookies.txt`。
 - 新任务立刻失败：查看任务中心失败原因；常见原因包括网络不可达、cookies 失效、视频不可用、格式被删除或 yt-dlp 需要更新。
 - 下载目录无文件：确认设置中的下载目录存在且有写入权限。

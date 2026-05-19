@@ -4,8 +4,11 @@ from types import SimpleNamespace
 from http.cookiejar import Cookie
 
 import pytest
+import yt_dlp
 from yt_dlp.cookies import YoutubeDLCookieJar
+from yt_dlp.networking.impersonate import ImpersonateTarget
 
+from app.config import AppSettings
 from app.schemas import DownloadOptions, FormatOption
 from app.ytdlp_service import BrowserCookieImportError, YtDlpService
 
@@ -22,6 +25,7 @@ def test_resolution_option_limits_best_video_height(monkeypatch, tmp_path: Path)
         "bv*[height=1080][ext=mp4][vcodec^=avc1]+ba[ext=m4a][acodec^=mp4a]/"
         "bv*[height=1080][ext=mp4]+ba[ext=m4a]/"
         "bv*[height=1080]+ba/"
+        "b[height=1080][protocol^=m3u8]/"
         "b[height=1080]"
     )
     assert "/best" not in opts["format"]
@@ -29,6 +33,142 @@ def test_resolution_option_limits_best_video_height(monkeypatch, tmp_path: Path)
     assert opts["merge_output_format"] == "mp4"
     assert opts["ffmpeg_location"] == str(tmp_path / "ffmpeg.exe")
     assert opts["skip_download"] is False
+
+
+def test_http_403_error_detection_handles_forbidden_video_data(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    assert service.is_http_403_error(
+        RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+    )
+    assert service.is_http_403_error(RuntimeError("HTTP Error 403: Forbidden"))
+    assert not service.is_http_403_error(RuntimeError("HTTP Error 404: Not Found"))
+
+
+def test_http_403_error_detection_checks_exception_context(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    try:
+        try:
+            raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+        except RuntimeError as exc:
+            raise AssertionError() from exc
+    except AssertionError as exc:
+        assert str(exc) == ""
+        assert service.is_http_403_error(exc)
+
+
+def test_readable_error_message_uses_context_when_top_level_message_is_empty(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    try:
+        try:
+            raise RuntimeError("inner failure")
+        except RuntimeError as exc:
+            raise AssertionError() from exc
+    except AssertionError as exc:
+        assert service.readable_error_message(exc) == "inner failure"
+
+
+def test_media_stream_blocked_detection_handles_connection_reset(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    assert service.is_media_stream_blocked_error(
+        RuntimeError(
+            "ERROR: [download] Got error: ('Connection aborted.', "
+            "ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。'))"
+        )
+    )
+    assert service.is_media_stream_blocked_error(
+        RuntimeError("ERROR: [download] Got error: Failed to perform, curl: (35) Recv failure: Connection was reset.")
+    )
+    assert not service.is_media_stream_blocked_error(RuntimeError("Requested format is not available."))
+
+
+def test_default_download_options_do_not_force_anti403_profile(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+    )
+
+    assert "impersonate" not in opts
+    assert opts.get("extractor_args", {}).get("youtube", {}).get("player_client") != ["web_safari", "default"]
+
+
+def test_anti403_download_options_use_safari_profile_accepted_by_ytdlp(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+        youtube_profile="anti403",
+    )
+
+    assert isinstance(opts["impersonate"], ImpersonateTarget)
+    assert str(opts["impersonate"]) == "safari"
+    assert opts["extractor_args"]["youtube"]["player_client"] == ["web_safari", "default"]
+    with yt_dlp.YoutubeDL(opts):
+        pass
+
+
+def test_po_token_env_config_is_passed_to_youtube_extractor_args(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("YTDL_YOUTUBE_PO_TOKEN", "TOKEN123")
+    monkeypatch.setenv("YTDL_YOUTUBE_VISITOR_DATA", "VISITOR456")
+    settings = AppSettings(
+        data_dir=tmp_path / "data",
+        download_dir=tmp_path / "downloads",
+        database_path=tmp_path / "data" / "app.sqlite3",
+    )
+    service = YtDlpService(
+        download_dir=tmp_path,
+        youtube_po_token=settings.youtube_po_token,
+        youtube_visitor_data=settings.youtube_visitor_data,
+    )
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="best"),
+        cookies_path=None,
+    )
+
+    assert opts["extractor_args"]["youtube"]["po_token"] == ["web.gvs+TOKEN123"]
+    assert opts["extractor_args"]["youtube"]["visitor_data"] == ["VISITOR456"]
+
+
+def test_download_retries_with_anti403_profile_after_http_403(monkeypatch, tmp_path: Path) -> None:
+    attempts: list[dict] = []
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            self.opts = opts
+            attempts.append(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def download(self, urls):
+            if len(attempts) == 1:
+                raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr("app.ytdlp_service.yt_dlp.YoutubeDL", FakeYoutubeDL)
+    service = YtDlpService(download_dir=tmp_path)
+
+    service.download(
+        "https://youtu.be/forbidden",
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        progress_hook=lambda payload: None,
+        should_cancel=lambda: False,
+    )
+
+    assert len(attempts) == 2
+    assert "impersonate" not in attempts[0]
+    assert str(attempts[1]["impersonate"]) == "safari"
 
 
 def test_bundled_ffmpeg_is_used_when_system_ffmpeg_is_missing(monkeypatch, tmp_path: Path) -> None:
@@ -99,7 +239,20 @@ def test_suggests_highest_available_resolution_below_requested(tmp_path: Path) -
     )
 
     assert fallback == "720p"
+    assert service.suggest_lower_resolution(
+        "1080p",
+        [FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4")],
+    ) is None
+    assert service.suggest_lower_resolution(
+        "1440p",
+        [
+            FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4"),
+            FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+            FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4"),
+        ],
+    ) == "1080p"
     assert service.suggest_lower_resolution("720p", []) is None
+    assert service.suggest_lower_resolution("720p", [FormatOption(format_id="18", label="360p", height=360)]) is None
     assert service.suggest_lower_resolution("best", [FormatOption(format_id="18", label="360p", height=360)]) is None
 
 
@@ -345,6 +498,7 @@ def test_extract_metadata_maps_playlist_entries_formats_and_subtitles(monkeypatc
                     }
                 ],
                 "formats": [
+                    {"format_id": "sb0", "height": 180, "ext": "mhtml", "vcodec": "none", "acodec": "none"},
                     {"format_id": "22", "height": 720, "ext": "mp4", "filesize": 10_000},
                     {"format_id": "137", "height": 1080, "ext": "mp4", "filesize_approx": 20_000},
                 ],

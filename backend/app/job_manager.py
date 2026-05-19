@@ -13,7 +13,7 @@ from .config import AppSettings
 from .events import EventBroker
 from .models import Job, JobEvent, JobItem, JobStatus, utc_now
 from .schemas import DownloadOptions
-from .ytdlp_service import DownloadCancelled, YtDlpService
+from .ytdlp_service import DownloadCancelled, MIN_AUTO_FALLBACK_HEIGHT, YtDlpService
 
 
 class JobManager:
@@ -383,11 +383,12 @@ class JobManager:
 
         try:
             options = self._options_for_available_resolution(session, item, options)
+            should_cancel = lambda: job.id in self._cancelled or job.id in self._paused or job.id in self._deleted
             self._download_with_cookie_refresh(
                 item.source_url,
                 options,
                 progress_hook,
-                should_cancel=lambda: job.id in self._cancelled or job.id in self._paused or job.id in self._deleted,
+                should_cancel=should_cancel,
                 download_dir=download_dir,
             )
         except DownloadCancelled:
@@ -401,8 +402,12 @@ class JobManager:
                 item.error = "Cancelled"
         except Exception as exc:
             item.status = JobStatus.failed.value
-            item.error = str(exc)
-            self._annotate_resolution_fallback(item, options, exc)
+            if YtDlpService.is_media_stream_blocked_error(exc):
+                item.error = self._media_stream_failure_message()
+                self._annotate_media_stream_fallback(item, options)
+            else:
+                item.error = YtDlpService.readable_error_message(exc)
+                self._annotate_resolution_fallback(item, options, exc)
         else:
             session.refresh(item)
             if item.actual_width is None and item.actual_height is None and item.output_path:
@@ -583,7 +588,7 @@ class JobManager:
 
         fallback = YtDlpService.suggest_lower_resolution(options.resolution, analysis.formats)
         if not fallback:
-            raise RuntimeError(f"当前没有 {options.resolution} 的视频，也没有低于该清晰度的可用视频格式。")
+            raise RuntimeError(self._no_supported_fallback_message(options.resolution))
 
         item.requested_resolution = options.resolution
         item.fallback_resolution = fallback
@@ -595,6 +600,15 @@ class JobManager:
 
     def _options_with_resolution(self, options: DownloadOptions, resolution: str) -> DownloadOptions:
         return options.model_copy(update={"resolution": resolution, "format_id": None})
+
+    def _annotate_media_stream_fallback(self, item: JobItem, options: DownloadOptions) -> None:
+        if options.format_id:
+            return
+        fallback = self._fallback_resolution_for_item(item, options)
+        if not fallback:
+            return
+        item.requested_resolution = options.resolution
+        item.fallback_resolution = fallback
 
     def _annotate_resolution_fallback(self, item: JobItem, options: DownloadOptions, exc: Exception) -> None:
         if options.format_id or not YtDlpService.is_requested_format_unavailable_error(exc):
@@ -615,6 +629,16 @@ class JobManager:
 
     def _resolution_fallback_message(self, requested_resolution: str, fallback_resolution: str) -> str:
         return f"当前没有 {requested_resolution} 的视频，低于选定分辨率的最高可用分辨率是 {fallback_resolution}。"
+
+    def _no_supported_fallback_message(self, requested_resolution: str) -> str:
+        return f"当前没有 {requested_resolution} 的视频，也没有 {MIN_AUTO_FALLBACK_HEIGHT}p 或更高的可用降级清晰度。"
+
+    def _media_stream_failure_message(self) -> str:
+        return (
+            "YouTube 拒绝了媒体流下载（HTTP 403）或重置了媒体流连接。后台已尝试在当前清晰度下继续下载和浏览器 impersonation；"
+            "请重新导入 cookies 后重试。若浏览器可正常播放但仍失败，请检查网络/代理是否能稳定访问 YouTube 媒体域名，"
+            "或配置有效的 YouTube PO token。"
+        )
 
     def _format_from_output_path(self, output_path: Path) -> str | None:
         suffix = output_path.suffix.lower().lstrip(".")

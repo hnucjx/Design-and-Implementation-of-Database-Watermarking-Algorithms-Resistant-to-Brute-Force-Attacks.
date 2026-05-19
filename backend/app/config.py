@@ -23,6 +23,8 @@ class AppSettings(BaseSettings):
     default_concurrency: int = Field(default_factory=default_cpu_concurrency)
     default_resolution: str = "1080p"
     default_subtitle_languages: list[str] = Field(default_factory=lambda: ["en"])
+    youtube_po_token: str | None = None
+    youtube_visitor_data: str | None = None
 
     @property
     def cookies_path(self) -> Path:

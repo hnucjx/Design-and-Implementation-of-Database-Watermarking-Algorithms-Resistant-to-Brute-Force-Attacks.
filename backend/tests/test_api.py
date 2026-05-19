@@ -13,7 +13,7 @@ from app.db import create_app_engine, init_db
 from app.main import create_app
 from app.models import Job, JobItem, Setting
 from app.schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
-from app.ytdlp_service import BrowserCookieImportError
+from app.ytdlp_service import BrowserCookieImportError, YtDlpService
 
 
 class FakeYtDlpService:
@@ -27,6 +27,8 @@ class FakeYtDlpService:
         return {
             "ffmpeg": True,
             "ffprobe": True,
+            "impersonation_available": True,
+            "impersonation_targets": ["safari"],
             "js_runtime": True,
             "js_runtime_name": "node",
             "js_runtime_version": "v20.11.1",
@@ -53,7 +55,10 @@ class FakeYtDlpService:
             title="Single",
             is_playlist=False,
             entries=[],
-            formats=[FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4")],
+            formats=[
+                FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+                FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4"),
+            ],
             subtitles=[],
             automatic_subtitles=[],
             ffmpeg={"ffmpeg": True, "ffprobe": True},
@@ -231,7 +236,7 @@ class NoLowerResolutionYtDlpService(FakeYtDlpService):
             title="No lower quality",
             is_playlist=False,
             entries=[],
-            formats=[FormatOption(format_id="271", label="1440p mp4", height=1440, ext="mp4")],
+            formats=[FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4")],
             subtitles=[],
             automatic_subtitles=[],
             ffmpeg={"ffmpeg": True, "ffprobe": True},
@@ -323,6 +328,167 @@ class DownloadBotChallengeYtDlpService(BrowserImportYtDlpService):
                 "Use --cookies-from-browser or --cookies for the authentication."
             )
         progress_hook({"status": "finished", "filename": f"{url}.mp4"})
+
+
+class DownloadHttp403ThenAnti403SuccessService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.profile_attempts: list[str] = []
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.profile_attempts.extend(["default", "anti403"])
+        progress_hook(
+            {
+                "status": "finished",
+                "filename": f"{url}.mp4",
+                "info_dict": {
+                    "requested_formats": [
+                        {
+                            "format_id": "22",
+                            "ext": "mp4",
+                            "vcodec": "avc1.64001f",
+                            "acodec": "none",
+                            "width": 1280,
+                            "height": 720,
+                        },
+                        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2"},
+                    ]
+                },
+            }
+        )
+
+    def resolution_from_progress_payload(self, payload):
+        return (1280, 720)
+
+    def actual_format_from_progress_payload(self, payload):
+        return "mp4 · avc1 + mp4a"
+
+
+class DownloadHttp403FallbackResolutionService(FakeYtDlpService):
+    def __init__(self, always_forbidden: bool = False):
+        super().__init__()
+        self.always_forbidden = always_forbidden
+        self.download_resolutions: list[str] = []
+
+    def extract_metadata(self, url, cookies_path=None):
+        return AnalyzeResponse(
+            url=url,
+            title="403 fallback",
+            is_playlist=False,
+            entries=[],
+            formats=[
+                FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4"),
+                FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+                FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4"),
+            ],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.download_resolutions.append(options.resolution)
+        if self.always_forbidden or options.resolution == "1080p":
+            raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+        height = int(options.resolution[:-1])
+        progress_hook(
+            {
+                "status": "finished",
+                "filename": f"{url}.mp4",
+                "info_dict": {
+                    "requested_formats": [
+                        {
+                            "format_id": "22",
+                            "ext": "mp4",
+                            "vcodec": "avc1.64001f",
+                            "acodec": "none",
+                            "width": int(height * 16 / 9),
+                            "height": height,
+                        },
+                        {"format_id": "140", "ext": "m4a", "vcodec": "none", "acodec": "mp4a.40.2"},
+                    ]
+                },
+            }
+        )
+
+    def resolution_from_progress_payload(self, payload):
+        height = int(self.download_resolutions[-1][:-1])
+        return (int(height * 16 / 9), height)
+
+    def actual_format_from_progress_payload(self, payload):
+        return "mp4 · avc1 + mp4a"
+
+
+class EmptyAssertionFromHttp403Service(FakeYtDlpService):
+    def extract_metadata(self, url, cookies_path=None):
+        return AnalyzeResponse(
+            url=url,
+            title="Empty assertion 403",
+            is_playlist=False,
+            entries=[],
+            formats=[FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4")],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        try:
+            raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+        except RuntimeError as exc:
+            raise AssertionError() from exc
+
+
+class MediaStreamBlockedUntilLowerResolutionService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.download_resolutions: list[str] = []
+
+    def extract_metadata(self, url, cookies_path=None):
+        return AnalyzeResponse(
+            url=url,
+            title="Media stream fallback",
+            is_playlist=False,
+            entries=[],
+            formats=[
+                FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4"),
+                FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+                FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4"),
+            ],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.download_resolutions.append(options.resolution)
+        if options.resolution == "1080p":
+            progress_hook(
+                {
+                    "status": "downloading",
+                    "downloaded_bytes": 5_242_880,
+                    "total_bytes": 10_485_760,
+                }
+            )
+            raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+        if options.resolution == "720p":
+            raise RuntimeError(
+                "ERROR: [download] Got error: ('Connection aborted.', "
+                "ConnectionResetError(10054, '远程主机强迫关闭了一个现有的连接。'))"
+            )
+        progress_hook(
+            {
+                "status": "finished",
+                "filename": f"{url}.mp4",
+                "info_dict": {"ext": "mp4", "vcodec": "avc1.42001E", "acodec": "mp4a.40.2", "width": 640, "height": 360},
+            }
+        )
+
+    def resolution_from_progress_payload(self, payload):
+        return (640, 360)
+
+    def actual_format_from_progress_payload(self, payload):
+        return "mp4 · avc1 + mp4a"
 
 
 def make_settings(tmp_path: Path) -> AppSettings:
@@ -456,7 +622,7 @@ def test_analyze_returns_video_metadata(tmp_path: Path) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["title"] == "Single"
-    assert payload["formats"][0]["format_id"] == "18"
+    assert payload["formats"][0]["format_id"] == "22"
     assert payload["ffmpeg"] == {"ffmpeg": True, "ffprobe": True}
 
 
@@ -649,6 +815,119 @@ def test_job_download_refreshes_browser_cookies_and_retries_bot_challenge(tmp_pa
     assert service.cookie_snapshots == ["STALE_COOKIE_VALUE", "SECRET_COOKIE_VALUE"]
 
 
+def test_job_download_recovers_when_anti403_profile_succeeds(tmp_path: Path) -> None:
+    service = DownloadHttp403ThenAnti403SuccessService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/http403",
+                "options": {"mode": "video_subtitles", "resolution": "720p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "succeeded")
+
+    assert service.profile_attempts == ["default", "anti403"]
+    assert payload["items"][0]["status"] == "succeeded"
+    assert payload["items"][0]["actual_width"] == 1280
+    assert payload["items"][0]["actual_height"] == 720
+    assert payload["items"][0]["actual_format"] == "mp4 · avc1 + mp4a"
+
+
+def test_job_download_suggests_lower_resolution_after_http_403_without_auto_restart(tmp_path: Path) -> None:
+    service = DownloadHttp403FallbackResolutionService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/http403",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "failed")
+
+    item = payload["items"][0]
+    assert service.download_resolutions == ["1080p"]
+    assert item["status"] == "failed"
+    assert item["requested_resolution"] == "1080p"
+    assert item["fallback_resolution"] == "720p"
+    assert item["resolution_fallback"]["message"] == "当前下载未能在 1080p 下完成，可尝试以 720p 重启。"
+    assert item["actual_width"] is None
+    assert item["actual_height"] is None
+
+
+def test_job_download_reports_clear_error_when_all_http_403_retries_fail(tmp_path: Path) -> None:
+    service = DownloadHttp403FallbackResolutionService(always_forbidden=True)
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/http403",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "failed")
+
+    item = payload["items"][0]
+    assert service.download_resolutions == ["1080p"]
+    assert "YouTube 拒绝了媒体流下载（HTTP 403）" in item["error"]
+    assert "浏览器 impersonation" in item["error"]
+    assert "重新导入 cookies" in item["error"]
+    assert item["requested_resolution"] == "1080p"
+    assert item["fallback_resolution"] == "720p"
+
+
+def test_job_download_does_not_store_empty_error_when_http_403_is_wrapped(tmp_path: Path) -> None:
+    service = EmptyAssertionFromHttp403Service()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/wrapped403",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "failed")
+
+    item = payload["items"][0]
+    assert item["error"]
+    assert "YouTube 拒绝了媒体流下载（HTTP 403）" in item["error"]
+
+
+def test_job_download_does_not_auto_downgrade_after_mid_download_failure(tmp_path: Path) -> None:
+    service = MediaStreamBlockedUntilLowerResolutionService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/reset-until-lower",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "failed")
+
+    item = payload["items"][0]
+    assert service.download_resolutions == ["1080p"]
+    assert item["status"] == "failed"
+    assert item["downloaded_bytes"] == 5_242_880
+    assert item["total_bytes"] == 10_485_760
+    assert item["requested_resolution"] == "1080p"
+    assert item["fallback_resolution"] == "720p"
+    assert item["resolution_fallback"]["message"] == "当前下载未能在 1080p 下完成，可尝试以 720p 重启。"
+    assert item["actual_width"] is None
+    assert item["actual_height"] is None
+
+
 def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -659,6 +938,21 @@ def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
     assert payload["cookies_enabled"] is False
     assert payload["dependencies"]["ffmpeg"] is True
     assert payload["dependencies"]["js_runtime_name"] == "node"
+    assert payload["dependencies"]["impersonation_available"] is True
+    assert payload["dependencies"]["impersonation_targets"] == ["safari"]
+
+
+def test_diagnostics_returns_impersonation_status_from_real_service(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_available_impersonation_targets", lambda: ["safari", "chrome"])
+    client = make_client(tmp_path, service=service)
+
+    response = client.get("/api/diagnostics")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dependencies"]["impersonation_available"] is True
+    assert payload["dependencies"]["impersonation_targets"] == ["safari", "chrome"]
 
 
 def test_job_read_includes_realtime_progress_fields(tmp_path: Path) -> None:
@@ -857,7 +1151,7 @@ def test_unavailable_resolution_without_lower_format_fails_with_clear_error(tmp_
 
     item = payload["items"][0]
     assert item["status"] == "failed"
-    assert item["error"] == "当前没有 1080p 的视频，也没有低于该清晰度的可用视频格式。"
+    assert item["error"] == "当前没有 1080p 的视频，也没有 720p 或更高的可用降级清晰度。"
     assert service.download_called is False
 
 
@@ -882,8 +1176,8 @@ def test_restart_job_with_resolution_updates_job_options(tmp_path: Path) -> None
         item = session.get(JobItem, "job-resolution-item")
         assert item is not None
         assert item.options_json is None
-        assert item.requested_resolution == "720p"
-        assert item.fallback_resolution == "360p"
+        assert item.requested_resolution is None
+        assert item.fallback_resolution is None
 
 
 def test_restart_playlist_item_with_resolution_only_updates_item_options(tmp_path: Path) -> None:
@@ -945,8 +1239,8 @@ def test_restart_playlist_item_with_resolution_only_updates_item_options(tmp_pat
         assert item is not None
         assert item.options_json is not None
         assert DownloadOptions.model_validate_json(item.options_json).resolution == "720p"
-        assert item.requested_resolution == "720p"
-        assert item.fallback_resolution == "360p"
+        assert item.requested_resolution is None
+        assert item.fallback_resolution is None
 
 
 def test_job_can_be_paused_restarted_and_deleted(tmp_path: Path) -> None:

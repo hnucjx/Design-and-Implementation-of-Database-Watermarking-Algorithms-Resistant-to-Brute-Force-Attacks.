@@ -46,7 +46,11 @@ def create_app(
     engine = create_app_engine(app_settings)
     init_db(engine)
     broker = EventBroker()
-    service = ytdlp_service or YtDlpService(app_settings.download_dir)
+    service = ytdlp_service or YtDlpService(
+        app_settings.download_dir,
+        youtube_po_token=app_settings.youtube_po_token,
+        youtube_visitor_data=app_settings.youtube_visitor_data,
+    )
     with Session(engine) as session:
         _apply_stored_settings(session, app_settings, service)
     manager = JobManager(engine, app_settings, service, broker)
@@ -453,7 +457,7 @@ def _resolution_fallback(
     if status != "failed":
         message = f"已从 {requested_resolution} 自动降级到 {fallback_resolution}。"
     else:
-        message = f"当前没有 {requested_resolution} 的视频，低于选定分辨率的最高可用分辨率是 {fallback_resolution}。"
+        message = f"当前下载未能在 {requested_resolution} 下完成，可尝试以 {fallback_resolution} 重启。"
     return ResolutionFallback(
         requested_resolution=requested_resolution,
         fallback_resolution=fallback_resolution,

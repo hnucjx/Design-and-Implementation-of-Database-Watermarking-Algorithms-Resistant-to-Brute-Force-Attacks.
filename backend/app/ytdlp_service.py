@@ -16,6 +16,7 @@ import urllib.request
 
 import yt_dlp
 from yt_dlp.cookies import YoutubeDLCookieJar, extract_cookies_from_browser
+from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.version import __version__ as yt_dlp_version
 
 from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
@@ -36,6 +37,7 @@ COOKIE_REQUIRED_AUTH_HINTS = (
     "confirm your age",
     "age-restricted",
 )
+MIN_AUTO_FALLBACK_HEIGHT = 720
 
 
 class DownloadCancelled(RuntimeError):
@@ -75,17 +77,27 @@ class BrowserCookieImportError(RuntimeError):
 
 
 class YtDlpService:
-    def __init__(self, download_dir: Path) -> None:
+    def __init__(
+        self,
+        download_dir: Path,
+        youtube_po_token: str | None = None,
+        youtube_visitor_data: str | None = None,
+    ) -> None:
         self.download_dir = download_dir
+        self.youtube_po_token = youtube_po_token
+        self.youtube_visitor_data = youtube_visitor_data
 
     def get_ffmpeg_status(self) -> dict[str, bool]:
         return {"ffmpeg": self._ffmpeg_executable() is not None, "ffprobe": shutil.which("ffprobe") is not None}
 
-    def get_dependency_status(self) -> dict[str, bool | str | None]:
+    def get_dependency_status(self) -> dict[str, bool | str | None | list[str]]:
         ffmpeg = self.get_ffmpeg_status()
         runtime = self._detect_js_runtime()
+        impersonation_targets = self._available_impersonation_targets()
         return {
             **ffmpeg,
+            "impersonation_available": bool(impersonation_targets),
+            "impersonation_targets": impersonation_targets,
             "js_runtime": runtime is not None,
             "js_runtime_name": runtime[0] if runtime else None,
             "js_runtime_version": runtime[2] if runtime else None,
@@ -385,6 +397,7 @@ class YtDlpService:
         options: DownloadOptions,
         cookies_path: Path | None,
         download_dir: Path | None = None,
+        youtube_profile: str = "default",
     ) -> dict[str, Any]:
         target_dir = download_dir or self.download_dir
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -404,6 +417,11 @@ class YtDlpService:
             "max_sleep_interval": YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS,
         }
         ydl_opts.update(self._javascript_runtime_options())
+        youtube_extractor_args = self._youtube_extractor_args(youtube_profile)
+        if youtube_extractor_args:
+            ydl_opts["extractor_args"] = {"youtube": youtube_extractor_args}
+        if youtube_profile == "anti403":
+            ydl_opts["impersonate"] = ImpersonateTarget.from_str("safari")
 
         if options.speed_limit_kbps:
             ydl_opts["ratelimit"] = options.speed_limit_kbps * 1024
@@ -443,7 +461,34 @@ class YtDlpService:
         cookies_path: Path | None = None,
         download_dir: Path | None = None,
     ) -> None:
-        ydl_opts = self.build_download_options(options, cookies_path, download_dir=download_dir)
+        try:
+            self._download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, "default")
+        except Exception as exc:
+            if not self.is_media_stream_blocked_error(exc):
+                raise
+            try:
+                self._download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, "anti403")
+            except Exception as retry_exc:
+                if self.is_media_stream_blocked_error(retry_exc):
+                    raise retry_exc from exc
+                raise
+
+    def _download_once(
+        self,
+        url: str,
+        options: DownloadOptions,
+        progress_hook: Callable[[dict[str, Any]], None],
+        should_cancel: Callable[[], bool],
+        cookies_path: Path | None,
+        download_dir: Path | None,
+        youtube_profile: str,
+    ) -> None:
+        ydl_opts = self.build_download_options(
+            options,
+            cookies_path,
+            download_dir=download_dir,
+            youtube_profile=youtube_profile,
+        )
 
         def guarded_hook(payload: dict[str, Any]) -> None:
             if should_cancel():
@@ -538,14 +583,18 @@ class YtDlpService:
         return int(match.group(1)), int(match.group(2))
 
     @staticmethod
-    def suggest_lower_resolution(requested_resolution: str, formats: list[FormatOption]) -> str | None:
+    def suggest_lower_resolution(
+        requested_resolution: str,
+        formats: list[FormatOption],
+        min_height: int = MIN_AUTO_FALLBACK_HEIGHT,
+    ) -> str | None:
         requested_height = YtDlpService._resolution_height(requested_resolution)
         if requested_height is None:
             return None
         lower_heights = {
             int(format.height)
             for format in formats
-            if format.height is not None and int(format.height) < requested_height
+            if format.height is not None and min_height <= int(format.height) < requested_height
         }
         if not lower_heights:
             return None
@@ -556,10 +605,61 @@ class YtDlpService:
         return "requested format is not available" in str(exc).lower()
 
     @staticmethod
+    def is_http_403_error(exc: BaseException) -> bool:
+        for current in YtDlpService._exception_chain(exc):
+            message = str(current).lower()
+            if "http error 403" in message or ("403" in message and "forbidden" in message):
+                return True
+        return False
+
+    @staticmethod
+    def is_media_stream_blocked_error(exc: BaseException) -> bool:
+        return YtDlpService.is_http_403_error(exc) or YtDlpService.is_connection_reset_error(exc)
+
+    @staticmethod
+    def is_connection_reset_error(exc: BaseException) -> bool:
+        reset_hints = (
+            "connection reset",
+            "connectionreseterror",
+            "connection was reset",
+            "recv failure",
+            "curl: (35)",
+            "10054",
+            "远程主机强迫关闭",
+        )
+        return any(
+            any(hint in str(current).lower() for hint in reset_hints)
+            for current in YtDlpService._exception_chain(exc)
+        )
+
+    @staticmethod
+    def readable_error_message(exc: BaseException) -> str:
+        for current in YtDlpService._exception_chain(exc):
+            message = str(current).strip()
+            if message:
+                return message
+        return f"{type(exc).__name__}（底层错误没有提供具体信息）"
+
+    @staticmethod
+    def _exception_chain(exc: BaseException):
+        seen: set[int] = set()
+        pending: list[BaseException | None] = [exc]
+        while pending:
+            current = pending.pop(0)
+            if current is None or id(current) in seen:
+                continue
+            seen.add(id(current))
+            yield current
+            pending.extend([current.__cause__, current.__context__])
+
+    @staticmethod
     def is_cookie_required_error(exc: Exception) -> bool:
-        message = str(exc).lower()
-        cookie_hint = "cookies-from-browser" in message or "--cookies" in message or "cookie" in message
-        return cookie_hint and any(hint in message for hint in COOKIE_REQUIRED_AUTH_HINTS)
+        for current in YtDlpService._exception_chain(exc):
+            message = str(current).lower()
+            cookie_hint = "cookies-from-browser" in message or "--cookies" in message or "cookie" in message
+            if cookie_hint and any(hint in message for hint in COOKIE_REQUIRED_AUTH_HINTS):
+                return True
+        return False
 
     def _format_selector(self, options: DownloadOptions, allow_merge: bool = True) -> str:
         if not allow_merge:
@@ -574,6 +674,7 @@ class YtDlpService:
                 f"bv*[height={height}][ext=mp4][vcodec^=avc1]+ba[ext=m4a][acodec^=mp4a]/"
                 f"bv*[height={height}][ext=mp4]+ba[ext=m4a]/"
                 f"bv*[height={height}]+ba/"
+                f"b[height={height}][protocol^=m3u8]/"
                 f"b[height={height}]"
             )
         return "bv*+ba/b"
@@ -588,6 +689,23 @@ class YtDlpService:
 
     def _requires_ffmpeg(self, options: DownloadOptions) -> bool:
         return bool(options.format_id)
+
+    def _youtube_extractor_args(self, youtube_profile: str) -> dict[str, list[str]]:
+        args: dict[str, list[str]] = {}
+        if youtube_profile == "anti403":
+            args["player_client"] = ["web_safari", "default"]
+        if self.youtube_po_token:
+            args["po_token"] = [f"web.gvs+{self.youtube_po_token}"]
+        if self.youtube_visitor_data:
+            args["visitor_data"] = [self.youtube_visitor_data]
+        return args
+
+    def _available_impersonation_targets(self) -> list[str]:
+        try:
+            from yt_dlp.networking._curlcffi import CurlCFFIRH
+        except Exception:
+            return []
+        return sorted({target.client for target in CurlCFFIRH._SUPPORTED_IMPERSONATE_TARGET_MAP})
 
     def _ffmpeg_executable(self) -> str | None:
         system_ffmpeg = shutil.which("ffmpeg")
@@ -715,6 +833,8 @@ class YtDlpService:
         mapped: list[FormatOption] = []
         seen: set[str] = set()
         for fmt in formats:
+            if self._is_storyboard_or_image_format(fmt):
+                continue
             format_id = str(fmt.get("format_id") or "")
             if not format_id or format_id in seen:
                 continue
@@ -741,6 +861,11 @@ class YtDlpService:
                 )
             )
         return mapped
+
+    def _is_storyboard_or_image_format(self, fmt: dict[str, Any]) -> bool:
+        vcodec = fmt.get("vcodec")
+        acodec = fmt.get("acodec")
+        return vcodec == "none" and acodec == "none"
 
     def _map_subtitles(self, subtitles: dict[str, list[dict[str, Any]]]) -> list[SubtitleOption]:
         mapped: list[SubtitleOption] = []

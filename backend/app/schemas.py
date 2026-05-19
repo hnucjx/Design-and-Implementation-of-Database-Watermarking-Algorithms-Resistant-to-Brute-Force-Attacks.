@@ -178,4 +178,4 @@ class BrowserCookieImportRequest(BaseModel):
 
 class DiagnosticsRead(BaseModel):
     cookies_enabled: bool
-    dependencies: dict[str, bool | str | None]
+    dependencies: dict[str, bool | str | None | list[str]]

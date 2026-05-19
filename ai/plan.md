@@ -511,3 +511,26 @@ Thumbs.db
 - 关闭 Edge 仅在 Windows 上实现；其他系统遇到锁库时显示手动关闭后重试提示。
 - 手动上传 cookies 功能保持不变。
 - 修复完成后提交信息使用 `fix: handle locked edge cookies import` 并推送 `origin main`。
+
+---
+
+# 2026-05-18 +08:00 - Requested Format 不可用自动降级修复计划
+
+## Summary
+根因是：playlist 解析采用 flat metadata 时，前端无法可靠知道每个子视频是否支持所选分辨率；后端下载时又使用“精确高度”格式选择器，所以某个子视频缺少 `1080p/1440p` 时会触发 yt-dlp 的 `Requested format is not available`。本次按用户选择改为：下载前预检并自动降级到低于所选分辨率的最高可用分辨率，同时在任务中心明确提示“已从 xx 自动降级到 yy”。
+
+## Key Changes
+- 后端增加每个任务项的分辨率预检：仅针对数字清晰度策略；若所选高度不可用但存在更低可用高度，自动用最高的低一级分辨率下载，并记录 `requested_resolution`、`fallback_resolution` 与友好提示。
+- playlist 每个子视频独立预检和降级；合集总行显示部分视频已自动降级，展开后显示每个子视频的具体降级信息。
+- 具体 `format_id` 不做自动降级；metadata/cookies/network 失败时不伪装成分辨率问题。
+- 更新 `README.md`，说明数字清晰度会自动降级并提示，具体格式不会自动替换。
+
+## Test Plan
+- 后端：覆盖 playlist 子视频请求 `1080p` 但仅有 `720p/360p` 时自动改用 `720p`、记录降级字段、无更低分辨率时给友好失败、具体 `format_id` 不降级。
+- 前端：覆盖单视频和 playlist 子视频自动降级提示；失败无 fallback 时不显示重启/降级按钮。
+- 全量验证：`python -m pytest backend\tests -q`、`npm test`、`npm run build`、`git diff --check`。
+
+## Assumptions
+- 自动降级只适用于数字清晰度策略，不适用于具体 `format_id`。
+- 自动降级必须可见，不能静默发生。
+- playlist 允许不同子视频降级到不同分辨率。

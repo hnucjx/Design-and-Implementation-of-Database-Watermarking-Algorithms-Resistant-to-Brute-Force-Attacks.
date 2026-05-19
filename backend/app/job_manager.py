@@ -1,5 +1,6 @@
 import asyncio
 import json
+import threading
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ class JobManager:
         self._paused: set[str] = set()
         self._deleted: set[str] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._cookie_import_lock = threading.Lock()
 
     async def start(self) -> None:
         if self._queue is not None:
@@ -374,12 +376,11 @@ class JobManager:
                 )
 
         try:
-            self.service.download(
+            self._download_with_cookie_refresh(
                 item.source_url,
                 options,
                 progress_hook,
                 should_cancel=lambda: job.id in self._cancelled or job.id in self._paused or job.id in self._deleted,
-                cookies_path=self._cookies_path(),
                 download_dir=download_dir,
             )
         except DownloadCancelled:
@@ -423,6 +424,63 @@ class JobManager:
                     "error": item.error,
                 }
             )
+
+    def _download_with_cookie_refresh(
+        self,
+        url: str,
+        options: DownloadOptions,
+        progress_hook,
+        should_cancel,
+        download_dir: Path,
+    ) -> None:
+        try:
+            self.service.download(
+                url,
+                options,
+                progress_hook,
+                should_cancel=should_cancel,
+                cookies_path=self._cookies_path(),
+                download_dir=download_dir,
+            )
+        except Exception as exc:
+            if not YtDlpService.is_cookie_required_error(exc):
+                raise
+            try:
+                self._import_browser_cookies_after_cookie_error()
+            except Exception as import_exc:
+                raise RuntimeError(self._cookie_refresh_failed_message(exc, import_exc)) from import_exc
+            try:
+                self.service.download(
+                    url,
+                    options,
+                    progress_hook,
+                    should_cancel=should_cancel,
+                    cookies_path=self._cookies_path(),
+                    download_dir=download_dir,
+                )
+            except Exception as retry_exc:
+                if YtDlpService.is_cookie_required_error(retry_exc):
+                    raise RuntimeError(self._cookie_refresh_did_not_satisfy_youtube_message(retry_exc)) from retry_exc
+                raise
+
+    def _import_browser_cookies_after_cookie_error(self) -> None:
+        with self._cookie_import_lock:
+            self.service.import_browser_cookies("auto", self.settings.cookies_path)
+
+    def _cookie_refresh_failed_message(self, original_error: Exception, import_error: Exception) -> str:
+        return (
+            "YouTube 要求重新登录或通过 bot 校验，后台已尝试刷新浏览器 cookies，但自动导入失败："
+            f"{import_error}。请确认浏览器已登录 YouTube 后，在解析面板点击“从浏览器导入”；"
+            "如果提示 Edge cookies 被锁定，请使用“关闭 Edge 并导入”。"
+            f" 原始 yt-dlp 错误：{original_error}"
+        )
+
+    def _cookie_refresh_did_not_satisfy_youtube_message(self, retry_error: Exception) -> str:
+        return (
+            "后台已重新导入浏览器 cookies 并重试，但 YouTube 仍要求登录或 bot 校验。"
+            "请在浏览器确认账号可正常播放该视频，重新导入 cookies，或手动上传有效的 cookies.txt。"
+            f" yt-dlp 错误：{retry_error}"
+        )
 
     def _finish_job(self, session: Session, job: Job) -> None:
         if job.id in self._deleted:

@@ -337,6 +337,7 @@ def test_extract_metadata_maps_playlist_entries_formats_and_subtitles(monkeypatc
     assert captured_opts["cookiefile"] == str(tmp_path / "cookies.txt")
     assert captured_opts["ignoreconfig"] is True
     assert captured_opts["extract_flat"] == "in_playlist"
+    assert captured_opts["sleep_interval_requests"] == 1.0
     assert result.is_playlist is True
     assert result.title == "Course"
     assert result.entries[0].title == "Intro"
@@ -355,6 +356,31 @@ def test_download_options_ignore_user_ytdlp_config(tmp_path: Path) -> None:
     )
 
     assert opts["ignoreconfig"] is True
+
+
+def test_download_options_apply_conservative_youtube_request_pacing(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="best"),
+        cookies_path=None,
+    )
+
+    assert opts["sleep_interval_requests"] == 1.0
+    assert opts["sleep_interval"] == 2.0
+    assert opts["max_sleep_interval"] == 5.0
+
+
+def test_cookie_required_error_detection_handles_youtube_bot_challenge(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    assert service.is_cookie_required_error(
+        RuntimeError(
+            "ERROR: [youtube] G9MxNwUoSt0: Sign in to confirm you’re not a bot. "
+            "Use --cookies-from-browser or --cookies for the authentication."
+        )
+    )
+    assert not service.is_cookie_required_error(RuntimeError("Requested format is not available."))
 
 
 def _cookie(domain: str, name: str, value: str) -> Cookie:

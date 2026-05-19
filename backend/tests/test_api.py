@@ -99,6 +99,89 @@ class FormatUnavailableYtDlpService(FakeYtDlpService):
         )
 
 
+class AutoFallbackYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.download_options: list[DownloadOptions] = []
+
+    def extract_metadata(self, url, cookies_path=None):
+        if "playlist" in url:
+            return AnalyzeResponse(
+                url=url,
+                title="Mixed quality playlist",
+                is_playlist=True,
+                entries=[
+                    VideoEntry(index=1, id="one", title="Part one", url="https://youtu.be/one"),
+                    VideoEntry(index=2, id="two", title="Part two", url="https://youtu.be/two"),
+                ],
+                formats=[],
+                subtitles=[],
+                automatic_subtitles=[],
+                ffmpeg={"ffmpeg": True, "ffprobe": True},
+            )
+        if "two" in url:
+            return AnalyzeResponse(
+                url=url,
+                title="Part two",
+                is_playlist=False,
+                entries=[],
+                formats=[
+                    FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+                    FormatOption(format_id="18", label="360p mp4", height=360, ext="mp4"),
+                ],
+                subtitles=[],
+                automatic_subtitles=[],
+                ffmpeg={"ffmpeg": True, "ffprobe": True},
+            )
+        return AnalyzeResponse(
+            url=url,
+            title="Part one",
+            is_playlist=False,
+            entries=[],
+            formats=[
+                FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4"),
+                FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+            ],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.download_options.append(options)
+        if "two" in url and options.resolution == "1080p":
+            raise RuntimeError(
+                "ERROR: [youtube] -lp1p-gcx9I: Requested format is not available. "
+                "Use --list-formats for a list of available formats"
+            )
+        progress_hook({"status": "finished", "filename": f"{url}.mp4"})
+
+
+class NoLowerResolutionYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.download_called = False
+
+    def extract_metadata(self, url, cookies_path=None):
+        return AnalyzeResponse(
+            url=url,
+            title="No lower quality",
+            is_playlist=False,
+            entries=[],
+            formats=[FormatOption(format_id="271", label="1440p mp4", height=1440, ext="mp4")],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.download_called = True
+        raise RuntimeError(
+            "ERROR: [youtube] no-lower: Requested format is not available. "
+            "Use --list-formats for a list of available formats"
+        )
+
+
 class BrowserImportYtDlpService(FakeYtDlpService):
     def __init__(self):
         super().__init__()
@@ -143,6 +226,28 @@ class LockedEdgeBrowserImportService(BotChallengeYtDlpService):
             "browser": "edge",
             "imported_count": 4,
         }
+
+
+class DownloadBotChallengeYtDlpService(BrowserImportYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.cookie_snapshots: list[str | None] = []
+
+    def resolution_from_progress_payload(self, payload):
+        return None
+
+    def detect_file_resolution(self, file_path):
+        return None
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        cookie_snapshot = Path(cookies_path).read_text(encoding="utf-8") if cookies_path else None
+        self.cookie_snapshots.append(cookie_snapshot)
+        if len(self.cookie_snapshots) == 1:
+            raise RuntimeError(
+                "ERROR: [youtube] G9MxNwUoSt0: Sign in to confirm you’re not a bot. "
+                "Use --cookies-from-browser or --cookies for the authentication."
+            )
+        progress_hook({"status": "finished", "filename": f"{url}.mp4"})
 
 
 def make_settings(tmp_path: Path) -> AppSettings:
@@ -445,6 +550,28 @@ def test_analyze_returns_structured_locked_edge_cookie_error(tmp_path: Path) -> 
     assert detail["browser"] == "edge"
     assert "Edge" in detail["message"]
     assert service.imports == [("auto", False)]
+
+
+def test_job_download_refreshes_browser_cookies_and_retries_bot_challenge(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    settings.ensure_directories()
+    settings.cookies_path.write_text("STALE_COOKIE_VALUE", encoding="utf-8")
+    service = DownloadBotChallengeYtDlpService()
+
+    with TestClient(create_app(settings=settings, ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/G9MxNwUoSt0",
+                "options": {"mode": "video_subtitles", "resolution": "720p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "succeeded")
+
+    assert payload["items"][0]["status"] == "succeeded"
+    assert service.imports == ["auto"]
+    assert service.cookie_snapshots == ["STALE_COOKIE_VALUE", "SECRET_COOKIE_VALUE"]
 
 
 def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:

@@ -23,6 +23,19 @@ from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOpt
 
 AUTO_BROWSER_COOKIE_CANDIDATES = ["edge", "chrome", "firefox", "brave", "chromium", "vivaldi", "opera"]
 YOUTUBE_COOKIE_DOMAIN_SUFFIXES = ("youtube.com", "google.com")
+YTDLP_REQUEST_SLEEP_SECONDS = 1.0
+YTDLP_DOWNLOAD_SLEEP_SECONDS = 2.0
+YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS = 5.0
+COOKIE_REQUIRED_AUTH_HINTS = (
+    "sign in to confirm",
+    "confirm you're not a bot",
+    "confirm you’re not a bot",
+    "not a bot",
+    "login required",
+    "only available for registered users",
+    "confirm your age",
+    "age-restricted",
+)
 
 
 class DownloadCancelled(RuntimeError):
@@ -339,6 +352,7 @@ class YtDlpService:
             "extract_flat": "in_playlist",
             "skip_download": True,
             "color": "no_color",
+            "sleep_interval_requests": YTDLP_REQUEST_SLEEP_SECONDS,
         }
         opts.update(self._javascript_runtime_options())
         if cookies_path:
@@ -385,6 +399,9 @@ class YtDlpService:
             "overwrites": not options.skip_existing,
             "outtmpl": str(target_dir / "%(title).200B [%(id)s].%(ext)s"),
             "color": "no_color",
+            "sleep_interval_requests": YTDLP_REQUEST_SLEEP_SECONDS,
+            "sleep_interval": YTDLP_DOWNLOAD_SLEEP_SECONDS,
+            "max_sleep_interval": YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS,
         }
         ydl_opts.update(self._javascript_runtime_options())
 
@@ -498,6 +515,12 @@ class YtDlpService:
     @staticmethod
     def is_requested_format_unavailable_error(exc: Exception) -> bool:
         return "requested format is not available" in str(exc).lower()
+
+    @staticmethod
+    def is_cookie_required_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        cookie_hint = "cookies-from-browser" in message or "--cookies" in message or "cookie" in message
+        return cookie_hint and any(hint in message for hint in COOKIE_REQUIRED_AUTH_HINTS)
 
     def _format_selector(self, options: DownloadOptions, allow_merge: bool = True) -> str:
         if not allow_merge:

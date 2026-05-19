@@ -328,8 +328,7 @@ def _cookie_status_from_import(result: Any) -> CookieStatus:
 
 
 def _is_cookie_required_error(exc: Exception) -> bool:
-    message = str(exc).lower()
-    return "sign in to confirm" in message and ("cookies-from-browser" in message or "cookies" in message)
+    return YtDlpService.is_cookie_required_error(exc)
 
 
 def _cookie_import_status_code(exc: BrowserCookieImportError) -> int:

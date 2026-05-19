@@ -14,11 +14,11 @@
 - 界面简化：解析、下载选项和设置面板保留标题与核心控件，去掉重复说明文案。
 - 任务中心：任务数量显示在标题同行右侧；每个任务显示开始时间、结束时间、实际下载分辨率和实际格式，playlist 合集行会统一显示具体分辨率/格式或“混合分辨率”“混合格式”；支持单任务和批量暂停、重启、删除；删除任务默认保留已下载文件，也可勾选“删除任务时同时删除已下载视频”；单视频任务不重复显示子项详情；playlist 任务支持展开/折叠，运行中或失败时自动展开，并显示每个子视频的百分比、大小、已用时、预计剩余时间、下载速度、状态、失败原因、自动降级提示、实际分辨率和实际格式。
 - 可靠性选项：跳过已下载、限速、重试次数、保存 metadata、保存缩略图、完成后通知开关；限速默认 2048 KB/s，清空输入表示不限速。
-- 运行诊断：顶部状态显示 `ffmpeg` 和 cookies；诊断接口还会返回 `yt-dlp` 版本和 JS runtime 状态。系统 `ffmpeg` 缺失时会优先使用内置 `imageio-ffmpeg` 后备执行文件。
+- 运行诊断：顶部状态显示 `ffmpeg` 和 cookies；诊断接口还会返回 `yt-dlp` 版本、JS runtime、浏览器 impersonation 和 PO-token provider 状态。系统 `ffmpeg` 缺失时会优先使用内置 `imageio-ffmpeg` 后备执行文件。
 
 ## 技术栈
 
-- 后端：Python 3.12+、FastAPI、SQLModel、SQLite、yt-dlp、curl_cffi、imageio-ffmpeg。
+- 后端：Python 3.12+、FastAPI、SQLModel、SQLite、yt-dlp、curl_cffi、yt-dlp-getpot-wpc、imageio-ffmpeg。
 - 前端：React 18、TypeScript、Vite、lucide-react、原生 CSS。
 - 下载引擎：通过 yt-dlp Python API 执行分析和下载，使用 progress hooks 写入任务进度。
 
@@ -26,7 +26,7 @@
 
 - Python 3.12 或更高版本。
 - Node.js 20+ 推荐；也可以安装 Deno。新版本 YouTube 页面解析有时需要 JS runtime，后端诊断页会提示状态。
-- `curl_cffi` 由后端依赖安装，用于 yt-dlp 的浏览器/TLS impersonation；遇到 YouTube 媒体流 `HTTP 403 Forbidden` 时，后台会在当前清晰度下用 anti-403 profile 重试。
+- `curl_cffi` 由后端依赖安装，用于 yt-dlp 的浏览器/TLS impersonation；`yt-dlp-getpot-wpc` 默认安装，用于 yt-dlp 自动获取 YouTube GVS PO token。遇到 YouTube 媒体流 `HTTP 403 Forbidden` 或连接重置时，后台会在当前清晰度下依次尝试 PO-token provider、Safari/Chrome impersonation、断点续传和更稳的传输参数。
 - `ffmpeg` 用于合并 YouTube 高分辨率音视频流；如果系统 PATH 中没有 `ffmpeg`，后端会使用 `imageio-ffmpeg` 提供的内置后备执行文件。`ffprobe` 不是当前下载流程的必需依赖，不会在顶部状态中作为警告显示。若没有 `ffmpeg` 且目标清晰度只能通过分离音视频流获得，任务会失败并在任务中心显示原因。
 
 Windows 可用 `winget` 安装常见依赖：
@@ -114,7 +114,8 @@ Windows 上 Edge 正在运行时可能会锁定 `Default\Network\Cookies` 数据
 
 ```powershell
 $env:YTDL_DOWNLOAD_DIR="D:\Videos\YouTube"
-$env:YTDL_DEFAULT_CONCURRENCY="8"
+$env:YTDL_DEFAULT_CONCURRENCY="1"
+$env:YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS="1"
 $env:YTDL_DEFAULT_RESOLUTION="1080p"
 ```
 
@@ -122,11 +123,13 @@ $env:YTDL_DEFAULT_RESOLUTION="1080p"
 ```powershell
 $env:YTDL_YOUTUBE_PO_TOKEN="<web gvs po token>"
 $env:YTDL_YOUTUBE_VISITOR_DATA="<visitor data>"
+$env:YTDL_YOUTUBE_PO_BROWSER_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
+$env:YTDL_ANTI403_HTTP_CHUNK_SIZE_MB="16"
 ```
 
-这两个值只会传给 yt-dlp 的 YouTube extractor，用于处理少数仍需要有效 PO token 的媒体流 403；不会在 UI 中展示。
+这些值只会传给 yt-dlp 的 YouTube extractor 或 PO-token provider，用于处理少数仍需要有效 PO token 的媒体流 403；token 和 visitor data 不会在 UI 中展示。默认会优先使用 `yt-dlp-getpot-wpc` 自动获取 PO token；如果本机 Chrome/Chromium 不在常规路径，可设置 `YTDL_YOUTUBE_PO_BROWSER_PATH`。
 
-前端设置面板支持通过系统文件夹对话框选择下载根目录，并支持修改并发数；并发标签直接标注“默认跟随 CPU Core 数量，可按需调整”，修改后会自动保存并立即调整后台 worker 数，无需重启服务。单次下载的目标清晰度由“下载选项”里的“清晰度”决定，实际格式由后端自动选择并显示在任务中心。未保存自定义值时，并发数默认使用本机逻辑 CPU core 数量，最低为 1，不额外设置上限。Playlist 任务会在下载根目录下自动创建同名子文件夹；如果选择的下载根目录为 `dir`，playlist 名称为 `list`，则保存到 `dir/list/`；单视频任务仍直接使用下载根目录。
+前端设置面板支持通过系统文件夹对话框选择下载根目录，并支持修改并发数；并发标签直接标注“稳定优先默认 1，playlist 建议 1；需要速度时可调高”，修改后会自动保存并立即调整后台 worker 数，无需重启服务。单次下载的目标清晰度由“下载选项”里的“清晰度”决定，实际格式由后端自动选择并显示在任务中心。未保存自定义值时，并发数默认使用 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS`，未配置时为 1。Playlist 任务会在下载根目录下自动创建同名子文件夹；如果选择的下载根目录为 `dir`，playlist 名称为 `list`，则保存到 `dir/list/`；单视频任务仍直接使用下载根目录。
 
 ## API 摘要
 
@@ -144,7 +147,7 @@ $env:YTDL_YOUTUBE_VISITOR_DATA="<visitor data>"
 - `POST /api/settings/download-dir/select`：打开本机文件夹选择对话框并保存下载根目录。
 - `POST /api/cookies`、`DELETE /api/cookies`：上传/清除 cookies。
 - `POST /api/cookies/from-browser`：通过 yt-dlp 从本机浏览器导入 YouTube/Google cookies；请求体可传 `{ "browser": "auto" }` 或指定 `edge`、`chrome`、`firefox` 等浏览器；当 Edge 锁库时，可在用户确认后传 `{ "browser": "edge", "close_browser_if_locked": true }` 关闭 Edge 并重试导入。
-- `GET /api/diagnostics`：依赖和运行状态诊断；包含 `impersonation_available` 与 `impersonation_targets`，用于确认 `curl_cffi` 是否启用。
+- `GET /api/diagnostics`：依赖和运行状态诊断；包含 `impersonation_available`、`impersonation_targets`、`po_token_provider_available`、`youtube_po_token_configured`、`youtube_visitor_data_configured`、`youtube_max_parallel_downloads` 等状态，用于确认 `curl_cffi` 和 PO-token provider 是否启用；不会返回 token 原文。
 
 ## 测试
 
@@ -168,8 +171,8 @@ npm run build
 
 ## 常见问题
 
-- 分析成功但下载失败：先检查 `GET /api/diagnostics` 或顶部状态，确认 `yt-dlp`、JS runtime、`ffmpeg`、cookies 和 `impersonation_available` 是否可用；`ffprobe` 为可选诊断项，不影响常规下载。
-- 媒体流 403 或连接重置：后台会在当前清晰度下继续重试并使用浏览器 impersonation 的 anti-403 profile；若仍失败，不会在下载过程中自动改清晰度从头下载，而是在任务中心提示可尝试的较低清晰度，由你决定是否重启。若浏览器能正常播放但应用仍失败，重新导入 cookies；仍失败时再配置 `YTDL_YOUTUBE_PO_TOKEN` 和 `YTDL_YOUTUBE_VISITOR_DATA`。
+- 分析成功但下载失败：先检查 `GET /api/diagnostics` 或顶部状态，确认 `yt-dlp`、JS runtime、`ffmpeg`、cookies、`impersonation_available` 和 `po_token_provider_available` 是否可用；`ffprobe` 为可选诊断项，不影响常规下载。
+- 媒体流 403 或连接重置：后台会在当前清晰度下依次尝试 PO-token provider、浏览器 impersonation、断点续传、16 MiB HTTP chunk 和下载器级退避重试；若仍失败，不会在下载过程中自动改清晰度从头下载，而是在任务中心提示可尝试的较低清晰度，由你决定是否重启。若浏览器能正常播放但应用仍失败，先重新导入 cookies；仍失败时检查 `po_token_provider_available`，或配置 `YTDL_YOUTUBE_PO_TOKEN`、`YTDL_YOUTUBE_VISITOR_DATA` 和 `YTDL_YOUTUBE_PO_BROWSER_PATH`。
 - 高分辨率不可用：YouTube 常把视频和音频分离，缺少可用 `ffmpeg` 时无法合并。系统会优先使用内置 `imageio-ffmpeg`；如果某个视频在下载前确认没有所选高度，任务会自动降级到低于目标且不低于 720p 的最高可用清晰度，并在任务中心显示“已从 xx 自动降级到 yy”。若没有 720p 或更高的可用降级清晰度，任务会失败并显示原因。
 - 需要登录或遇到 bot 校验的视频失败：先在“解析链接”面板点击“从浏览器导入”。如果 Edge 正在运行导致 cookie 数据库被锁定，界面会提示确认关闭 Edge 后再导入；后台下载任务不会擅自关闭浏览器，遇到锁库时会提示你回到解析面板确认导入后再重启任务。如果 yt-dlp 直接解密 Edge cookies 失败，应用会尝试临时 headless Edge DevTools fallback；如果浏览器未登录 YouTube、系统密钥链不可用、YouTube 已轮换或拒绝当前登录 cookies，或自动导入仍失败，再改用手动上传有效的 `cookies.txt`。
 - 新任务立刻失败：查看任务中心失败原因；常见原因包括网络不可达、cookies 失效、视频不可用、格式被删除或 yt-dlp 需要更新。

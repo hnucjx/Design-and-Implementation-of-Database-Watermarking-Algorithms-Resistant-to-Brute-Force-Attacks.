@@ -9,8 +9,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def default_cpu_concurrency() -> int:
-    return max(1, os.cpu_count() or 1)
+def default_download_concurrency() -> int:
+    try:
+        return max(1, int(os.getenv("YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS", "1")))
+    except ValueError:
+        return 1
 
 
 class AppSettings(BaseSettings):
@@ -20,11 +23,14 @@ class AppSettings(BaseSettings):
     download_dir: Path = Field(default_factory=lambda: REPO_ROOT / "downloads")
     database_path: Path = Field(default_factory=lambda: REPO_ROOT / "data" / "app.sqlite3")
     cookies_filename: str = "cookies.txt"
-    default_concurrency: int = Field(default_factory=default_cpu_concurrency)
+    default_concurrency: int = Field(default_factory=default_download_concurrency)
     default_resolution: str = "1080p"
     default_subtitle_languages: list[str] = Field(default_factory=lambda: ["en"])
     youtube_po_token: str | None = None
     youtube_visitor_data: str | None = None
+    youtube_po_browser_path: str | None = None
+    youtube_max_parallel_downloads: int = Field(default_factory=default_download_concurrency, ge=1)
+    anti403_http_chunk_size_mb: int = Field(default=16, ge=1)
 
     @property
     def cookies_path(self) -> Path:

@@ -3,6 +3,7 @@ from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass
 from http.cookiejar import Cookie
+import importlib.metadata
 import os
 from pathlib import Path
 import re
@@ -27,6 +28,17 @@ YOUTUBE_COOKIE_DOMAIN_SUFFIXES = ("youtube.com", "google.com")
 YTDLP_REQUEST_SLEEP_SECONDS = 1.0
 YTDLP_DOWNLOAD_SLEEP_SECONDS = 2.0
 YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS = 5.0
+YTDLP_SOCKET_TIMEOUT_SECONDS = 30
+YTDLP_FRAGMENT_RETRIES = 20
+YTDLP_FILE_ACCESS_RETRIES = 5
+YTDLP_EXTRACTOR_RETRIES = 5
+YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS = 1
+DEFAULT_ANTI403_HTTP_CHUNK_SIZE_MB = 16
+YOUTUBE_DOWNLOAD_PROFILES = ("default", "mweb_pot_chrome", "safari_hls", "chrome_default")
+YOUTUBE_ANTI403_PROFILES = frozenset(YOUTUBE_DOWNLOAD_PROFILES[1:])
+YOUTUBE_PROFILE_ALIASES = {"anti403": "safari_hls"}
+POT_PROVIDER_DISTRIBUTION = "yt-dlp-getpot-wpc"
+POT_PROVIDER_EXTRACTOR = "youtubepot-wpc"
 COOKIE_REQUIRED_AUTH_HINTS = (
     "sign in to confirm",
     "confirm you're not a bot",
@@ -82,10 +94,14 @@ class YtDlpService:
         download_dir: Path,
         youtube_po_token: str | None = None,
         youtube_visitor_data: str | None = None,
+        youtube_po_browser_path: str | None = None,
+        anti403_http_chunk_size_mb: int = DEFAULT_ANTI403_HTTP_CHUNK_SIZE_MB,
     ) -> None:
         self.download_dir = download_dir
         self.youtube_po_token = youtube_po_token
         self.youtube_visitor_data = youtube_visitor_data
+        self.youtube_po_browser_path = youtube_po_browser_path
+        self.anti403_http_chunk_size_mb = max(1, anti403_http_chunk_size_mb)
 
     def get_ffmpeg_status(self) -> dict[str, bool]:
         return {"ffmpeg": self._ffmpeg_executable() is not None, "ffprobe": shutil.which("ffprobe") is not None}
@@ -94,10 +110,17 @@ class YtDlpService:
         ffmpeg = self.get_ffmpeg_status()
         runtime = self._detect_js_runtime()
         impersonation_targets = self._available_impersonation_targets()
+        provider_version = self._po_token_provider_version()
         return {
             **ffmpeg,
             "impersonation_available": bool(impersonation_targets),
             "impersonation_targets": impersonation_targets,
+            "po_token_provider_available": provider_version is not None,
+            "po_token_provider": POT_PROVIDER_DISTRIBUTION if provider_version else None,
+            "po_token_provider_version": provider_version,
+            "youtube_po_browser_path_configured": bool(self.youtube_po_browser_path),
+            "youtube_po_token_configured": bool(self.youtube_po_token),
+            "youtube_visitor_data_configured": bool(self.youtube_visitor_data),
             "js_runtime": runtime is not None,
             "js_runtime_name": runtime[0] if runtime else None,
             "js_runtime_version": runtime[2] if runtime else None,
@@ -408,20 +431,30 @@ class YtDlpService:
             "ignoreerrors": False,
             "noplaylist": True,
             "retries": options.retries,
-            "continuedl": options.skip_existing,
+            "continuedl": True,
             "overwrites": not options.skip_existing,
+            "fragment_retries": YTDLP_FRAGMENT_RETRIES,
+            "file_access_retries": YTDLP_FILE_ACCESS_RETRIES,
+            "extractor_retries": YTDLP_EXTRACTOR_RETRIES,
+            "socket_timeout": YTDLP_SOCKET_TIMEOUT_SECONDS,
+            "concurrent_fragment_downloads": YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS,
+            "retry_sleep_functions": self._retry_sleep_functions(),
             "outtmpl": str(target_dir / "%(title).200B [%(id)s].%(ext)s"),
             "color": "no_color",
             "sleep_interval_requests": YTDLP_REQUEST_SLEEP_SECONDS,
             "sleep_interval": YTDLP_DOWNLOAD_SLEEP_SECONDS,
             "max_sleep_interval": YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS,
         }
+        youtube_profile = self._normalize_youtube_profile(youtube_profile)
         ydl_opts.update(self._javascript_runtime_options())
-        youtube_extractor_args = self._youtube_extractor_args(youtube_profile)
-        if youtube_extractor_args:
-            ydl_opts["extractor_args"] = {"youtube": youtube_extractor_args}
-        if youtube_profile == "anti403":
-            ydl_opts["impersonate"] = ImpersonateTarget.from_str("safari")
+        extractor_args = self._extractor_args(youtube_profile)
+        if extractor_args:
+            ydl_opts["extractor_args"] = extractor_args
+        impersonate_target = self._impersonation_target(youtube_profile)
+        if impersonate_target:
+            ydl_opts["impersonate"] = ImpersonateTarget.from_str(impersonate_target)
+        if youtube_profile in YOUTUBE_ANTI403_PROFILES:
+            ydl_opts["http_chunk_size"] = self.anti403_http_chunk_size_mb * 1024 * 1024
 
         if options.speed_limit_kbps:
             ydl_opts["ratelimit"] = options.speed_limit_kbps * 1024
@@ -461,17 +494,34 @@ class YtDlpService:
         cookies_path: Path | None = None,
         download_dir: Path | None = None,
     ) -> None:
-        try:
-            self._download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, "default")
-        except Exception as exc:
-            if not self.is_media_stream_blocked_error(exc):
-                raise
+        first_retryable_error: Exception | None = None
+        last_error: Exception | None = None
+        for youtube_profile in YOUTUBE_DOWNLOAD_PROFILES:
             try:
-                self._download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, "anti403")
-            except Exception as retry_exc:
-                if self.is_media_stream_blocked_error(retry_exc):
-                    raise retry_exc from exc
+                self._download_once(
+                    url,
+                    options,
+                    progress_hook,
+                    should_cancel,
+                    cookies_path,
+                    download_dir,
+                    youtube_profile,
+                )
+                return
+            except DownloadCancelled:
                 raise
+            except Exception as exc:
+                if youtube_profile == "default" and not self.is_media_stream_blocked_error(exc):
+                    raise
+                if first_retryable_error is None:
+                    first_retryable_error = exc
+                last_error = exc
+                continue
+
+        if last_error is not None:
+            if first_retryable_error is not None and last_error is not first_retryable_error:
+                raise last_error from first_retryable_error
+            raise last_error
 
     def _download_once(
         self,
@@ -690,15 +740,66 @@ class YtDlpService:
     def _requires_ffmpeg(self, options: DownloadOptions) -> bool:
         return bool(options.format_id)
 
+    def _normalize_youtube_profile(self, youtube_profile: str) -> str:
+        return YOUTUBE_PROFILE_ALIASES.get(youtube_profile, youtube_profile)
+
+    def _extractor_args(self, youtube_profile: str) -> dict[str, dict[str, list[str]]]:
+        args: dict[str, dict[str, list[str]]] = {}
+        youtube_args = self._youtube_extractor_args(youtube_profile)
+        if youtube_args:
+            args["youtube"] = youtube_args
+        provider_args = self._po_token_provider_args(youtube_profile)
+        if provider_args:
+            args[POT_PROVIDER_EXTRACTOR] = provider_args
+        return args
+
     def _youtube_extractor_args(self, youtube_profile: str) -> dict[str, list[str]]:
         args: dict[str, list[str]] = {}
-        if youtube_profile == "anti403":
+        if youtube_profile == "mweb_pot_chrome":
+            args["player_client"] = ["mweb", "default"]
+        elif youtube_profile == "safari_hls":
             args["player_client"] = ["web_safari", "default"]
+        elif youtube_profile == "chrome_default":
+            args["player_client"] = ["default"]
         if self.youtube_po_token:
             args["po_token"] = [f"web.gvs+{self.youtube_po_token}"]
         if self.youtube_visitor_data:
             args["visitor_data"] = [self.youtube_visitor_data]
         return args
+
+    def _po_token_provider_args(self, youtube_profile: str) -> dict[str, list[str]]:
+        if youtube_profile != "mweb_pot_chrome" or not self.youtube_po_browser_path:
+            return {}
+        return {"browser_path": [self.youtube_po_browser_path]}
+
+    def _impersonation_target(self, youtube_profile: str) -> str | None:
+        if youtube_profile in {"mweb_pot_chrome", "chrome_default"}:
+            return "chrome"
+        if youtube_profile == "safari_hls":
+            return "safari"
+        return None
+
+    def _po_token_provider_version(self) -> str | None:
+        try:
+            return importlib.metadata.version(POT_PROVIDER_DISTRIBUTION)
+        except importlib.metadata.PackageNotFoundError:
+            return None
+
+    def _retry_sleep_functions(self) -> dict[str, Callable[[int], float]]:
+        return {
+            "http": self._bounded_retry_sleep,
+            "fragment": self._bounded_retry_sleep,
+            "file_access": self._short_retry_sleep,
+            "extractor": self._bounded_retry_sleep,
+        }
+
+    @staticmethod
+    def _bounded_retry_sleep(attempt: int) -> float:
+        return min(30.0, max(1, attempt) * 2.0)
+
+    @staticmethod
+    def _short_retry_sleep(attempt: int) -> float:
+        return min(10.0, max(1, attempt) * 1.0)
 
     def _available_impersonation_targets(self) -> list[str]:
         try:

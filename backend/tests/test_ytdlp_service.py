@@ -1,3 +1,4 @@
+import importlib.metadata
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -98,21 +99,64 @@ def test_default_download_options_do_not_force_anti403_profile(monkeypatch, tmp_
     assert opts.get("extractor_args", {}).get("youtube", {}).get("player_client") != ["web_safari", "default"]
 
 
-def test_anti403_download_options_use_safari_profile_accepted_by_ytdlp(monkeypatch, tmp_path: Path) -> None:
+def test_mweb_pot_chrome_download_options_use_provider_and_stability_profile(monkeypatch, tmp_path: Path) -> None:
+    browser_path = str(tmp_path / "chrome.exe")
+    service = YtDlpService(download_dir=tmp_path)
+    service.youtube_po_browser_path = browser_path
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+        youtube_profile="mweb_pot_chrome",
+    )
+
+    assert isinstance(opts["impersonate"], ImpersonateTarget)
+    assert str(opts["impersonate"]) == "chrome"
+    assert opts["extractor_args"]["youtube"]["player_client"] == ["mweb", "default"]
+    assert opts["extractor_args"]["youtubepot-wpc"]["browser_path"] == [browser_path]
+    assert opts["http_chunk_size"] == 16 * 1024 * 1024
+    with yt_dlp.YoutubeDL(opts):
+        pass
+
+
+def test_safari_hls_download_options_use_safari_profile_accepted_by_ytdlp(monkeypatch, tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
     monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
 
     opts = service.build_download_options(
         DownloadOptions(mode="video_subtitles", resolution="720p"),
         cookies_path=None,
-        youtube_profile="anti403",
+        youtube_profile="safari_hls",
     )
 
     assert isinstance(opts["impersonate"], ImpersonateTarget)
     assert str(opts["impersonate"]) == "safari"
     assert opts["extractor_args"]["youtube"]["player_client"] == ["web_safari", "default"]
+    assert opts["http_chunk_size"] == 16 * 1024 * 1024
     with yt_dlp.YoutubeDL(opts):
         pass
+
+
+def test_download_options_enable_resumable_stable_retry_defaults(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="best", retries=3, skip_existing=False),
+        cookies_path=None,
+    )
+
+    assert opts["continuedl"] is True
+    assert opts["overwrites"] is True
+    assert opts["fragment_retries"] == 20
+    assert opts["file_access_retries"] == 5
+    assert opts["extractor_retries"] == 5
+    assert opts["socket_timeout"] == 30
+    assert opts["concurrent_fragment_downloads"] == 1
+    assert "http_chunk_size" not in opts
+    retry_sleep = opts["retry_sleep_functions"]
+    assert set(retry_sleep) == {"http", "fragment", "file_access", "extractor"}
+    assert retry_sleep["http"](3) > retry_sleep["http"](1)
 
 
 def test_po_token_env_config_is_passed_to_youtube_extractor_args(monkeypatch, tmp_path: Path) -> None:
@@ -138,26 +182,16 @@ def test_po_token_env_config_is_passed_to_youtube_extractor_args(monkeypatch, tm
     assert opts["extractor_args"]["youtube"]["visitor_data"] == ["VISITOR456"]
 
 
-def test_download_retries_with_anti403_profile_after_http_403(monkeypatch, tmp_path: Path) -> None:
-    attempts: list[dict] = []
-
-    class FakeYoutubeDL:
-        def __init__(self, opts):
-            self.opts = opts
-            attempts.append(opts)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *args):
-            return None
-
-        def download(self, urls):
-            if len(attempts) == 1:
-                raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
-
-    monkeypatch.setattr("app.ytdlp_service.yt_dlp.YoutubeDL", FakeYoutubeDL)
+def test_download_retries_same_resolution_profiles_until_success(monkeypatch, tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
+    attempts: list[tuple[str, str]] = []
+
+    def fake_download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, youtube_profile):
+        attempts.append((youtube_profile, options.resolution))
+        if youtube_profile != "safari_hls":
+            raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(service, "_download_once", fake_download_once)
 
     service.download(
         "https://youtu.be/forbidden",
@@ -166,9 +200,63 @@ def test_download_retries_with_anti403_profile_after_http_403(monkeypatch, tmp_p
         should_cancel=lambda: False,
     )
 
-    assert len(attempts) == 2
-    assert "impersonate" not in attempts[0]
-    assert str(attempts[1]["impersonate"]) == "safari"
+    assert attempts == [
+        ("default", "720p"),
+        ("mweb_pot_chrome", "720p"),
+        ("safari_hls", "720p"),
+    ]
+
+
+def test_download_tries_chrome_default_profile_last(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    attempts: list[tuple[str, str]] = []
+
+    def fake_download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, youtube_profile):
+        attempts.append((youtube_profile, options.resolution))
+        raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(service, "_download_once", fake_download_once)
+
+    with pytest.raises(RuntimeError):
+        service.download(
+            "https://youtu.be/forbidden",
+            DownloadOptions(mode="video_subtitles", resolution="1080p"),
+            progress_hook=lambda payload: None,
+            should_cancel=lambda: False,
+        )
+
+    assert attempts == [
+        ("default", "1080p"),
+        ("mweb_pot_chrome", "1080p"),
+        ("safari_hls", "1080p"),
+        ("chrome_default", "1080p"),
+    ]
+
+
+def test_dependency_status_reports_po_token_provider_without_secret_values(monkeypatch, tmp_path: Path) -> None:
+    def fake_version(package_name: str) -> str:
+        if package_name == "yt-dlp-getpot-wpc":
+            return "1.2.3"
+        raise importlib.metadata.PackageNotFoundError(package_name)
+
+    monkeypatch.setattr("app.ytdlp_service.importlib.metadata.version", fake_version)
+    service = YtDlpService(
+        download_dir=tmp_path,
+        youtube_po_token="SECRET_TOKEN",
+        youtube_visitor_data="SECRET_VISITOR",
+        youtube_po_browser_path=str(tmp_path / "chrome.exe"),
+    )
+
+    status = service.get_dependency_status()
+
+    assert status["po_token_provider_available"] is True
+    assert status["po_token_provider"] == "yt-dlp-getpot-wpc"
+    assert status["po_token_provider_version"] == "1.2.3"
+    assert status["youtube_po_browser_path_configured"] is True
+    assert status["youtube_po_token_configured"] is True
+    assert status["youtube_visitor_data_configured"] is True
+    assert "SECRET_TOKEN" not in str(status)
+    assert "SECRET_VISITOR" not in str(status)
 
 
 def test_bundled_ffmpeg_is_used_when_system_ffmpeg_is_missing(monkeypatch, tmp_path: Path) -> None:

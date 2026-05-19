@@ -857,7 +857,7 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
         </div>
       </label>
       <label className="field settings-number-field">
-        <span>并发 (默认跟随 CPU Core 数量，可按需调整。)</span>
+        <span>并发 (稳定优先默认 1，playlist 建议 1；需要速度时可调高。)</span>
         <input
           type="number"
           min={1}

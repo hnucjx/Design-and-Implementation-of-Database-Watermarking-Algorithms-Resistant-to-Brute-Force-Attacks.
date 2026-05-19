@@ -635,9 +635,9 @@ class JobManager:
 
     def _media_stream_failure_message(self) -> str:
         return (
-            "YouTube 拒绝了媒体流下载（HTTP 403）或重置了媒体流连接。后台已尝试在当前清晰度下继续下载和浏览器 impersonation；"
-            "请重新导入 cookies 后重试。若浏览器可正常播放但仍失败，请检查网络/代理是否能稳定访问 YouTube 媒体域名，"
-            "或配置有效的 YouTube PO token。"
+            "YouTube 拒绝了媒体流下载（HTTP 403）或重置了媒体流连接。后台已在当前清晰度下尝试 PO-token provider、"
+            "浏览器 impersonation、断点续传和传输重试；请重新导入 cookies 后重试。若浏览器可正常播放但仍失败，"
+            "请检查网络/代理是否能稳定访问 YouTube 媒体域名，或配置有效的 YouTube PO token。"
         )
 
     def _format_from_output_path(self, output_path: Path) -> str | None:

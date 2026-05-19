@@ -29,6 +29,12 @@ class FakeYtDlpService:
             "ffprobe": True,
             "impersonation_available": True,
             "impersonation_targets": ["safari"],
+            "po_token_provider_available": True,
+            "po_token_provider": "yt-dlp-getpot-wpc",
+            "po_token_provider_version": "1.0.0",
+            "youtube_po_browser_path_configured": False,
+            "youtube_po_token_configured": False,
+            "youtube_visitor_data_configured": False,
             "js_runtime": True,
             "js_runtime_name": "node",
             "js_runtime_version": "v20.11.1",
@@ -554,8 +560,19 @@ def wait_for_job_status(client: TestClient, job_id: str, status: str) -> dict:
     raise AssertionError(f"Job {job_id} did not reach {status}")
 
 
-def test_default_concurrency_uses_cpu_core_count(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("app.config.os.cpu_count", lambda: 12)
+def test_default_concurrency_is_stability_first(tmp_path: Path) -> None:
+    settings = AppSettings(
+        data_dir=tmp_path / "data",
+        download_dir=tmp_path / "downloads",
+        database_path=tmp_path / "data" / "app.sqlite3",
+    )
+
+    assert settings.default_concurrency == 1
+    assert settings.youtube_max_parallel_downloads == 1
+
+
+def test_youtube_max_parallel_downloads_env_sets_initial_concurrency(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS", "3")
 
     settings = AppSettings(
         data_dir=tmp_path / "data",
@@ -563,7 +580,8 @@ def test_default_concurrency_uses_cpu_core_count(monkeypatch, tmp_path: Path) ->
         database_path=tmp_path / "data" / "app.sqlite3",
     )
 
-    assert settings.default_concurrency == 12
+    assert settings.default_concurrency == 3
+    assert settings.youtube_max_parallel_downloads == 3
 
 
 def test_saved_concurrency_is_loaded_before_workers_start(tmp_path: Path) -> None:
@@ -940,6 +958,13 @@ def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
     assert payload["dependencies"]["js_runtime_name"] == "node"
     assert payload["dependencies"]["impersonation_available"] is True
     assert payload["dependencies"]["impersonation_targets"] == ["safari"]
+    assert payload["dependencies"]["po_token_provider_available"] is True
+    assert payload["dependencies"]["po_token_provider"] == "yt-dlp-getpot-wpc"
+    assert payload["dependencies"]["youtube_po_browser_path_configured"] is False
+    assert payload["dependencies"]["youtube_po_token_configured"] is False
+    assert payload["dependencies"]["youtube_visitor_data_configured"] is False
+    assert payload["dependencies"]["youtube_max_parallel_downloads"] == 1
+    assert payload["dependencies"]["anti403_http_chunk_size_mb"] == 16
 
 
 def test_diagnostics_returns_impersonation_status_from_real_service(monkeypatch, tmp_path: Path) -> None:

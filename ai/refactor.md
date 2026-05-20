@@ -40,3 +40,11 @@
 - Change: added an internal yt-dlp format helper module and kept the existing `YtDlpService` methods as compatibility proxies.
 - Verification: `python -m pytest backend\tests -q` -> 75 passed.
 - Functional invariance: generated selectors, actual format strings, resolution extraction, and fallback suggestions are unchanged.
+
+## Iteration 5 - Extract Frontend Utilities
+
+- Problem: `App.tsx` mixed application state orchestration with formatting helpers and quality-selection calculations.
+- Reason: display formatting and quality option construction are pure UI helpers; extracting them reduces component noise and makes future UI changes less likely to touch unrelated state logic.
+- Change: moved duration/date/filesize/progress formatting into a formatting module and quality option/fallback label helpers into a quality module.
+- Verification: `cd frontend && npm test` -> 28 passed.
+- Functional invariance: visible labels, selected quality behavior, and request payloads are unchanged.

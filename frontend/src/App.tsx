@@ -35,6 +35,23 @@ import {
   updateSettings,
   uploadCookies
 } from "./api";
+import {
+  formatBytesPerSecond,
+  formatClock,
+  formatDateTime,
+  formatDuration,
+  formatFileSize,
+  formatItemResolution,
+  formatPercent
+} from "./formatting";
+import {
+  buildResolutionOptions,
+  chooseAvailableResolution,
+  formatResolutionLabel,
+  formatSelectedQualitySize,
+  resolutionFallbackRestartLabel,
+  resolutionHeight
+} from "./quality";
 import type {
   AnalyzeResponse,
   DownloadMode,
@@ -47,7 +64,6 @@ import type {
   SubtitleSource
 } from "./types";
 
-const RESOLUTIONS = ["best", "2160p", "1440p", "1080p", "720p", "480p"];
 const BROWSER_COOKIE_OPTIONS = [
   { value: "auto", label: "自动检测" },
   { value: "edge", label: "Edge" },
@@ -1105,116 +1121,4 @@ function ResolutionFallbackNotice({
       )}
     </div>
   );
-}
-
-function resolutionFallbackRestartLabel(fallback: ResolutionFallback, scope: "job" | "item"): string | undefined {
-  if (!fallback.restart_resolution) {
-    return undefined;
-  }
-  if (fallback.reason === "requested_resolution_unselectable") {
-    return `以 ${fallback.restart_resolution} 重试`;
-  }
-  return scope === "job" ? `以 ${fallback.restart_resolution} 重启任务` : `以 ${fallback.restart_resolution} 重启`;
-}
-
-function formatDuration(seconds: number | null): string {
-  if (!seconds) return "--:--";
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
-  return `${mins}:${secs}`;
-}
-
-function formatResolutionLabel(resolution: string): string {
-  return resolution === "best" ? "最佳可用" : resolution;
-}
-
-function resolutionHeight(resolution: string): number | null {
-  if (!resolution.endsWith("p")) return null;
-  const value = Number(resolution.slice(0, -1));
-  return Number.isFinite(value) ? value : null;
-}
-
-function formatHeights(analysis: AnalyzeResponse | null): number[] {
-  return Array.from(
-    new Set((analysis?.formats ?? []).map((format) => format.height).filter((height): height is number => Boolean(height)))
-  ).sort((a, b) => b - a);
-}
-
-function buildResolutionOptions(analysis: AnalyzeResponse | null): string[] {
-  const heights = new Set<number>();
-  for (const resolution of RESOLUTIONS) {
-    const height = resolutionHeight(resolution);
-    if (height) heights.add(height);
-  }
-  for (const height of formatHeights(analysis)) {
-    heights.add(height);
-  }
-  return ["best", ...Array.from(heights).sort((a, b) => b - a).map((height) => `${height}p`)];
-}
-
-function chooseAvailableResolution(analysis: AnalyzeResponse, preferredResolution: string): string {
-  if (preferredResolution === "best") return preferredResolution;
-  const preferredHeight = resolutionHeight(preferredResolution);
-  const heights = formatHeights(analysis);
-  if (!preferredHeight || !heights.length || heights.includes(preferredHeight)) {
-    return preferredResolution;
-  }
-  return `${heights[0]}p`;
-}
-
-function formatPercent(value: number | null | undefined): string {
-  return `${Math.max(0, Math.min(100, value ?? 0)).toFixed(1)}%`;
-}
-
-function formatClock(seconds: number | null | undefined): string {
-  const safeSeconds = Math.max(0, Math.floor(seconds ?? 0));
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60).toString().padStart(2, "0");
-  const secs = Math.floor(safeSeconds % 60).toString().padStart(2, "0");
-  return hours ? `${hours}:${minutes}:${secs}` : `${minutes}:${secs}`;
-}
-
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "--";
-  return value.replace("T", " ").replace(/\.\d+Z?$/, "").replace(/Z$/, "").slice(0, 19);
-}
-
-function formatFileSize(bytes: number | null | undefined): string {
-  if (bytes == null) return "大小未知";
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  return `${value.toFixed(1)} ${units[unitIndex]}`;
-}
-
-function formatSelectedQualitySize(analysis: AnalyzeResponse, options: DownloadOptions): string {
-  if (options.resolution === "best") {
-    return "最佳可用 · 大小未知";
-  }
-
-  const height = resolutionHeight(options.resolution);
-  const matchingSizes = analysis.formats
-    .filter((format) => format.height === height && format.filesize != null)
-    .map((format) => format.filesize as number);
-  const size = matchingSizes.length ? Math.max(...matchingSizes) : null;
-  return `${options.resolution} · ${formatFileSize(size)}`;
-}
-
-function formatItemResolution(item: { actual_width: number | null; actual_height: number | null }): string {
-  if (item.actual_width == null || item.actual_height == null) {
-    return "检测中";
-  }
-  return `${item.actual_width}x${item.actual_height}`;
-}
-
-function formatBytesPerSecond(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB/s`;
-  }
-  return `${(bytes / 1024).toFixed(1)} KB/s`;
 }

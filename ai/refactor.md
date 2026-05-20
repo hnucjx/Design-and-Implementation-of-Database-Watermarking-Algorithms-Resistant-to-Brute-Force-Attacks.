@@ -48,3 +48,11 @@
 - Change: moved duration/date/filesize/progress formatting into a formatting module and quality option/fallback label helpers into a quality module.
 - Verification: `cd frontend && npm test` -> 28 passed.
 - Functional invariance: visible labels, selected quality behavior, and request payloads are unchanged.
+
+## Iteration 6 - Extract Task Center Component
+
+- Problem: task-center rendering, playlist expansion state, fallback notices, item metrics, and action buttons made the main application component difficult to scan.
+- Reason: the task center is a cohesive display component with a clear props boundary; moving it out keeps `App.tsx` focused on state orchestration and API calls.
+- Change: moved `JobQueue` and its fallback notice subcomponent into `frontend/src/components/JobQueue.tsx`.
+- Verification: `cd frontend && npm test` -> 28 passed; `cd frontend && npm run build` -> passed.
+- Functional invariance: task center labels, controls, expansion behavior, fallback buttons, and callbacks are unchanged.

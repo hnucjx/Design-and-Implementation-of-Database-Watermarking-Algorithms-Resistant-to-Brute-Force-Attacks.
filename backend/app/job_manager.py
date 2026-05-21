@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, select
 
 from .config import AppSettings
+from .download_progress import DownloadProgressAggregator
 from .events import EventBroker
 from .fallback_policy import (
     MEDIA_STREAM_BLOCKED,
@@ -349,6 +350,7 @@ class JobManager:
         session.commit()
         self._publish_threadsafe({"type": "item_started", "job_id": job.id, "item_id": item.id, "title": item.title})
         transfer_stats = TransferStats()
+        progress_aggregator = DownloadProgressAggregator()
 
         def progress_hook(payload: dict[str, Any]) -> None:
             if job.id in self._deleted:
@@ -359,18 +361,14 @@ class JobManager:
                 if not hook_item or not hook_job:
                     return
                 status = payload.get("status")
-                total = payload.get("total_bytes") or payload.get("total_bytes_estimate")
-                downloaded = payload.get("downloaded_bytes")
-                if downloaded is not None:
-                    downloaded_bytes = int(downloaded)
-                    transfer_stats.record(downloaded_bytes)
-                    hook_item.downloaded_bytes = downloaded_bytes
-                if total is not None:
-                    hook_item.total_bytes = int(total)
-                    hook_item.progress = min(100.0, (float(downloaded or 0) / float(total)) * 100.0)
-                if status == "finished":
-                    hook_item.progress = 100.0
-                    hook_item.output_path = payload.get("filename")
+                progress = progress_aggregator.update(payload)
+                if progress.downloaded_bytes is not None:
+                    transfer_stats.record(progress.downloaded_bytes)
+                    hook_item.downloaded_bytes = progress.downloaded_bytes
+                if progress.total_bytes is not None:
+                    hook_item.total_bytes = progress.total_bytes
+                hook_item.progress = progress.progress
+                if status == "finished" and self._is_combined_format_payload(payload):
                     resolution = self.service.resolution_from_progress_payload(payload)
                     if resolution is None and hook_item.output_path:
                         resolution = self.service.detect_file_resolution(Path(hook_item.output_path))
@@ -432,6 +430,8 @@ class JobManager:
             self._log_item_failure(item, options, exc)
         else:
             session.refresh(item)
+            if item.output_path is None and progress_aggregator.output_path:
+                item.output_path = progress_aggregator.output_path
             if item.actual_width is None and item.actual_height is None and item.output_path:
                 resolution = self.service.detect_file_resolution(Path(item.output_path))
                 if resolution is not None:
@@ -792,6 +792,10 @@ class JobManager:
             type(exc).__name__,
             sanitize_log_message(YtDlpService.readable_error_message(exc)),
         )
+
+    def _is_combined_format_payload(self, payload: dict[str, Any]) -> bool:
+        info = payload.get("info_dict")
+        return isinstance(info, dict) and bool(info.get("requested_formats"))
 
     def _format_from_output_path(self, output_path: Path) -> str | None:
         suffix = output_path.suffix.lower().lstrip(".")

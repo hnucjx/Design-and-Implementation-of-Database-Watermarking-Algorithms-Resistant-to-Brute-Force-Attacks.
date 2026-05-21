@@ -87,6 +87,88 @@ class AverageSpeedYtDlpService(FakeYtDlpService):
         progress_hook({"status": "finished", "downloaded_bytes": 8192, "total_bytes": 8192, "filename": f"{url}.mp4"})
 
 
+class SplitStreamProgressYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.stages: queue.Queue[str] = queue.Queue()
+        self.release = threading.Event()
+
+    def continue_download(self) -> None:
+        self.release.set()
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        video_info = {
+            "format_id": "137",
+            "ext": "mp4",
+            "width": 1920,
+            "height": 1080,
+            "vcodec": "avc1.640028",
+            "acodec": "none",
+        }
+        audio_info = {
+            "format_id": "140",
+            "ext": "m4a",
+            "vcodec": "none",
+            "acodec": "mp4a.40.2",
+        }
+        self._emit(
+            "video_started",
+            {
+                "status": "downloading",
+                "downloaded_bytes": 0,
+                "total_bytes": 100,
+                "tmpfilename": "video.f137.mp4.part",
+                "filename": "video.f137.mp4",
+                "speed": 100,
+                "info_dict": video_info,
+            },
+            progress_hook,
+        )
+        self._emit(
+            "video_finished",
+            {
+                "status": "finished",
+                "downloaded_bytes": 100,
+                "total_bytes": 100,
+                "filename": "video.f137.mp4",
+                "info_dict": video_info,
+            },
+            progress_hook,
+        )
+        self._emit(
+            "audio_started",
+            {
+                "status": "downloading",
+                "downloaded_bytes": 0,
+                "total_bytes": 20,
+                "tmpfilename": "video.f140.m4a.part",
+                "filename": "video.f140.m4a",
+                "speed": 20,
+                "info_dict": audio_info,
+            },
+            progress_hook,
+        )
+        self._emit(
+            "audio_finished",
+            {
+                "status": "finished",
+                "downloaded_bytes": 20,
+                "total_bytes": 20,
+                "filename": "video.f140.m4a",
+                "info_dict": audio_info,
+            },
+            progress_hook,
+            wait=False,
+        )
+
+    def _emit(self, stage, payload, progress_hook, wait=True):
+        progress_hook(payload)
+        self.stages.put(stage)
+        if wait:
+            self.release.wait(timeout=5)
+            self.release.clear()
+
+
 class BlockingYtDlpService(FakeYtDlpService):
     def __init__(self):
         super().__init__()

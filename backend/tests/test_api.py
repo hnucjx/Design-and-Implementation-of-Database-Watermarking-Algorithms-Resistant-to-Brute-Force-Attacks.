@@ -32,6 +32,7 @@ from fakes import (
     MediaStreamBlockedUntilLowerResolutionService,
     PreparedBlockingYtDlpService,
     SingleAutoFallbackYtDlpService,
+    SplitStreamProgressYtDlpService,
     UnselectableHighWithSafeFallbackService,
     UnselectableHighWithoutSafeFallbackService,
 )
@@ -668,6 +669,48 @@ def test_finished_download_keeps_average_speed(tmp_path: Path, monkeypatch) -> N
     expected_speed = 8192 / 3
     assert payload["speed"] == expected_speed
     assert payload["items"][0]["speed"] == expected_speed
+
+
+def test_split_stream_download_progress_does_not_look_like_restart(tmp_path: Path) -> None:
+    service = SplitStreamProgressYtDlpService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/split-stream",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        job_id = response.json()["id"]
+
+        assert service.stages.get(timeout=2) == "video_started"
+        service.continue_download()
+        assert service.stages.get(timeout=2) == "video_finished"
+        after_video = client.get(f"/api/jobs/{job_id}").json()["items"][0]
+        assert after_video["status"] == "running"
+        assert 0 < after_video["progress"] < 100
+        assert after_video["downloaded_bytes"] == 100
+        assert after_video["total_bytes"] == 100
+
+        service.continue_download()
+        assert service.stages.get(timeout=2) == "audio_started"
+        after_audio_started = client.get(f"/api/jobs/{job_id}").json()["items"][0]
+        assert after_audio_started["status"] == "running"
+        assert after_audio_started["progress"] >= after_video["progress"]
+        assert after_audio_started["downloaded_bytes"] >= after_video["downloaded_bytes"]
+        assert after_audio_started["total_bytes"] >= after_video["total_bytes"]
+
+        service.continue_download()
+        assert service.stages.get(timeout=2) == "audio_finished"
+        payload = wait_for_job_status(client, job_id, "succeeded")
+
+    item = payload["items"][0]
+    assert item["progress"] == 100
+    assert item["downloaded_bytes"] == 120
+    assert item["total_bytes"] == 120
+    assert item["speed"] is not None
 
 
 def test_single_video_failed_job_surfaces_item_error(tmp_path: Path) -> None:

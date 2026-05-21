@@ -47,8 +47,11 @@ YTDLP_EXTRACTOR_RETRIES = 5
 YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS = 1
 DEFAULT_ANTI403_HTTP_CHUNK_SIZE_MB = 16
 DEFAULT_THROTTLED_RATE_KBPS = 64
-YOUTUBE_DOWNLOAD_PROFILES = ("default", "mweb_pot_chrome", "safari_hls", "chrome_default")
-YOUTUBE_ANTI403_PROFILES = frozenset(YOUTUBE_DOWNLOAD_PROFILES[1:])
+DEFAULT_ARIA2C_CONNECTIONS = 1
+DEFAULT_ARIA2C_MIN_SPLIT_SIZE_MB = 16
+DEFAULT_ARIA2C_RETRY_WAIT_SECONDS = 5
+YOUTUBE_DOWNLOAD_PROFILES = ("default", "default_aria2c", "mweb_pot_chrome", "safari_hls", "chrome_default")
+YOUTUBE_ANTI403_PROFILES = frozenset(("mweb_pot_chrome", "safari_hls", "chrome_default"))
 YOUTUBE_PROFILE_ALIASES = {"anti403": "safari_hls"}
 POT_PROVIDER_DISTRIBUTION = "yt-dlp-getpot-wpc"
 POT_PROVIDER_EXTRACTOR = "youtubepot-wpc"
@@ -87,6 +90,9 @@ class YtDlpService:
         youtube_po_browser_path: str | None = None,
         anti403_http_chunk_size_mb: int = DEFAULT_ANTI403_HTTP_CHUNK_SIZE_MB,
         throttled_rate_kbps: int = DEFAULT_THROTTLED_RATE_KBPS,
+        aria2c_enabled: bool = False,
+        aria2c_path: str | None = None,
+        aria2c_connections: int = DEFAULT_ARIA2C_CONNECTIONS,
     ) -> None:
         self.download_dir = download_dir
         self.youtube_po_token = youtube_po_token
@@ -94,19 +100,27 @@ class YtDlpService:
         self.youtube_po_browser_path = youtube_po_browser_path
         self.anti403_http_chunk_size_mb = max(1, anti403_http_chunk_size_mb)
         self.throttled_rate_kbps = max(0, throttled_rate_kbps)
+        self.aria2c_enabled = aria2c_enabled
+        self.aria2c_path = aria2c_path
+        self.aria2c_connections = max(1, min(4, aria2c_connections))
 
     def get_ffmpeg_status(self) -> dict[str, bool]:
         return {"ffmpeg": self._ffmpeg_executable() is not None, "ffprobe": shutil.which("ffprobe") is not None}
 
-    def get_dependency_status(self) -> dict[str, bool | str | None | list[str]]:
+    def get_dependency_status(self) -> dict[str, bool | int | str | None | list[str]]:
         ffmpeg = self.get_ffmpeg_status()
         runtime = self._detect_js_runtime()
         impersonation_targets = self._available_impersonation_targets()
         provider_version = self._po_token_provider_version()
+        aria2c_executable = self._aria2c_executable()
         return {
             **ffmpeg,
             "impersonation_available": bool(impersonation_targets),
             "impersonation_targets": impersonation_targets,
+            "aria2c_available": aria2c_executable is not None,
+            "aria2c_enabled": self.aria2c_enabled,
+            "aria2c_path": aria2c_executable,
+            "aria2c_connections": self.aria2c_connections,
             "po_token_provider_available": provider_version is not None,
             "po_token_provider": POT_PROVIDER_DISTRIBUTION if provider_version else None,
             "po_token_provider_version": provider_version,
@@ -259,6 +273,11 @@ class YtDlpService:
 
         if options.speed_limit_kbps:
             ydl_opts["ratelimit"] = options.speed_limit_kbps * 1024
+        if options.mode != "subtitles_only" and youtube_profile == "default_aria2c":
+            aria2c_executable = self._aria2c_executable() if self.aria2c_enabled else None
+            if aria2c_executable:
+                ydl_opts["external_downloader"] = {"http": aria2c_executable, "https": aria2c_executable}
+                ydl_opts["external_downloader_args"] = {"aria2c": self._aria2c_args(options)}
         if cookies_path:
             ydl_opts["cookiefile"] = str(cookies_path)
         if options.write_metadata:
@@ -301,7 +320,7 @@ class YtDlpService:
     ) -> None:
         first_retryable_error: Exception | None = None
         last_error: Exception | None = None
-        for youtube_profile in YOUTUBE_DOWNLOAD_PROFILES:
+        for youtube_profile in self._download_profiles():
             try:
                 self._download_once(
                     url,
@@ -501,6 +520,40 @@ class YtDlpService:
 
     def _normalize_youtube_profile(self, youtube_profile: str) -> str:
         return YOUTUBE_PROFILE_ALIASES.get(youtube_profile, youtube_profile)
+
+    def _download_profiles(self) -> tuple[str, ...]:
+        if self.aria2c_enabled and self._aria2c_executable():
+            return YOUTUBE_DOWNLOAD_PROFILES
+        return tuple(profile for profile in YOUTUBE_DOWNLOAD_PROFILES if profile != "default_aria2c")
+
+    def _aria2c_executable(self) -> str | None:
+        if self.aria2c_path:
+            configured = Path(self.aria2c_path)
+            if configured.exists():
+                return str(configured)
+            return shutil.which(self.aria2c_path)
+        return shutil.which("aria2c")
+
+    def _aria2c_args(self, options: DownloadOptions) -> list[str]:
+        connections = str(self.aria2c_connections)
+        return [
+            "-x",
+            connections,
+            "-s",
+            connections,
+            "-j",
+            "1",
+            "--min-split-size",
+            f"{DEFAULT_ARIA2C_MIN_SPLIT_SIZE_MB}M",
+            "--max-tries",
+            str(max(1, options.retries)),
+            "--retry-wait",
+            str(DEFAULT_ARIA2C_RETRY_WAIT_SECONDS),
+            "--timeout",
+            str(YTDLP_SOCKET_TIMEOUT_SECONDS),
+            "--connect-timeout",
+            str(YTDLP_SOCKET_TIMEOUT_SECONDS),
+        ]
 
     def _extractor_args(self, youtube_profile: str) -> dict[str, dict[str, list[str]]]:
         args: dict[str, dict[str, list[str]]] = {}

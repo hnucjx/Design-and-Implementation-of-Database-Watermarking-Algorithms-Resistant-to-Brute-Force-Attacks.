@@ -27,6 +27,7 @@
 - Python 3.12 或更高版本。
 - Node.js 20+ 推荐；也可以安装 Deno。新版本 YouTube 页面解析有时需要 JS runtime，后端诊断页会提示状态。
 - `curl_cffi` 由后端依赖安装，用于 yt-dlp 的浏览器/TLS impersonation；`yt-dlp-getpot-wpc` 默认安装，用于 yt-dlp 自动获取 YouTube GVS PO token。遇到 YouTube 媒体流 `HTTP 403 Forbidden` 或连接重置时，后台会在当前清晰度下依次尝试 PO-token provider、Safari/Chrome impersonation、断点续传和更稳的传输参数。
+- `aria2c` 是可选外部下载器，不作为默认依赖。它对“媒体 URL 已被接受但传输链路频繁中断”的场景可能有帮助，但多连接下载会增加 YouTube 风控面，因此本项目只在显式启用时用单连接保守参数作为 fallback。
 - `ffmpeg` 用于合并 YouTube 高分辨率音视频流；如果系统 PATH 中没有 `ffmpeg`，后端会使用 `imageio-ffmpeg` 提供的内置后备执行文件。`ffprobe` 不是当前下载流程的必需依赖，不会在顶部状态中作为警告显示。若没有 `ffmpeg` 且目标清晰度只能通过分离音视频流获得，任务会失败并在任务中心显示原因。
 
 Windows 可用 `winget` 安装常见依赖：
@@ -35,6 +36,8 @@ Windows 可用 `winget` 安装常见依赖：
 winget install Python.Python.3.12
 winget install OpenJS.NodeJS.LTS
 winget install Gyan.FFmpeg
+# 可选：只有需要 aria2c fallback 时安装
+winget install aria2.aria2
 ```
 
 ## 安装
@@ -126,9 +129,12 @@ $env:YTDL_YOUTUBE_VISITOR_DATA="<visitor data>"
 $env:YTDL_YOUTUBE_PO_BROWSER_PATH="C:\Program Files\Google\Chrome\Application\chrome.exe"
 $env:YTDL_ANTI403_HTTP_CHUNK_SIZE_MB="16"
 $env:YTDL_THROTTLED_RATE_KBPS="64"
+$env:YTDL_ARIA2C_ENABLED="false"
+$env:YTDL_ARIA2C_PATH="C:\Path\To\aria2c.exe"
+$env:YTDL_ARIA2C_CONNECTIONS="1"
 ```
 
-这些值只会传给 yt-dlp 的 YouTube extractor、PO-token provider 或下载器稳定性参数，用于处理少数仍需要有效 PO token 的媒体流 403 或连接中断；token 和 visitor data 不会在 UI 中展示。默认会优先使用 `yt-dlp-getpot-wpc` 自动获取 PO token；如果本机 Chrome/Chromium 不在常规路径，可设置 `YTDL_YOUTUBE_PO_BROWSER_PATH`。`YTDL_THROTTLED_RATE_KBPS` 控制低速重取媒体 URL 的阈值，设为 `0` 表示禁用。
+这些值只会传给 yt-dlp 的 YouTube extractor、PO-token provider 或下载器稳定性参数，用于处理少数仍需要有效 PO token 的媒体流 403 或连接中断；token 和 visitor data 不会在 UI 中展示。默认会优先使用 `yt-dlp-getpot-wpc` 自动获取 PO token；如果本机 Chrome/Chromium 不在常规路径，可设置 `YTDL_YOUTUBE_PO_BROWSER_PATH`。`YTDL_THROTTLED_RATE_KBPS` 控制低速重取媒体 URL 的阈值，设为 `0` 表示禁用。`YTDL_ARIA2C_ENABLED=true` 时，后端会在原生 default 下载遇到媒体流中断后尝试 `aria2c`；浏览器 impersonation profiles 仍使用 yt-dlp 原生下载器，以保留 TLS impersonation 能力。`YTDL_ARIA2C_CONNECTIONS` 默认 1，建议保持 1。
 
 前端设置面板支持通过系统文件夹对话框选择下载根目录，并支持修改并发数；并发标签直接标注“稳定优先默认 1，playlist 建议 1；需要速度时可调高”，修改后会自动保存并立即调整后台 worker 数，无需重启服务。单次下载的目标清晰度由“下载选项”里的“清晰度”决定，实际格式由后端自动选择并显示在任务中心。未保存自定义值时，并发数默认使用 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS`，未配置时为 1。Playlist 任务会在下载根目录下自动创建同名子文件夹；如果选择的下载根目录为 `dir`，playlist 名称为 `list`，则保存到 `dir/list/`；单视频任务仍直接使用下载根目录。
 
@@ -148,7 +154,7 @@ $env:YTDL_THROTTLED_RATE_KBPS="64"
 - `POST /api/settings/download-dir/select`：打开本机文件夹选择对话框并保存下载根目录。
 - `POST /api/cookies`、`DELETE /api/cookies`：上传/清除 cookies。
 - `POST /api/cookies/from-browser`：通过 yt-dlp 从本机浏览器导入 YouTube/Google cookies；请求体可传 `{ "browser": "auto" }` 或指定 `edge`、`chrome`、`firefox` 等浏览器；当 Edge 锁库时，可在用户确认后传 `{ "browser": "edge", "close_browser_if_locked": true }` 关闭 Edge 并重试导入。
-- `GET /api/diagnostics`：依赖和运行状态诊断；包含 `impersonation_available`、`impersonation_targets`、`po_token_provider_available`、`youtube_po_token_configured`、`youtube_visitor_data_configured`、`youtube_max_parallel_downloads`、`anti403_http_chunk_size_mb`、`throttled_rate_kbps` 等状态，用于确认 `curl_cffi`、PO-token provider 和下载稳定性参数是否启用；不会返回 token 原文。
+- `GET /api/diagnostics`：依赖和运行状态诊断；包含 `impersonation_available`、`impersonation_targets`、`po_token_provider_available`、`youtube_po_token_configured`、`youtube_visitor_data_configured`、`youtube_max_parallel_downloads`、`anti403_http_chunk_size_mb`、`throttled_rate_kbps`、`aria2c_available`、`aria2c_enabled` 等状态，用于确认 `curl_cffi`、PO-token provider、可选 aria2c fallback 和下载稳定性参数是否启用；不会返回 token 原文。
 
 ## 测试
 
@@ -173,7 +179,7 @@ npm run build
 ## 常见问题
 
 - 分析成功但下载失败：先检查 `GET /api/diagnostics` 或顶部状态，确认 `yt-dlp`、JS runtime、`ffmpeg`、cookies、`impersonation_available` 和 `po_token_provider_available` 是否可用；`ffprobe` 为可选诊断项，不影响常规下载。
-- 媒体流 403 或连接重置：后台会在当前清晰度下依次尝试 PO-token provider、浏览器 impersonation、Safari HLS 优先 profile、断点续传、16 MiB HTTP chunk、低速重取 fresh media URL 和下载器级退避重试；若仍失败，不会在下载过程中自动改清晰度从头下载，而是在任务中心提示可尝试的较低清晰度，由你决定是否重启。若浏览器能正常播放但应用仍失败，先重新导入 cookies；仍失败时检查 `po_token_provider_available`，或配置 `YTDL_YOUTUBE_PO_TOKEN`、`YTDL_YOUTUBE_VISITOR_DATA` 和 `YTDL_YOUTUBE_PO_BROWSER_PATH`。
+- 媒体流 403 或连接重置：后台会在当前清晰度下依次尝试 PO-token provider、浏览器 impersonation、Safari HLS 优先 profile、断点续传、16 MiB HTTP chunk、低速重取 fresh media URL 和下载器级退避重试；若启用了 `YTDL_ARIA2C_ENABLED=true` 且 `aria2c_available=true`，还会在 default 原生下载失败后插入单连接 aria2c fallback。若仍失败，不会在下载过程中自动改清晰度从头下载，而是在任务中心提示可尝试的较低清晰度，由你决定是否重启。若浏览器能正常播放但应用仍失败，先重新导入 cookies；仍失败时检查 `po_token_provider_available`，或配置 `YTDL_YOUTUBE_PO_TOKEN`、`YTDL_YOUTUBE_VISITOR_DATA` 和 `YTDL_YOUTUBE_PO_BROWSER_PATH`。
 - 高分辨率不可用：YouTube 常把视频和音频分离，缺少可用 `ffmpeg` 时无法合并。系统会优先使用内置 `imageio-ffmpeg`；如果某个视频在下载前确认没有所选高度，任务会自动降级到低于目标且不低于 720p 的最高可用清晰度，并明确显示“视频本来没有目标清晰度”。如果源视频本身最高只有 480p/360p，则允许降到源视频最高可用低清晰度，并显示“视频本身没有 720p 或更高清晰度”。如果目标清晰度存在但当前 selector 无法选出可下载组合，只会自动降到 720p 或更高的安全清晰度，并提供“以原定高分辨率重试”；媒体流 403/连接重置不会在下载过程中自动降级重下，只会提示较低清晰度重启建议。
 - 需要登录或遇到 bot 校验的视频失败：先在“解析链接”面板点击“从浏览器导入”。如果 Edge 正在运行导致 cookie 数据库被锁定，界面会提示确认关闭 Edge 后再导入；后台下载任务不会擅自关闭浏览器，遇到锁库时会提示你回到解析面板确认导入后再重启任务。如果 yt-dlp 直接解密 Edge cookies 失败，应用会尝试临时 headless Edge DevTools fallback；如果浏览器未登录 YouTube、系统密钥链不可用、YouTube 已轮换或拒绝当前登录 cookies，或自动导入仍失败，再改用手动上传有效的 `cookies.txt`。
 - 新任务立刻失败：查看任务中心失败原因；常见原因包括网络不可达、cookies 失效、视频不可用、格式被删除或 yt-dlp 需要更新。

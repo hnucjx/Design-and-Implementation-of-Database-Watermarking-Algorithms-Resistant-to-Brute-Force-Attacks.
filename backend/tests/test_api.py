@@ -547,6 +547,9 @@ def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
     assert payload["dependencies"]["youtube_max_parallel_downloads"] == 1
     assert payload["dependencies"]["anti403_http_chunk_size_mb"] == 16
     assert payload["dependencies"]["throttled_rate_kbps"] == 64
+    assert payload["dependencies"]["aria2c_enabled"] is False
+    assert payload["dependencies"]["aria2c_connections"] == 1
+    assert "aria2c_available" in payload["dependencies"]
 
 
 def test_diagnostics_returns_impersonation_status_from_real_service(monkeypatch, tmp_path: Path) -> None:

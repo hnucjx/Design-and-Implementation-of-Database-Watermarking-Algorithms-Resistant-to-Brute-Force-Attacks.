@@ -32,6 +32,9 @@ class AppSettings(BaseSettings):
     youtube_max_parallel_downloads: int = Field(default_factory=default_download_concurrency, ge=1)
     anti403_http_chunk_size_mb: int = Field(default=16, ge=1)
     throttled_rate_kbps: int = Field(default=64, ge=0)
+    aria2c_enabled: bool = False
+    aria2c_path: str | None = None
+    aria2c_connections: int = Field(default=1, ge=1, le=4)
 
     @property
     def cookies_path(self) -> Path:

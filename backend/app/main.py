@@ -51,6 +51,9 @@ def create_app(
         youtube_po_browser_path=app_settings.youtube_po_browser_path,
         anti403_http_chunk_size_mb=app_settings.anti403_http_chunk_size_mb,
         throttled_rate_kbps=app_settings.throttled_rate_kbps,
+        aria2c_enabled=app_settings.aria2c_enabled,
+        aria2c_path=app_settings.aria2c_path,
+        aria2c_connections=app_settings.aria2c_connections,
     )
     with Session(engine) as session:
         _apply_stored_settings(session, app_settings, service)

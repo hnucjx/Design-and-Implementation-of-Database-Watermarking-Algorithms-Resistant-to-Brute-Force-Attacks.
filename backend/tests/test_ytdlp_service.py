@@ -184,6 +184,78 @@ def test_throttled_rate_can_be_disabled(tmp_path: Path) -> None:
     assert "throttledratelimit" not in opts
 
 
+def test_aria2c_is_not_used_by_default_even_when_available(monkeypatch, tmp_path: Path) -> None:
+    aria2c = tmp_path / "aria2c.exe"
+    aria2c.write_text("", encoding="utf-8")
+    monkeypatch.setattr("app.ytdlp_service.shutil.which", lambda name: str(aria2c) if name == "aria2c" else None)
+    service = YtDlpService(download_dir=tmp_path)
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="best"),
+        cookies_path=None,
+        youtube_profile="default_aria2c",
+    )
+
+    assert "external_downloader" not in opts
+    assert "external_downloader_args" not in opts
+
+
+def test_aria2c_profile_uses_conservative_single_connection_args(tmp_path: Path) -> None:
+    aria2c = tmp_path / "aria2c.exe"
+    aria2c.write_text("", encoding="utf-8")
+    service = YtDlpService(download_dir=tmp_path, aria2c_enabled=True, aria2c_path=str(aria2c))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p", retries=10),
+        cookies_path=None,
+        youtube_profile="default_aria2c",
+    )
+
+    assert opts["external_downloader"] == {"http": str(aria2c), "https": str(aria2c)}
+    assert opts["external_downloader_args"]["aria2c"] == [
+        "-x",
+        "1",
+        "-s",
+        "1",
+        "-j",
+        "1",
+        "--min-split-size",
+        "16M",
+        "--max-tries",
+        "10",
+        "--retry-wait",
+        "5",
+        "--timeout",
+        "30",
+        "--connect-timeout",
+        "30",
+    ]
+    assert "impersonate" not in opts
+
+
+def test_download_tries_optional_aria2c_profile_after_default_media_block(monkeypatch, tmp_path: Path) -> None:
+    aria2c = tmp_path / "aria2c.exe"
+    aria2c.write_text("", encoding="utf-8")
+    service = YtDlpService(download_dir=tmp_path, aria2c_enabled=True, aria2c_path=str(aria2c))
+    attempts: list[str] = []
+
+    def fake_download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, youtube_profile):
+        attempts.append(youtube_profile)
+        if youtube_profile == "default":
+            raise RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+
+    monkeypatch.setattr(service, "_download_once", fake_download_once)
+
+    service.download(
+        "https://youtu.be/forbidden",
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        progress_hook=lambda payload: None,
+        should_cancel=lambda: False,
+    )
+
+    assert attempts == ["default", "default_aria2c"]
+
+
 def test_po_token_env_config_is_passed_to_youtube_extractor_args(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("YTDL_YOUTUBE_PO_TOKEN", "TOKEN123")
     monkeypatch.setenv("YTDL_YOUTUBE_VISITOR_DATA", "VISITOR456")
@@ -274,6 +346,9 @@ def test_dependency_status_reports_po_token_provider_without_secret_values(monke
 
     status = service.get_dependency_status()
 
+    assert status["aria2c_enabled"] is False
+    assert status["aria2c_connections"] == 1
+    assert "aria2c_available" in status
     assert status["po_token_provider_available"] is True
     assert status["po_token_provider"] == "yt-dlp-getpot-wpc"
     assert status["po_token_provider_version"] == "1.2.3"

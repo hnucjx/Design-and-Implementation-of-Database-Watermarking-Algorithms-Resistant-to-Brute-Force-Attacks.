@@ -203,7 +203,10 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: "Cookies" })).not.toBeInTheDocument();
 
     const file = new File(["cookie"], "cookies.txt", { type: "text/plain" });
-    await user.upload(within(analyzer as HTMLElement).getByLabelText("选择 cookies.txt"), file);
+    expect(within(analyzer as HTMLElement).getByText("选择")).toBeInTheDocument();
+    expect(within(analyzer as HTMLElement).getByText("cookies")).toBeInTheDocument();
+    expect(within(analyzer as HTMLElement).queryByText("选择 cookies.txt")).not.toBeInTheDocument();
+    await user.upload(within(analyzer as HTMLElement).getByLabelText("选择 cookies"), file);
 
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
@@ -225,6 +228,8 @@ describe("App", () => {
     render(<App />);
 
     const analyzer = (await screen.findByRole("heading", { name: "解析链接" })).closest("form") as HTMLElement;
+    expect(within(analyzer).queryByText("浏览器 cookies 来源")).not.toBeInTheDocument();
+    expect(within(analyzer).getByRole("option", { name: "自动检测浏览器" })).toBeInTheDocument();
     await user.selectOptions(within(analyzer).getByLabelText("浏览器 cookies 来源"), "edge");
     await user.click(within(analyzer).getByRole("button", { name: "从浏览器导入" }));
 

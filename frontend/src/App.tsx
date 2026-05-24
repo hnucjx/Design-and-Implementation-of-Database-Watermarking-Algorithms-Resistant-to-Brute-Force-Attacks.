@@ -55,7 +55,7 @@ import type {
 } from "./types";
 
 const BROWSER_COOKIE_OPTIONS = [
-  { value: "auto", label: "自动检测" },
+  { value: "auto", label: "自动检测浏览器" },
   { value: "edge", label: "Edge" },
   { value: "chrome", label: "Chrome" },
   { value: "firefox", label: "Firefox" },
@@ -465,9 +465,10 @@ function UrlAnalyzer({
         </span>
         <div className="cookie-inline-actions">
           <label className="file-button compact-file-button">
-            选择 cookies.txt
+            <span>选择</span>
+            <span>cookies</span>
             <input
-              aria-label="选择 cookies.txt"
+              aria-label="选择 cookies"
               type="file"
               accept=".txt"
               onChange={(event) => onCookieUpload(event.target.files?.[0] ?? null)}
@@ -479,7 +480,6 @@ function UrlAnalyzer({
         </div>
         <div className="browser-cookie-import">
           <label className="compact-select-label">
-            <span>浏览器 cookies 来源</span>
             <select
               aria-label="浏览器 cookies 来源"
               className="compact-select"

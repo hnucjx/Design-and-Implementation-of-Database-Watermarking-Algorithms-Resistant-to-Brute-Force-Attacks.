@@ -677,7 +677,11 @@ th {
 .item-list {
   display: grid;
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #e2e9f5;
+  border-radius: 8px;
+  background: #f3f7fc;
   color: #667085;
   font-size: 13px;
 }
@@ -688,7 +692,7 @@ th {
   padding: 10px;
   border: 1px solid #e4eaf4;
   border-radius: 8px;
-  background: #fbfdff;
+  background: #ffffff;
 }
 
 .item-row,

@@ -54,6 +54,7 @@ npm run dev -- --port 5173
 ## 任务中心
 
 任务中心展示任务级和子视频级状态。后端 API 返回的字段见 [JobRead](../backend/app/schemas.py#L123) 和 [JobItemRead](../backend/app/schemas.py#L95)，前端展示组件见 [JobQueue](../frontend/src/components/JobQueue.tsx#L13)。
+Playlist 展开后会用浅色分组背景承载子视频列表，便于区分合集任务行和单个视频任务。
 
 | 信息 | 说明 |
 | --- | --- |

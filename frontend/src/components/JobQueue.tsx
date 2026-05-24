@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from "react";
-import { ChevronDown, Gauge, Pause, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronDown, FileX2, Gauge, Pause, RotateCcw, Trash2 } from "lucide-react";
 import type { Job, JobBatchAction, ResolutionFallback } from "../types";
 import {
   formatBytesPerSecond,
@@ -95,7 +95,7 @@ export function JobQueue({
             批量删除任务
           </button>
           <button type="button" className="ghost-button danger" onClick={() => onBatchAction("delete", true)}>
-            <Trash2 size={16} />
+            <FileX2 size={16} />
             批量删除任务和已下载文件
           </button>
         </div>
@@ -163,7 +163,7 @@ export function JobQueue({
                   aria-label={`删除任务和已下载文件 ${title}`}
                   onClick={() => onDelete(job.id, true)}
                 >
-                  <Trash2 size={18} />
+                  <FileX2 size={18} />
                 </button>
               </div>
             </div>
@@ -212,7 +212,7 @@ export function JobQueue({
                         className="ghost-button danger"
                         onClick={() => onDeleteItems(job.id, selectedItemIds, true)}
                       >
-                        <Trash2 size={15} />
+                        <FileX2 size={15} />
                         删除已选任务和已下载文件
                       </button>
                     </div>
@@ -264,7 +264,7 @@ export function JobQueue({
                           aria-label={`删除视频任务和已下载文件 ${item.title}`}
                           onClick={() => onDeleteItems(job.id, [item.id], true)}
                         >
-                          <Trash2 size={16} />
+                          <FileX2 size={16} />
                         </button>
                       </div>
                     </div>

@@ -477,6 +477,20 @@ describe("App", () => {
     );
   });
 
+  test("uses distinct icons for task-only and task-plus-files deletion", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    const taskOnlyButton = screen.getByRole("button", { name: "仅删除任务 Running video" });
+    const withFilesButton = screen.getByRole("button", { name: "删除任务和已下载文件 Running video" });
+
+    const taskOnlyIcon = taskOnlyButton.querySelector("svg");
+    const withFilesIcon = withFilesButton.querySelector("svg");
+    expect(taskOnlyIcon).toBeInTheDocument();
+    expect(withFilesIcon).toBeInTheDocument();
+    expect(taskOnlyIcon?.outerHTML).not.toEqual(withFilesIcon?.outerHTML);
+  });
+
   test("does not show the legacy global delete-files checkbox", async () => {
     render(<App />);
 

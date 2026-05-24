@@ -557,3 +557,26 @@ Thumbs.db
 ## Assumptions
 - `ai/brainstorming.md` 是用户未跟踪文件，本次不触碰。
 - 删除运行中内容允许立即执行；文件删除基于数据库已知 `output_path`，未记录最终输出路径时只删除任务记录。
+
+---
+
+# 2026-05-24 +08:00 - 任务中心与下载选项 UI 微调计划
+
+## Summary
+按 `frontend-design` 要求做克制、清晰的工具型界面优化，不改下载流程或 API。改动范围包括任务中心间距、playlist 展开区层级背景、删除文件按钮图标、限速/并发/cookies 文案，以及默认并发配置。保留未跟踪的 `ai/brainstorming.md` 不动；每个小步验证、提交并 `git push origin main`。
+
+## Key Changes
+- 任务中心标题行增加固定留白，避免标题图标被任务列表视觉覆盖。
+- Playlist 展开后的子视频区域使用浅色背景、细边框和内边距，单个视频条目继续白底显示。
+- “仅删除任务/视频任务”保留 `Trash2`，所有“删除任务并删除已下载文件”入口统一改用 `FileX2` 图标。
+- 限速提示改为 `限速 KB/s（清空：不限速）`；并发提示改为 `并发（若追求稳定，可设为 1）`，系统默认并发改为 5。
+- Cookies 文件按钮改为两行“选择 / cookies”；浏览器来源下拉移除可见 label，`自动检测` 选项改为 `自动检测浏览器`。
+
+## Test Plan
+- 前端：覆盖 cookies 控件、限速标签、并发标签、任务中心删除入口和现有任务队列交互。
+- 后端：覆盖默认并发从环境变量读取，未设置时默认 5，显式环境变量仍优先。
+- 全量验证：`python -m compileall backend\app`、`python -m pytest backend\tests -q`、`cd frontend && npm test`、`cd frontend && npm run build`、`git diff --check`。
+
+## Assumptions
+- “删除浏览器 cookies 来源文本控件”理解为移除可见 label 文本，不移除浏览器来源下拉框。
+- 默认并发改为 5 只影响新默认值；用户已保存的并发设置不迁移、不覆盖。

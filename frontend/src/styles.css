@@ -135,6 +135,9 @@ button {
 
 .job-title-row {
   justify-content: space-between;
+  min-height: 34px;
+  margin-bottom: 20px;
+  padding-bottom: 2px;
 }
 
 .job-title-main {

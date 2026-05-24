@@ -1154,6 +1154,230 @@ def test_delete_job_can_delete_downloaded_file_and_empty_playlist_folder(tmp_pat
     assert not playlist_dir.exists()
 
 
+def test_delete_playlist_item_keeps_files_and_refreshes_parent_job(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    playlist_dir = tmp_path / "downloads" / "Course"
+    kept_file = playlist_dir / "kept.mp4"
+    deleted_file = playlist_dir / "deleted.mp4"
+    playlist_dir.mkdir(parents=True)
+    kept_file.write_text("kept", encoding="utf-8")
+    deleted_file.write_text("deleted", encoding="utf-8")
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist-delete-item",
+                url="https://youtube.com/playlist?list=abc",
+                title="Course",
+                status="failed",
+                options_json="{}",
+                total_items=2,
+                completed_items=1,
+                failed_items=1,
+                progress=50.0,
+                download_dir=str(playlist_dir),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-kept",
+                job_id="job-playlist-delete-item",
+                source_url="https://youtu.be/kept",
+                title="Kept",
+                index=1,
+                status="succeeded",
+                progress=100.0,
+                output_path=str(kept_file),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-deleted",
+                job_id="job-playlist-delete-item",
+                source_url="https://youtu.be/deleted",
+                title="Deleted",
+                index=2,
+                status="failed",
+                progress=0.0,
+                output_path=str(deleted_file),
+                error="boom",
+            )
+        )
+        session.commit()
+
+    response = client.post(
+        "/api/jobs/job-playlist-delete-item/items/delete",
+        json={"item_ids": ["item-deleted"], "delete_files": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["deleted_item_ids"] == ["item-deleted"]
+    assert payload["job_deleted"] is False
+    assert payload["job"]["status"] == "succeeded"
+    assert payload["job"]["total_items"] == 1
+    assert payload["job"]["completed_items"] == 1
+    assert payload["job"]["failed_items"] == 0
+    assert [item["id"] for item in payload["job"]["items"]] == ["item-kept"]
+    assert kept_file.exists()
+    assert deleted_file.exists()
+
+
+def test_delete_playlist_item_can_delete_output_and_sidecars(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    playlist_dir = tmp_path / "downloads" / "Course"
+    kept_file = playlist_dir / "kept.mp4"
+    deleted_file = playlist_dir / "deleted.mp4"
+    sidecars = [
+        deleted_file.with_suffix(".srt"),
+        deleted_file.with_suffix(".vtt"),
+        deleted_file.with_suffix(".info.json"),
+        deleted_file.with_suffix(".description"),
+        deleted_file.with_suffix(".jpg"),
+    ]
+    playlist_dir.mkdir(parents=True)
+    kept_file.write_text("kept", encoding="utf-8")
+    deleted_file.write_text("deleted", encoding="utf-8")
+    for sidecar in sidecars:
+        sidecar.write_text("sidecar", encoding="utf-8")
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist-delete-files",
+                url="https://youtube.com/playlist?list=abc",
+                title="Course",
+                status="running",
+                options_json="{}",
+                total_items=2,
+                download_dir=str(playlist_dir),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-kept",
+                job_id="job-playlist-delete-files",
+                source_url="https://youtu.be/kept",
+                title="Kept",
+                index=1,
+                status="queued",
+                progress=0.0,
+                output_path=str(kept_file),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-deleted",
+                job_id="job-playlist-delete-files",
+                source_url="https://youtu.be/deleted",
+                title="Deleted",
+                index=2,
+                status="queued",
+                progress=0.0,
+                output_path=str(deleted_file),
+            )
+        )
+        session.commit()
+
+    response = client.post(
+        "/api/jobs/job-playlist-delete-files/items/delete",
+        json={"item_ids": ["item-deleted"], "delete_files": True},
+    )
+
+    assert response.status_code == 200
+    assert kept_file.exists()
+    assert not deleted_file.exists()
+    assert all(not sidecar.exists() for sidecar in sidecars)
+    assert playlist_dir.exists()
+
+
+def test_delete_all_playlist_items_deletes_parent_and_empty_folder(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    playlist_dir = tmp_path / "downloads" / "Course"
+    output_file = playlist_dir / "only.mp4"
+    sidecar = output_file.with_suffix(".vtt")
+    playlist_dir.mkdir(parents=True)
+    output_file.write_text("video", encoding="utf-8")
+    sidecar.write_text("subtitle", encoding="utf-8")
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist-delete-last",
+                url="https://youtube.com/playlist?list=abc",
+                title="Course",
+                status="succeeded",
+                options_json="{}",
+                total_items=1,
+                completed_items=1,
+                progress=100.0,
+                download_dir=str(playlist_dir),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-only",
+                job_id="job-playlist-delete-last",
+                source_url="https://youtu.be/only",
+                title="Only",
+                index=1,
+                status="succeeded",
+                progress=100.0,
+                output_path=str(output_file),
+            )
+        )
+        session.commit()
+
+    response = client.post(
+        "/api/jobs/job-playlist-delete-last/items/delete",
+        json={"item_ids": ["item-only"], "delete_files": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted_item_ids": ["item-only"], "job_deleted": True, "job": None}
+    assert client.get("/api/jobs/job-playlist-delete-last").status_code == 404
+    assert not output_file.exists()
+    assert not sidecar.exists()
+    assert not playlist_dir.exists()
+
+
+def test_delete_playlist_item_returns_404_for_missing_item(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+    seed_job(tmp_path, "job-delete-missing-item")
+
+    response = client.post(
+        "/api/jobs/job-delete-missing-item/items/delete",
+        json={"item_ids": ["missing"], "delete_files": False},
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_running_item_removes_record_without_reinsert(tmp_path: Path) -> None:
+    service = BlockingYtDlpService()
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={"url": "https://youtu.be/delete-running", "options": {"mode": "video_subtitles", "resolution": "720p"}},
+        )
+        assert response.status_code == 201
+        payload = response.json()
+        job_id = payload["id"]
+        item_id = payload["items"][0]["id"]
+        assert service.started.get(timeout=2) == "https://youtu.be/delete-running"
+
+        delete_response = client.post(
+            f"/api/jobs/{job_id}/items/delete",
+            json={"item_ids": [item_id], "delete_files": True},
+        )
+        service.release.set()
+        time.sleep(0.1)
+
+        assert delete_response.status_code == 200
+        assert delete_response.json()["job_deleted"] is True
+        assert client.get(f"/api/jobs/{job_id}").status_code == 404
+
+
 def test_batch_job_actions_pause_restart_and_delete_multiple_jobs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     first_id = "job-first"

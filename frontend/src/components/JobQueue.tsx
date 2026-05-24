@@ -17,6 +17,7 @@ export function JobQueue({
   onBatchAction,
   onDeleteFilesWithJobsChange,
   onDelete,
+  onDeleteItems,
   onPause,
   onRestart,
   onRestartItem,
@@ -28,6 +29,7 @@ export function JobQueue({
   onBatchAction: (action: JobBatchAction) => void;
   onDeleteFilesWithJobsChange: (checked: boolean) => void;
   onDelete: (jobId: string, deleteFiles?: boolean) => void;
+  onDeleteItems: (jobId: string, itemIds: string[], deleteFiles?: boolean) => void;
   onPause: (jobId: string) => void;
   onRestart: (jobId: string, resolution?: string) => void;
   onRestartItem: (jobId: string, itemId: string, resolution?: string) => void;
@@ -35,6 +37,7 @@ export function JobQueue({
 }) {
   const selectedCount = selectedJobIds.size;
   const [expandedJobIds, setExpandedJobIds] = useState<Record<string, boolean>>({});
+  const [selectedItemIdsByJob, setSelectedItemIdsByJob] = useState<Record<string, Set<string>>>({});
 
   useEffect(() => {
     setExpandedJobIds((current) => {
@@ -42,10 +45,33 @@ export function JobQueue({
       const next = Object.fromEntries(Object.entries(current).filter(([jobId]) => availableJobIds.has(jobId)));
       return Object.keys(next).length === Object.keys(current).length ? current : next;
     });
+    setSelectedItemIdsByJob((current) => {
+      const availableItems = new Map(jobs.map((job) => [job.id, new Set(job.items.map((item) => item.id))]));
+      const next: Record<string, Set<string>> = {};
+      for (const [jobId, itemIds] of Object.entries(current)) {
+        const available = availableItems.get(jobId);
+        if (!available) continue;
+        const kept = new Set(Array.from(itemIds).filter((itemId) => available.has(itemId)));
+        if (kept.size) next[jobId] = kept;
+      }
+      return next;
+    });
   }, [jobs]);
 
   function toggleExpanded(jobId: string, isExpanded: boolean) {
     setExpandedJobIds((current) => ({ ...current, [jobId]: !isExpanded }));
+  }
+
+  function toggleItemSelection(jobId: string, itemId: string) {
+    setSelectedItemIdsByJob((current) => {
+      const next = { ...current };
+      const selected = new Set(next[jobId] ?? []);
+      if (selected.has(itemId)) selected.delete(itemId);
+      else selected.add(itemId);
+      if (selected.size) next[jobId] = selected;
+      else delete next[jobId];
+      return next;
+    });
   }
 
   return (
@@ -176,6 +202,30 @@ export function JobQueue({
             )}
             {job.items.length > 0 && isPlaylist && isExpanded && (
               <div className="item-list">
+                {(() => {
+                  const selectedItemIds = Array.from(selectedItemIdsByJob[job.id] ?? []);
+                  return selectedItemIds.length > 0 ? (
+                    <div className="item-batch-toolbar" aria-label={`批量视频操作 ${title}`}>
+                      <span>{selectedItemIds.length} 个视频已选择</span>
+                      <button
+                        type="button"
+                        className="ghost-button danger"
+                        onClick={() => onDeleteItems(job.id, selectedItemIds, false)}
+                      >
+                        <Trash2 size={15} />
+                        删除已选视频任务
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-button danger"
+                        onClick={() => onDeleteItems(job.id, selectedItemIds, true)}
+                      >
+                        <Trash2 size={15} />
+                        删除已选任务和已下载文件
+                      </button>
+                    </div>
+                  ) : null;
+                })()}
                 {job.items.map((item) => {
                   const itemRestartResolution = item.resolution_fallback?.restart_resolution ?? null;
                   const itemRestartLabel = item.resolution_fallback
@@ -184,7 +234,15 @@ export function JobQueue({
                   return (
                   <div key={item.id} className="job-item-detail">
                     <div className="item-row">
-                      <span>{item.index}. {item.title} · {item.status}</span>
+                      <label className="item-title-select">
+                        <input
+                          aria-label={`选择视频任务 ${item.title}`}
+                          type="checkbox"
+                          checked={selectedItemIdsByJob[job.id]?.has(item.id) ?? false}
+                          onChange={() => toggleItemSelection(job.id, item.id)}
+                        />
+                        <span>{item.index}. {item.title} · {item.status}</span>
+                      </label>
                       <div className="item-actions">
                         {item.error && !item.resolution_fallback && <span className="item-error">{item.error}</span>}
                         {item.status !== "running" && (
@@ -198,6 +256,24 @@ export function JobQueue({
                             <RotateCcw size={16} />
                           </button>
                         )}
+                        <button
+                          className="icon-button item-action-button danger"
+                          type="button"
+                          title="仅删除视频任务"
+                          aria-label={`仅删除视频任务 ${item.title}`}
+                          onClick={() => onDeleteItems(job.id, [item.id], false)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                        <button
+                          className="icon-button item-action-button danger"
+                          type="button"
+                          title="删除视频任务和已下载文件"
+                          aria-label={`删除视频任务和已下载文件 ${item.title}`}
+                          onClick={() => onDeleteItems(job.id, [item.id], true)}
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     </div>
                     <div className="item-metrics">

@@ -571,14 +571,16 @@ th {
 }
 
 .job-actions,
-.batch-toolbar {
+.batch-toolbar,
+.item-batch-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.batch-toolbar {
+.batch-toolbar,
+.item-batch-toolbar {
   margin-top: 16px;
   padding: 10px;
   border: 1px solid #e1e7f1;
@@ -587,6 +589,10 @@ th {
   color: #48556a;
   font-size: 13px;
   font-weight: 800;
+}
+
+.item-batch-toolbar {
+  margin-top: 0;
 }
 
 .delete-files-toggle {
@@ -708,6 +714,17 @@ th {
   justify-content: space-between;
   color: #334155;
   font-weight: 800;
+}
+
+.item-title-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-title-select input {
+  width: auto;
+  margin: 0;
 }
 
 .item-error {

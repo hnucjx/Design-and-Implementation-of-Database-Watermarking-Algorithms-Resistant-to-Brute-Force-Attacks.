@@ -39,7 +39,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L37) 创建，启动时：
 4. 单项由 [_run_item](../backend/app/job_manager.py#L324) 处理，负责预检测、下载、进度 hook、错误分类和终态写入。
 5. 全部子项处理后调用 [_finish_job](../backend/app/job_manager.py#L521) 聚合任务终态。
 
-暂停和重启会重置运行中字段，但保留可重新执行的任务记录，见 [restart](../backend/app/job_manager.py#L116) 和 [restart_item](../backend/app/job_manager.py#L166)。
+暂停和重启会重置运行中字段，但保留可重新执行的任务记录，见 [restart](../backend/app/job_manager.py#L116) 和 [restart_item](../backend/app/job_manager.py#L166)。Playlist 子视频删除由 `delete_items()` 处理：删除指定 `JobItem` 后刷新父任务聚合状态；如果删除最后一个子视频，父任务也会被删除。
 
 ## yt-dlp 封装
 
@@ -91,6 +91,8 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 - [quality.ts](../frontend/src/quality.ts)：清晰度选项、可用高度、降级按钮标签和选中清晰度显示。
 
 前端不负责构造 yt-dlp selector，只提交 `DownloadOptions`，由后端决定实际格式。
+
+任务中心删除入口分为任务级和 playlist 子视频级：任务级调用 `DELETE /api/jobs/{job_id}`，子视频级调用 `POST /api/jobs/{job_id}/items/delete`。删除文件入口统一在发请求前用确认弹窗保护。
 
 ## 日志安全
 

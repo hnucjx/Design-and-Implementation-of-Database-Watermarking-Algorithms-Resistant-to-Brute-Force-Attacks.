@@ -2,6 +2,7 @@ import type {
   AnalyzeResponse,
   ApiErrorDetail,
   CookieStatus,
+  DeleteJobItemsResponse,
   DownloadOptions,
   Job,
   JobBatchAction,
@@ -91,6 +92,13 @@ export function restartJobItem(jobId: string, itemId: string, resolution?: strin
 export function deleteJob(jobId: string, deleteFiles = false): Promise<void> {
   const query = deleteFiles ? "?delete_files=true" : "";
   return request<void>(`/api/jobs/${jobId}${query}`, { method: "DELETE" });
+}
+
+export function deleteJobItems(jobId: string, itemIds: string[], deleteFiles = false): Promise<DeleteJobItemsResponse> {
+  return request<DeleteJobItemsResponse>(`/api/jobs/${jobId}/items/delete`, {
+    method: "POST",
+    body: JSON.stringify({ item_ids: itemIds, delete_files: deleteFiles })
+  });
 }
 
 export function batchJobAction(action: JobBatchAction, jobIds: string[], deleteFiles = false): Promise<JobBatchActionResponse> {

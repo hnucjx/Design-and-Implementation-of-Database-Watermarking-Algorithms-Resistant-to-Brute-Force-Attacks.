@@ -114,6 +114,12 @@ export interface JobBatchActionResponse {
   jobs: Job[];
 }
 
+export interface DeleteJobItemsResponse {
+  deleted_item_ids: string[];
+  job_deleted: boolean;
+  job: Job | null;
+}
+
 export interface Settings {
   download_dir: string;
   default_concurrency: number;

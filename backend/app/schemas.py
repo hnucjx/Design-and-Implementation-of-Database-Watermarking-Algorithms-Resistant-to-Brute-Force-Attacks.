@@ -84,6 +84,11 @@ class JobBatchActionRequest(BaseModel):
     delete_files: bool = False
 
 
+class DeleteJobItemsRequest(BaseModel):
+    item_ids: list[str] = Field(min_length=1)
+    delete_files: bool = False
+
+
 class ResolutionFallback(BaseModel):
     requested_resolution: str
     fallback_resolution: str
@@ -148,6 +153,12 @@ class JobRead(BaseModel):
 class JobBatchActionResponse(BaseModel):
     affected_job_ids: list[str]
     jobs: list[JobRead] = Field(default_factory=list)
+
+
+class DeleteJobItemsResponse(BaseModel):
+    deleted_item_ids: list[str]
+    job_deleted: bool
+    job: JobRead | None = None
 
 
 class SettingsRead(BaseModel):

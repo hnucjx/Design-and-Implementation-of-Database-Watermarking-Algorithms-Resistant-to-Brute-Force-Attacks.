@@ -40,6 +40,7 @@ class JobManager:
         self._cancelled: set[str] = set()
         self._paused: set[str] = set()
         self._deleted: set[str] = set()
+        self._deleted_items: set[str] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._cookie_import_lock = threading.Lock()
 
@@ -212,6 +213,61 @@ class JobManager:
         self._queue.put_nowait(job_id)
         return True
 
+    async def delete_items(
+        self,
+        job_id: str,
+        item_ids: list[str],
+        delete_files: bool = False,
+    ) -> tuple[list[str], bool]:
+        requested_item_ids = set(item_ids)
+        deleted_item_ids: list[str] = []
+        output_paths: list[Path] = []
+        job_download_dir: Path | None = None
+        job_deleted = False
+        with Session(self.engine) as session:
+            job = session.get(Job, job_id)
+            if not job:
+                return [], False
+            if job.download_dir:
+                job_download_dir = Path(job.download_dir)
+            items = session.exec(select(JobItem).where(JobItem.job_id == job_id)).all()
+            targets = [item for item in items if item.id in requested_item_ids]
+            if not targets:
+                return [], False
+            for item in targets:
+                self._deleted_items.add(item.id)
+                deleted_item_ids.append(item.id)
+                if delete_files and item.output_path:
+                    output_paths.append(Path(item.output_path))
+                for event in session.exec(select(JobEvent).where(JobEvent.item_id == item.id)).all():
+                    session.delete(event)
+                session.delete(item)
+            session.commit()
+
+            remaining = session.exec(select(JobItem).where(JobItem.job_id == job_id)).all()
+            if not remaining:
+                for event in session.exec(select(JobEvent).where(JobEvent.job_id == job_id)).all():
+                    session.delete(event)
+                session.delete(job)
+                session.commit()
+                self._deleted.add(job_id)
+                job_deleted = True
+            else:
+                self._recalculate_job_after_item_delete(session, job)
+
+        if delete_files:
+            self._delete_output_files(output_paths, job_download_dir)
+        event_type = "job_deleted" if job_deleted else "items_deleted"
+        await self.broker.publish(
+            {
+                "type": event_type,
+                "job_id": job_id,
+                "item_ids": deleted_item_ids,
+                "job_deleted": job_deleted,
+            }
+        )
+        return deleted_item_ids, job_deleted
+
     async def delete(self, job_id: str, delete_files: bool = False) -> None:
         self._deleted.add(job_id)
         self._paused.discard(job_id)
@@ -225,6 +281,7 @@ class JobManager:
             for event in session.exec(select(JobEvent).where(JobEvent.job_id == job_id)).all():
                 session.delete(event)
             for item in session.exec(select(JobItem).where(JobItem.job_id == job_id)).all():
+                self._deleted_items.add(item.id)
                 if delete_files and item.output_path:
                     output_paths.append(Path(item.output_path))
                 session.delete(item)
@@ -302,6 +359,8 @@ class JobManager:
             download_dir = Path(job.download_dir) if job.download_dir else self.settings.download_dir
             for item in items:
                 if item.status != JobStatus.queued.value:
+                    continue
+                if item.id in self._deleted_items:
                     continue
                 if job_id in self._deleted:
                     return
@@ -402,7 +461,12 @@ class JobManager:
         try:
             options = self._options_for_available_resolution(session, item, options)
             options = self._prepare_download(session, item, options)
-            should_cancel = lambda: job.id in self._cancelled or job.id in self._paused or job.id in self._deleted
+            should_cancel = (
+                lambda: job.id in self._cancelled
+                or job.id in self._paused
+                or job.id in self._deleted
+                or item.id in self._deleted_items
+            )
             self._download_with_cookie_refresh(
                 item.source_url,
                 options,
@@ -429,6 +493,8 @@ class JobManager:
                 self._annotate_resolution_fallback(item, options, exc)
             self._log_item_failure(item, options, exc)
         else:
+            if item.id in self._deleted_items:
+                return
             session.refresh(item)
             if item.output_path is None and progress_aggregator.output_path:
                 item.output_path = progress_aggregator.output_path
@@ -441,7 +507,7 @@ class JobManager:
             item.status = JobStatus.succeeded.value
             item.progress = 100.0
         finally:
-            if job.id in self._deleted:
+            if job.id in self._deleted or item.id in self._deleted_items:
                 return
             item.finished_at = utc_now() if item.status != JobStatus.paused.value else None
             if item.status in {JobStatus.succeeded.value, JobStatus.failed.value, JobStatus.cancelled.value}:
@@ -568,10 +634,49 @@ class JobManager:
 
     def _refresh_job_counts(self, session: Session, job: Job) -> None:
         items = session.exec(select(JobItem).where(JobItem.job_id == job.id)).all()
+        job.total_items = len(items)
         job.completed_items = sum(1 for item in items if item.status == JobStatus.succeeded.value)
         job.failed_items = sum(1 for item in items if item.status == JobStatus.failed.value)
         if items:
             job.progress = sum(item.progress for item in items) / len(items)
+        else:
+            job.progress = 0.0
+        job.updated_at = utc_now()
+        session.add(job)
+        session.commit()
+
+    def _recalculate_job_after_item_delete(self, session: Session, job: Job) -> None:
+        items = session.exec(select(JobItem).where(JobItem.job_id == job.id)).all()
+        self._refresh_job_counts(session, job)
+        statuses = {item.status for item in items}
+        running_item = next((item for item in items if item.status == JobStatus.running.value), None)
+        if running_item:
+            job.status = JobStatus.running.value
+            job.current_item_title = running_item.title
+            job.error = None
+            job.finished_at = None
+        elif JobStatus.failed.value in statuses:
+            job.status = JobStatus.failed.value
+            job.error = self._job_error_message(session, job)
+            job.current_item_title = None
+        elif items and all(item.status == JobStatus.succeeded.value for item in items):
+            job.status = JobStatus.succeeded.value
+            job.progress = 100.0
+            job.error = None
+            job.current_item_title = None
+            job.finished_at = job.finished_at or utc_now()
+        elif JobStatus.paused.value in statuses and statuses <= {JobStatus.paused.value, JobStatus.succeeded.value}:
+            job.status = JobStatus.paused.value
+            job.error = None
+            job.current_item_title = None
+        elif JobStatus.queued.value in statuses:
+            job.status = JobStatus.queued.value
+            job.error = None
+            job.current_item_title = None
+            job.finished_at = None
+        elif JobStatus.cancelled.value in statuses:
+            job.status = JobStatus.cancelled.value
+            job.current_item_title = None
         job.updated_at = utc_now()
         session.add(job)
         session.commit()

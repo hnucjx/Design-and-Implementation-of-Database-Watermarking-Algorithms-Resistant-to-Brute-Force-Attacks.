@@ -26,7 +26,7 @@
 | FR-4 | 用户只选择清晰度，后端自动选择具体格式。 | [`format_selector`](../backend/app/ytdlp_formats.py#L9) |
 | FR-5 | 下载前预检测计划分辨率和格式，任务中心展示实际值。 | [`prepare_download`](../backend/app/ytdlp_service.py#L198)、[`_apply_download_preparation`](../backend/app/job_manager.py#L682) |
 | FR-6 | 支持明确的分辨率降级原因和重启建议。 | [`fallback_policy.py`](../backend/app/fallback_policy.py#L4) |
-| FR-7 | 支持任务暂停、重启、删除和批量操作。 | [`batch_job_action`](../backend/app/main.py#L170)、[`JobManager.restart`](../backend/app/job_manager.py#L116) |
+| FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除和批量操作。 | [`batch_job_action`](../backend/app/main.py#L170)、[`JobManager.restart`](../backend/app/job_manager.py#L116) |
 | FR-8 | 支持 cookies 上传、浏览器导入和清除。 | [`/api/cookies`](../backend/app/main.py#L293)、[`BrowserCookieImporter`](../backend/app/browser_cookies.py#L55) |
 | FR-9 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/main.py#L243)、[`EventBroker`](../backend/app/events.py#L7) |
 | FR-10 | 支持诊断依赖状态。 | [`/api/diagnostics`](../backend/app/main.py#L102)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L110) |

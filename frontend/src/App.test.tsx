@@ -90,6 +90,22 @@ describe("App", () => {
         if (url.endsWith("/api/jobs/job-format-failed/restart")) {
           return Response.json({ ...singleFallbackJobPayload, status: "queued" });
         }
+        if (url.endsWith("/api/jobs/job-playlist/items/delete")) {
+          const body = JSON.parse(String(init?.body ?? "{}"));
+          const deleted = new Set<string>(body.item_ids ?? []);
+          const remainingItems = playlistJobPayload.items.filter((item) => !deleted.has(item.id));
+          return Response.json({
+            deleted_item_ids: Array.from(deleted),
+            job_deleted: remainingItems.length === 0,
+            job: remainingItems.length
+              ? {
+                  ...playlistJobPayload,
+                  total_items: remainingItems.length,
+                  items: remainingItems
+                }
+              : null
+          });
+        }
         if (url.endsWith("/api/jobs/job-playlist/items/item-playlist-2/restart")) {
           return Response.json({
             ...playlistJobPayload,
@@ -592,6 +608,57 @@ describe("App", () => {
     expect(fetch).toHaveBeenCalledWith(
       "/api/jobs/job-playlist/items/item-playlist-2/restart",
       expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  test("deletes a single playlist item from task center", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "仅删除视频任务 Part two" }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-playlist/items/delete",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ item_ids: ["item-playlist-2"], delete_files: false })
+      })
+    );
+  });
+
+  test("confirms before deleting playlist item files", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除视频任务和已下载文件 Part two" }));
+
+    expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining("将删除所选视频任务记录"));
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-playlist/items/delete",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ item_ids: ["item-playlist-2"], delete_files: true })
+      })
+    );
+  });
+
+  test("deletes selected playlist items from task center", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    await user.click(screen.getByLabelText("选择视频任务 Part one"));
+    await user.click(screen.getByLabelText("选择视频任务 Part two"));
+    await user.click(screen.getByRole("button", { name: "删除已选任务和已下载文件" }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-playlist/items/delete",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ item_ids: ["item-playlist-1", "item-playlist-2"], delete_files: true })
+      })
     );
   });
 

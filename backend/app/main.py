@@ -22,6 +22,8 @@ from .schemas import (
     BrowserCookieImportRequest,
     CookieStatus,
     CreateJobRequest,
+    DeleteJobItemsRequest,
+    DeleteJobItemsResponse,
     DiagnosticsRead,
     JobBatchActionRequest,
     JobBatchActionResponse,
@@ -232,6 +234,26 @@ def create_app(
             raise HTTPException(status_code=404, detail="Job item not found.")
         session.expire_all()
         return _read_job(session, job_id)
+
+    @app.post("/api/jobs/{job_id}/items/delete", response_model=DeleteJobItemsResponse)
+    async def delete_job_items(job_id: str, request: DeleteJobItemsRequest, session: SessionDep) -> DeleteJobItemsResponse:
+        if not session.get(Job, job_id):
+            raise HTTPException(status_code=404, detail="Job not found.")
+        deleted_item_ids, job_deleted = await manager.delete_items(
+            job_id,
+            request.item_ids,
+            delete_files=request.delete_files,
+        )
+        if not deleted_item_ids:
+            raise HTTPException(status_code=404, detail="Job item not found.")
+        if job_deleted:
+            return DeleteJobItemsResponse(deleted_item_ids=deleted_item_ids, job_deleted=True, job=None)
+        session.expire_all()
+        return DeleteJobItemsResponse(
+            deleted_item_ids=deleted_item_ids,
+            job_deleted=False,
+            job=_read_job(session, job_id),
+        )
 
     @app.delete("/api/jobs/{job_id}", status_code=204)
     async def delete_job(job_id: str, session: SessionDep, delete_files: bool = False) -> Response:

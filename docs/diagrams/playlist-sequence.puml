@@ -36,4 +36,12 @@ end
 Manager -> DB : finish job
 UI -> API : GET /api/jobs
 API --> UI : aggregate status and expandable items
+
+opt delete selected playlist items
+  User -> UI : select item rows and delete
+  UI -> API : POST /api/jobs/{job_id}/items/delete
+  API -> DB : delete selected JobItem rows
+  API -> Manager : cancel deleted running item if needed
+  API --> UI : updated JobRead or job_deleted
+end
 @enduml

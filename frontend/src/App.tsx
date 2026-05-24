@@ -22,6 +22,7 @@ import {
   batchJobAction,
   createJob,
   deleteJob,
+  deleteJobItems,
   deleteCookies,
   getSettings,
   importBrowserCookies,
@@ -266,6 +267,26 @@ export default function App() {
     setJobs((current) => current.filter((job) => job.id !== jobId));
   }
 
+  async function handleDeleteJobItems(jobId: string, itemIds: string[], deleteFiles = false) {
+    if (!itemIds.length) return;
+    if (deleteFiles && !window.confirm("将删除所选视频任务记录及其已下载的视频、字幕、metadata、缩略图和 description 等相关文件。是否继续？")) {
+      return;
+    }
+    const response = await deleteJobItems(jobId, itemIds, deleteFiles);
+    if (response.job_deleted) {
+      setJobs((current) => current.filter((job) => job.id !== jobId));
+      setSelectedJobIds((current) => {
+        const next = new Set(current);
+        next.delete(jobId);
+        return next;
+      });
+      return;
+    }
+    if (response.job) {
+      updateJobInList(response.job);
+    }
+  }
+
   async function handleBatchAction(action: JobBatchAction) {
     const jobIds = Array.from(selectedJobIds);
     if (!jobIds.length) return;
@@ -336,6 +357,9 @@ export default function App() {
               onBatchAction={(action) => void handleBatchAction(action).catch((err) => setError(err.message))}
               onDeleteFilesWithJobsChange={setDeleteFilesWithJobs}
               onDelete={(jobId, deleteFiles) => void handleDeleteJob(jobId, deleteFiles).catch((err) => setError(err.message))}
+              onDeleteItems={(jobId, itemIds, deleteFiles) =>
+                void handleDeleteJobItems(jobId, itemIds, deleteFiles).catch((err) => setError(err.message))
+              }
               onPause={(jobId) => void handlePauseJob(jobId).catch((err) => setError(err.message))}
               onRestart={(jobId, resolution) => void handleRestartJob(jobId, resolution).catch((err) => setError(err.message))}
               onRestartItem={(jobId, itemId, resolution) => void handleRestartJobItem(jobId, itemId, resolution).catch((err) => setError(err.message))}

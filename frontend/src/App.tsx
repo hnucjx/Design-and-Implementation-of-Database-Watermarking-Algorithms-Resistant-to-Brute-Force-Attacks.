@@ -713,7 +713,7 @@ function DownloadOptionsPanel({
       <div className="two-col">
         <div className="field">
           <label className="field-label" htmlFor="speed-limit-kbps">
-            限速 KB/s（清空表示不限速）
+            限速 KB/s（清空：不限速）
           </label>
           <input
             id="speed-limit-kbps"

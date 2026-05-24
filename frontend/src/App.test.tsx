@@ -373,7 +373,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const speedLimit = screen.getByLabelText("限速 KB/s（清空表示不限速）");
+    const speedLimit = screen.getByLabelText("限速 KB/s（清空：不限速）");
     expect(screen.getByLabelText("重试次数")).toHaveValue(10);
     expect(speedLimit).toHaveValue(null);
     expect(screen.queryByText("清空表示不限速")).not.toBeInTheDocument();

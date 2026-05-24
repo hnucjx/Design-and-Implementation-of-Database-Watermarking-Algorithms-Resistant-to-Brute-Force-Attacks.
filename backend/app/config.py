@@ -11,9 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def default_download_concurrency() -> int:
     try:
-        return max(1, int(os.getenv("YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS", "1")))
+        return max(1, int(os.getenv("YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS", "5")))
     except ValueError:
-        return 1
+        return 5
 
 
 class AppSettings(BaseSettings):

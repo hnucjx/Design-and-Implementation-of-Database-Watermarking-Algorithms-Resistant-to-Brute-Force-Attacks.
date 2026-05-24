@@ -75,4 +75,4 @@ PlantUML 源文件：[data-model.puml](diagrams/data-model.puml)。
 - 下载能力集中封装在 `YtDlpService`，避免 API 层暴露任意 yt-dlp 参数。
 - 任务执行与 API 读模型分离，API 只读取投影，任务管理器负责状态转换。
 - 分辨率降级只在下载前可判断的场景自动发生；媒体流 403/连接重置不会中途自动降级重下，详见 [技术文档](technical.md#分辨率降级原因)。
-- 默认稳定优先：单并发、小 chunk、低速重取 URL、断点续传和同清晰度 profile 重试。
+- 稳定优先运行方式：可将并发设为 1，并配合小 chunk、低速重取 URL、断点续传和同清晰度 profile 重试。

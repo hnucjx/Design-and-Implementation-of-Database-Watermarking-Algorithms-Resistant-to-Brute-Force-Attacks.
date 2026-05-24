@@ -83,12 +83,12 @@ Vite 开发服务器将 `/api` 请求代理到后端。若先执行 `npm run bui
 | `YTDL_DATA_DIR` | `data/` | 数据库和 cookies 目录。 |
 | `YTDL_DOWNLOAD_DIR` | `downloads/` | 下载产物目录。 |
 | `YTDL_DATABASE_PATH` | `data/app.sqlite3` | SQLite 文件路径。 |
-| `YTDL_DEFAULT_CONCURRENCY` | 来自 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` 或 `1` | 后台 worker 并发。 |
+| `YTDL_DEFAULT_CONCURRENCY` | 来自 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` 或 `5` | 后台 worker 并发。 |
 | `YTDL_DEFAULT_RESOLUTION` | `1080p` | 默认清晰度。 |
 | `YTDL_YOUTUBE_PO_TOKEN` | 空 | 高级排障用 YouTube PO token。 |
 | `YTDL_YOUTUBE_VISITOR_DATA` | 空 | 与 PO token 配套的 visitor data。 |
 | `YTDL_YOUTUBE_PO_BROWSER_PATH` | 空 | PO-token provider 使用的浏览器路径。 |
-| `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` | `1` | YouTube 下载稳定优先并发默认值。 |
+| `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` | `5` | YouTube 下载默认并发；若追求稳定，可设为 `1`。 |
 | `YTDL_ANTI403_HTTP_CHUNK_SIZE_MB` | `16` | HTTP chunk 大小。 |
 | `YTDL_THROTTLED_RATE_KBPS` | `64` | 低速重取 media URL 阈值，`0` 表示禁用。 |
 | `YTDL_ARIA2C_ENABLED` | `false` | 是否启用 aria2c fallback。 |

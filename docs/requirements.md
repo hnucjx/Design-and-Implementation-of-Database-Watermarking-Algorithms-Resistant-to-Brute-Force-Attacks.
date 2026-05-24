@@ -36,7 +36,7 @@
 | 类别 | 要求 |
 | --- | --- |
 | 可维护性 | 下载策略、降级原因、读模型、cookies 导入和格式选择拆分到独立模块，详见 [实现文档](implementation.md)。 |
-| 稳定性 | 默认单并发、断点续传、小 HTTP chunk、低速重取 URL、同清晰度多 profile 重试。 |
+| 稳定性 | 支持并发设为 1 的稳定优先运行方式，并保留断点续传、小 HTTP chunk、低速重取 URL、同清晰度多 profile 重试。 |
 | 可观测性 | 任务中心显示进度、速度、ETA、实际分辨率、实际格式和错误原因；诊断接口返回依赖状态。 |
 | 安全性 | 不在 UI 或日志回显 cookies、token、敏感 URL query；日志清洗见 [log_safety.py](../backend/app/log_safety.py#L11)。 |
 | 本地化 | 当前 UI 和主要错误信息面向中文用户。 |

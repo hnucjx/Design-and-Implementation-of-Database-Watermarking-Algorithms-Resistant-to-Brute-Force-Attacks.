@@ -290,7 +290,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByLabelText("下载目录")).toBeInTheDocument();
-    const concurrency = screen.getByLabelText("并发 (稳定优先默认 1，playlist 建议 1；需要速度时可调高。)");
+    const concurrency = screen.getByLabelText("并发（若追求稳定，可设为 1）");
     expect(concurrency).toBeInTheDocument();
     await waitFor(() => expect(concurrency).toHaveValue(2));
     expect(screen.queryByText("默认跟随 CPU core 数量，可按需覆盖。")).not.toBeInTheDocument();

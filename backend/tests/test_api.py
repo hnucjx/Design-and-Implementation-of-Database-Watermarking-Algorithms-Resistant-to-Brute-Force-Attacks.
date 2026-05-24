@@ -132,15 +132,15 @@ def test_job_item_shows_predetected_resolution_and_format_while_downloading(tmp_
             service.release.set()
 
 
-def test_default_concurrency_is_stability_first(tmp_path: Path) -> None:
+def test_default_concurrency_is_five(tmp_path: Path) -> None:
     settings = AppSettings(
         data_dir=tmp_path / "data",
         download_dir=tmp_path / "downloads",
         database_path=tmp_path / "data" / "app.sqlite3",
     )
 
-    assert settings.default_concurrency == 1
-    assert settings.youtube_max_parallel_downloads == 1
+    assert settings.default_concurrency == 5
+    assert settings.youtube_max_parallel_downloads == 5
 
 
 def test_youtube_max_parallel_downloads_env_sets_initial_concurrency(monkeypatch, tmp_path: Path) -> None:
@@ -545,7 +545,7 @@ def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
     assert payload["dependencies"]["youtube_po_browser_path_configured"] is False
     assert payload["dependencies"]["youtube_po_token_configured"] is False
     assert payload["dependencies"]["youtube_visitor_data_configured"] is False
-    assert payload["dependencies"]["youtube_max_parallel_downloads"] == 1
+    assert payload["dependencies"]["youtube_max_parallel_downloads"] == 5
     assert payload["dependencies"]["anti403_http_chunk_size_mb"] == 16
     assert payload["dependencies"]["throttled_rate_kbps"] == 64
     assert payload["dependencies"]["aria2c_enabled"] is False

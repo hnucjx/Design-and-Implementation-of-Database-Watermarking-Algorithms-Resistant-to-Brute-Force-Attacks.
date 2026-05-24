@@ -477,6 +477,28 @@ describe("App", () => {
     );
   });
 
+  test("does not show the legacy global delete-files checkbox", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    expect(screen.queryByLabelText("删除任务时同时删除已下载视频")).not.toBeInTheDocument();
+  });
+
+  test("does not delete files when confirmation is cancelled", async () => {
+    vi.mocked(window.confirm).mockReturnValueOnce(false);
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "删除任务和已下载文件 Running video" }));
+
+    expect(window.confirm).toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalledWith(
+      "/api/jobs/job-running?delete_files=true",
+      expect.objectContaining({ method: "DELETE" })
+    );
+  });
+
   test("shows live progress percentage elapsed time and eta in task center", async () => {
     render(<App />);
 

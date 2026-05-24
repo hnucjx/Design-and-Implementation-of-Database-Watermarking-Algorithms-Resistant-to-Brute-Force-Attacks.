@@ -595,20 +595,6 @@ th {
   margin-top: 0;
 }
 
-.delete-files-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 14px;
-  color: #7c2d12;
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.delete-files-toggle input {
-  width: auto;
-}
-
 .job-metrics {
   display: flex;
   flex-wrap: wrap;

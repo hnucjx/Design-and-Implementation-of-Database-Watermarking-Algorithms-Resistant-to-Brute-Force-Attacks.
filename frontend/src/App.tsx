@@ -95,7 +95,6 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
-  const [deleteFilesWithJobs, setDeleteFilesWithJobs] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -355,10 +354,8 @@ export default function App() {
             )}
             <JobQueue
               jobs={jobs}
-              deleteFilesWithJobs={deleteFilesWithJobs}
               selectedJobIds={selectedJobIds}
               onBatchAction={(action, deleteFiles) => void handleBatchAction(action, deleteFiles).catch((err) => setError(err.message))}
-              onDeleteFilesWithJobsChange={setDeleteFilesWithJobs}
               onDelete={(jobId, deleteFiles) => void handleDeleteJob(jobId, deleteFiles).catch((err) => setError(err.message))}
               onDeleteItems={(jobId, itemIds, deleteFiles) =>
                 void handleDeleteJobItems(jobId, itemIds, deleteFiles).catch((err) => setError(err.message))

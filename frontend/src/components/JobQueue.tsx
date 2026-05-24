@@ -12,10 +12,8 @@ import {
 import { resolutionFallbackRestartLabel } from "../quality";
 export function JobQueue({
   jobs,
-  deleteFilesWithJobs,
   selectedJobIds,
   onBatchAction,
-  onDeleteFilesWithJobsChange,
   onDelete,
   onDeleteItems,
   onPause,
@@ -24,10 +22,8 @@ export function JobQueue({
   onToggleJobSelection
 }: {
   jobs: Job[];
-  deleteFilesWithJobs: boolean;
   selectedJobIds: Set<string>;
   onBatchAction: (action: JobBatchAction, deleteFiles?: boolean) => void;
-  onDeleteFilesWithJobsChange: (checked: boolean) => void;
   onDelete: (jobId: string, deleteFiles?: boolean) => void;
   onDeleteItems: (jobId: string, itemIds: string[], deleteFiles?: boolean) => void;
   onPause: (jobId: string) => void;
@@ -83,14 +79,6 @@ export function JobQueue({
         </div>
         <span className="job-count-badge">{jobs.length ? `${jobs.length} 个任务` : "暂无任务"}</span>
       </div>
-      <label className="delete-files-toggle">
-        <input
-          type="checkbox"
-          checked={deleteFilesWithJobs}
-          onChange={(event) => onDeleteFilesWithJobsChange(event.target.checked)}
-        />
-        <span>删除任务时同时删除已下载视频</span>
-      </label>
       {selectedCount > 0 && (
         <div className="batch-toolbar" aria-label="批量任务操作">
           <span>{selectedCount} 个已选择</span>

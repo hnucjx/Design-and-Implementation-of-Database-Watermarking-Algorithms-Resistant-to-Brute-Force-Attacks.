@@ -26,7 +26,7 @@ export function JobQueue({
   jobs: Job[];
   deleteFilesWithJobs: boolean;
   selectedJobIds: Set<string>;
-  onBatchAction: (action: JobBatchAction) => void;
+  onBatchAction: (action: JobBatchAction, deleteFiles?: boolean) => void;
   onDeleteFilesWithJobsChange: (checked: boolean) => void;
   onDelete: (jobId: string, deleteFiles?: boolean) => void;
   onDeleteItems: (jobId: string, itemIds: string[], deleteFiles?: boolean) => void;
@@ -102,9 +102,13 @@ export function JobQueue({
             <RotateCcw size={16} />
             批量重启
           </button>
-          <button type="button" className="ghost-button danger" onClick={() => onBatchAction("delete")}>
+          <button type="button" className="ghost-button danger" onClick={() => onBatchAction("delete", false)}>
             <Trash2 size={16} />
-            批量删除
+            批量删除任务
+          </button>
+          <button type="button" className="ghost-button danger" onClick={() => onBatchAction("delete", true)}>
+            <Trash2 size={16} />
+            批量删除任务和已下载文件
           </button>
         </div>
       )}

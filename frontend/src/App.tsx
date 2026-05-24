@@ -287,10 +287,13 @@ export default function App() {
     }
   }
 
-  async function handleBatchAction(action: JobBatchAction) {
+  async function handleBatchAction(action: JobBatchAction, deleteFiles = false) {
     const jobIds = Array.from(selectedJobIds);
     if (!jobIds.length) return;
-    const response = await batchJobAction(action, jobIds, action === "delete" ? deleteFilesWithJobs : false);
+    if (action === "delete" && deleteFiles && !window.confirm("将删除所选任务记录及其已下载的视频、字幕、metadata、缩略图和 description 等相关文件。是否继续？")) {
+      return;
+    }
+    const response = await batchJobAction(action, jobIds, action === "delete" ? deleteFiles : false);
     if (action === "delete") {
       const deleted = new Set(response.affected_job_ids);
       setJobs((current) => current.filter((job) => !deleted.has(job.id)));
@@ -354,7 +357,7 @@ export default function App() {
               jobs={jobs}
               deleteFilesWithJobs={deleteFilesWithJobs}
               selectedJobIds={selectedJobIds}
-              onBatchAction={(action) => void handleBatchAction(action).catch((err) => setError(err.message))}
+              onBatchAction={(action, deleteFiles) => void handleBatchAction(action, deleteFiles).catch((err) => setError(err.message))}
               onDeleteFilesWithJobsChange={setDeleteFilesWithJobs}
               onDelete={(jobId, deleteFiles) => void handleDeleteJob(jobId, deleteFiles).catch((err) => setError(err.message))}
               onDeleteItems={(jobId, itemIds, deleteFiles) =>

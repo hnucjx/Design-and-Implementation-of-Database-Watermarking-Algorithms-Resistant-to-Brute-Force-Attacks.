@@ -466,8 +466,7 @@ describe("App", () => {
     expect(await screen.findByText("Running video")).toBeInTheDocument();
     await user.click(screen.getByLabelText("选择任务 Running video"));
     await user.click(screen.getByLabelText("选择任务 Paused video"));
-    await user.click(screen.getByLabelText("删除任务时同时删除已下载视频"));
-    await user.click(screen.getByRole("button", { name: "批量删除" }));
+    await user.click(screen.getByRole("button", { name: "批量删除任务和已下载文件" }));
 
     expect(fetch).toHaveBeenCalledWith(
       "/api/jobs/batch",

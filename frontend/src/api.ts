@@ -89,6 +89,14 @@ export function restartJobItem(jobId: string, itemId: string, resolution?: strin
   return request<Job>(`/api/jobs/${jobId}/items/${itemId}/restart`, restartRequest(resolution));
 }
 
+export function playJobVideo(jobId: string): Promise<void> {
+  return request<void>(`/api/jobs/${jobId}/play`, { method: "POST" });
+}
+
+export function playJobItemVideo(jobId: string, itemId: string): Promise<void> {
+  return request<void>(`/api/jobs/${jobId}/items/${itemId}/play`, { method: "POST" });
+}
+
 export function deleteJob(jobId: string, deleteFiles = false): Promise<void> {
   const query = deleteFiles ? "?delete_files=true" : "";
   return request<void>(`/api/jobs/${jobId}${query}`, { method: "DELETE" });

@@ -33,6 +33,7 @@ from .schemas import (
     SettingsUpdate,
     VideoEntry,
 )
+from .system_open import open_path_with_default_app
 from .ytdlp_service import BrowserCookieImportError, YtDlpService
 
 
@@ -40,6 +41,7 @@ def create_app(
     settings: AppSettings | None = None,
     ytdlp_service: YtDlpService | None = None,
     directory_picker: Callable[[Path], Path | None] | None = None,
+    system_opener: Callable[[Path], None] | None = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
     app_settings.ensure_directories()
@@ -62,6 +64,7 @@ def create_app(
     manager = JobManager(engine, app_settings, service, broker)
     get_session = session_dependency(engine)
     pick_directory = directory_picker or _select_directory_with_tkinter
+    open_local_path = system_opener or open_path_with_default_app
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -235,6 +238,20 @@ def create_app(
         session.expire_all()
         return _read_job(session, job_id)
 
+    @app.post("/api/jobs/{job_id}/play", status_code=204)
+    async def play_job_video(job_id: str, session: SessionDep) -> Response:
+        job = _require_job(session, job_id)
+        item = _single_job_item(session, job)
+        await _open_local_path(open_local_path, _output_file(item))
+        return Response(status_code=204)
+
+    @app.post("/api/jobs/{job_id}/items/{item_id}/play", status_code=204)
+    async def play_job_item_video(job_id: str, item_id: str, session: SessionDep) -> Response:
+        _require_job(session, job_id)
+        item = _require_job_item(session, job_id, item_id)
+        await _open_local_path(open_local_path, _output_file(item))
+        return Response(status_code=204)
+
     @app.post("/api/jobs/{job_id}/items/delete", response_model=DeleteJobItemsResponse)
     async def delete_job_items(job_id: str, request: DeleteJobItemsRequest, session: SessionDep) -> DeleteJobItemsResponse:
         if not session.get(Job, job_id):
@@ -395,6 +412,45 @@ def _read_job(session: Session, job_id: str) -> JobRead:
     if payload is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return payload
+
+
+def _require_job(session: Session, job_id: str) -> Job:
+    job = session.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return job
+
+
+def _require_job_item(session: Session, job_id: str, item_id: str) -> JobItem:
+    item = session.get(JobItem, item_id)
+    if not item or item.job_id != job_id:
+        raise HTTPException(status_code=404, detail="Job item not found.")
+    return item
+
+
+def _single_job_item(session: Session, job: Job) -> JobItem:
+    items = session.exec(select(JobItem).where(JobItem.job_id == job.id).order_by(JobItem.index)).all()
+    if len(items) != 1:
+        raise HTTPException(status_code=409, detail="合集任务请打开具体视频。")
+    return items[0]
+
+
+def _output_file(item: JobItem) -> Path:
+    if not item.output_path:
+        raise HTTPException(status_code=409, detail="视频文件尚不可用。")
+    path = Path(item.output_path).expanduser()
+    if not path.is_file():
+        raise HTTPException(status_code=409, detail="视频文件不存在。")
+    return path
+
+
+async def _open_local_path(path_opener: Callable[[Path], None], path: Path) -> None:
+    try:
+        await asyncio.to_thread(path_opener, path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"无法打开本地路径：{exc}") from exc
 
 
 def _job_download_dir(root_dir: Path, analysis: AnalyzeResponse, job_id: str) -> Path:

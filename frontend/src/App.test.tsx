@@ -90,6 +90,13 @@ describe("App", () => {
         if (url.endsWith("/api/jobs/job-format-failed/restart")) {
           return Response.json({ ...singleFallbackJobPayload, status: "queued" });
         }
+        if (
+          (url.endsWith("/api/jobs/job-running/play") ||
+            url.endsWith("/api/jobs/job-playlist/items/item-playlist-1/play")) &&
+          init?.method === "POST"
+        ) {
+          return new Response(null, { status: 204 });
+        }
         if (url.endsWith("/api/jobs/job-playlist/items/delete")) {
           const body = JSON.parse(String(init?.body ?? "{}"));
           const deleted = new Set<string>(body.item_ids ?? []);
@@ -462,6 +469,42 @@ describe("App", () => {
         body: JSON.stringify({ action: "pause", job_ids: ["job-running", "job-paused"], delete_files: false })
       })
     );
+  });
+
+  test("plays downloaded single videos and playlist items from task center", async () => {
+    currentJobsPayload = [
+      {
+        ...jobPayload,
+        items: [{ ...jobPayload.items[0], output_path: "D:\\Videos\\running.mp4" }]
+      },
+      {
+        ...playlistJobPayload,
+        items: [
+          { ...playlistJobPayload.items[0], output_path: "D:\\Videos\\Playlist\\one.mp4" },
+          playlistJobPayload.items[1]
+        ]
+      }
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "播放 Running video" }));
+    await user.click(screen.getByRole("button", { name: "播放 Part one" }));
+
+    expect(fetch).toHaveBeenCalledWith("/api/jobs/job-running/play", expect.objectContaining({ method: "POST" }));
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-playlist/items/item-playlist-1/play",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  test("disables play buttons before downloaded files are known", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "播放 Running video" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "播放 Part one" })).toBeDisabled();
   });
 
   test("passes delete files option to batch delete", async () => {

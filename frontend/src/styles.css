@@ -228,7 +228,8 @@ select:focus {
 }
 
 .primary-button:disabled,
-.ghost-button:disabled {
+.ghost-button:disabled,
+.icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

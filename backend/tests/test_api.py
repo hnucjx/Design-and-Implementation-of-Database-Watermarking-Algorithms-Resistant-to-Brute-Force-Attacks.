@@ -47,10 +47,15 @@ def make_settings(tmp_path: Path) -> AppSettings:
     )
 
 
-def make_client(tmp_path: Path, service=None, directory_picker=None):
+def make_client(tmp_path: Path, service=None, directory_picker=None, system_opener=None):
     settings = make_settings(tmp_path)
     return TestClient(
-        create_app(settings=settings, ytdlp_service=service or FakeYtDlpService(), directory_picker=directory_picker)
+        create_app(
+            settings=settings,
+            ytdlp_service=service or FakeYtDlpService(),
+            directory_picker=directory_picker,
+            system_opener=system_opener,
+        )
     )
 
 
@@ -1376,6 +1381,114 @@ def test_delete_running_item_removes_record_without_reinsert(tmp_path: Path) -> 
         assert delete_response.status_code == 200
         assert delete_response.json()["job_deleted"] is True
         assert client.get(f"/api/jobs/{job_id}").status_code == 404
+
+
+def test_play_single_video_opens_downloaded_file(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    output_file = tmp_path / "downloads" / "video.mp4"
+    output_file.parent.mkdir(parents=True)
+    output_file.write_text("video", encoding="utf-8")
+    seed_job(tmp_path, "job-play-video", status="succeeded", output_path=output_file)
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-play-video/play")
+
+    assert response.status_code == 204
+    assert opened == [output_file]
+
+
+def test_play_single_video_returns_409_when_output_missing(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    seed_job(tmp_path, "job-play-missing", status="succeeded")
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-play-missing/play")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "视频文件尚不可用。"
+    assert opened == []
+
+
+def test_play_playlist_job_requires_specific_item(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    playlist_dir = tmp_path / "downloads" / "Course"
+    output_file = playlist_dir / "one.mp4"
+    playlist_dir.mkdir(parents=True)
+    output_file.write_text("video", encoding="utf-8")
+    engine = create_app_engine(make_settings(tmp_path))
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist-play",
+                url="https://youtube.com/playlist?list=abc",
+                title="Course",
+                status="succeeded",
+                options_json="{}",
+                total_items=2,
+                download_dir=str(playlist_dir),
+            )
+        )
+        for index in [1, 2]:
+            session.add(
+                JobItem(
+                    id=f"item-{index}",
+                    job_id="job-playlist-play",
+                    source_url=f"https://youtu.be/{index}",
+                    title=f"Part {index}",
+                    index=index,
+                    status="succeeded",
+                    output_path=str(output_file),
+                )
+            )
+        session.commit()
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-playlist-play/play")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "合集任务请打开具体视频。"
+    assert opened == []
+
+
+def test_play_playlist_item_opens_downloaded_file(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    playlist_dir = tmp_path / "downloads" / "Course"
+    output_file = playlist_dir / "one.mp4"
+    playlist_dir.mkdir(parents=True)
+    output_file.write_text("video", encoding="utf-8")
+    engine = create_app_engine(make_settings(tmp_path))
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist-item-play",
+                url="https://youtube.com/playlist?list=abc",
+                title="Course",
+                status="succeeded",
+                options_json="{}",
+                total_items=1,
+                download_dir=str(playlist_dir),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-one",
+                job_id="job-playlist-item-play",
+                source_url="https://youtu.be/one",
+                title="Part one",
+                index=1,
+                status="succeeded",
+                output_path=str(output_file),
+            )
+        )
+        session.commit()
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-playlist-item-play/items/item-one/play")
+
+    assert response.status_code == 204
+    assert opened == [output_file]
 
 
 def test_batch_job_actions_pause_restart_and_delete_multiple_jobs(tmp_path: Path) -> None:

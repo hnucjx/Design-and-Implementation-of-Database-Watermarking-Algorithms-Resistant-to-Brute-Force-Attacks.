@@ -580,3 +580,25 @@ Thumbs.db
 ## Assumptions
 - “删除浏览器 cookies 来源文本控件”理解为移除可见 label 文本，不移除浏览器来源下拉框。
 - 默认并发改为 5 只影响新默认值；用户已保存的并发设置不迁移、不覆盖。
+
+---
+
+# 2026-05-25 +08:00 - 任务中心播放、打开位置、复制与跳转功能计划
+
+## Summary
+为任务中心增加本地播放、打开文件夹、复制链接、跳转 YouTube 页面能力。UI 采用克制的工具型图标按钮；本地播放和打开文件夹通过后端受控 endpoint 调用系统打开器，复制与跳转由前端使用已有 URL 字段完成。`ai/tasks.md` 随每步勾选，`ai/brainstorming.md` 不触碰。
+
+## Key Changes
+- 新增受控本机打开能力：后端只根据数据库中的 `JobItem.output_path` 或 `Job.download_dir` 打开文件/目录，不接受任意前端路径。
+- 单视频任务和 playlist 子视频支持播放已下载视频；无输出路径或文件不存在时返回明确错误，前端按钮禁用。
+- 单视频任务、playlist 任务和 playlist 子视频支持打开所在文件夹。
+- 单视频与合集支持复制源链接，并支持跳转到 YouTube 页面。
+
+## Test Plan
+- 后端：覆盖播放视频、打开视频目录、打开 playlist 目录、缺少路径/文件不存在/任务不存在的错误语义。
+- 前端：覆盖播放、打开目录、复制链接反馈、跳转 YouTube 页面和按钮禁用状态。
+- 全量验证：`python -m compileall backend\app`、`python -m pytest backend\tests -q`、`cd frontend && npm test`、`cd frontend && npm run build`、`git diff --check`。
+
+## Assumptions
+- 本应用为本机单用户控制台，后端在用户本机调用系统播放器/文件管理器符合预期。
+- “播放视频”只打开主视频文件，不自动打开字幕、metadata、缩略图或 description。

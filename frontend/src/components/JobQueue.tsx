@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from "react";
-import { ChevronDown, FileX2, Gauge, Pause, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronDown, FileX2, Gauge, Pause, Play, RotateCcw, Trash2 } from "lucide-react";
 import type { Job, JobBatchAction, ResolutionFallback } from "../types";
 import {
   formatBytesPerSecond,
@@ -17,6 +17,8 @@ export function JobQueue({
   onDelete,
   onDeleteItems,
   onPause,
+  onPlay,
+  onPlayItem,
   onRestart,
   onRestartItem,
   onToggleJobSelection
@@ -27,6 +29,8 @@ export function JobQueue({
   onDelete: (jobId: string, deleteFiles?: boolean) => void;
   onDeleteItems: (jobId: string, itemIds: string[], deleteFiles?: boolean) => void;
   onPause: (jobId: string) => void;
+  onPlay: (jobId: string) => void;
+  onPlayItem: (jobId: string, itemId: string) => void;
   onRestart: (jobId: string, resolution?: string) => void;
   onRestartItem: (jobId: string, itemId: string, resolution?: string) => void;
   onToggleJobSelection: (jobId: string) => void;
@@ -104,6 +108,8 @@ export function JobQueue({
         {jobs.map((job) => {
           const title = job.title || "未命名任务";
           const isPlaylist = job.total_items > 1;
+          const primaryItem = job.items[0] ?? null;
+          const canPlayJob = !isPlaylist && Boolean(primaryItem?.output_path);
           const defaultExpanded = isPlaylist && ["running", "failed"].includes(job.status);
           const isExpanded = isPlaylist ? expandedJobIds[job.id] ?? defaultExpanded : true;
           const jobRestartResolution = job.resolution_fallback?.restart_resolution ?? null;
@@ -135,6 +141,18 @@ export function JobQueue({
                     onClick={() => toggleExpanded(job.id, isExpanded)}
                   >
                     <ChevronDown size={18} />
+                  </button>
+                )}
+                {!isPlaylist && (
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title={canPlayJob ? "播放视频" : "视频文件尚不可用"}
+                    aria-label={`播放 ${title}`}
+                    disabled={!canPlayJob}
+                    onClick={() => onPlay(job.id)}
+                  >
+                    <Play size={18} />
                   </button>
                 )}
                 {["queued", "running"].includes(job.status) && (
@@ -237,6 +255,16 @@ export function JobQueue({
                       </label>
                       <div className="item-actions">
                         {item.error && !item.resolution_fallback && <span className="item-error">{item.error}</span>}
+                        <button
+                          className="icon-button item-action-button"
+                          type="button"
+                          title={item.output_path ? "播放视频" : "视频文件尚不可用"}
+                          aria-label={`播放 ${item.title}`}
+                          disabled={!item.output_path}
+                          onClick={() => onPlayItem(job.id, item.id)}
+                        >
+                          <Play size={16} />
+                        </button>
                         {item.status !== "running" && (
                           <button
                             className="icon-button item-action-button"

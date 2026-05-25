@@ -94,6 +94,8 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 任务中心删除入口分为任务级和 playlist 子视频级：任务级调用 `DELETE /api/jobs/{job_id}`，子视频级调用 `POST /api/jobs/{job_id}/items/delete`。删除文件入口统一在发请求前用确认弹窗保护。
 
+任务中心播放入口调用后端受控本机打开 API：单视频任务调用 `POST /api/jobs/{job_id}/play`，playlist 子视频调用 `POST /api/jobs/{job_id}/items/{item_id}/play`。后端只根据数据库中的 `output_path` 打开本地文件，不接受前端传入任意路径。
+
 ## 日志安全
 
 下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L776)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。

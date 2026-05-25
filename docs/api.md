@@ -22,7 +22,9 @@
 | `POST` | `/api/jobs/batch` | 批量暂停、重启或删除。 | [`JobBatchActionRequest`](../backend/app/schemas.py#L81) |
 | `POST` | `/api/jobs/{job_id}/pause` | 暂停任务。 | `JobRead` |
 | `POST` | `/api/jobs/{job_id}/restart` | 重启任务，可覆盖清晰度。 | [`RestartJobRequest`](../backend/app/schemas.py#L77) |
+| `POST` | `/api/jobs/{job_id}/play` | 播放单视频任务已下载的视频文件。 | `204 No Content` |
 | `POST` | `/api/jobs/{job_id}/items/{item_id}/restart` | 重启 playlist 中单个子视频，可覆盖清晰度。 | `RestartJobRequest` |
+| `POST` | `/api/jobs/{job_id}/items/{item_id}/play` | 播放 playlist 子视频已下载的视频文件。 | `204 No Content` |
 | `POST` | `/api/jobs/{job_id}/items/delete` | 删除 playlist 中一个或多个子视频任务，可选删除输出和 sidecar 文件。 | `DeleteJobItemsRequest`、`DeleteJobItemsResponse` |
 | `DELETE` | `/api/jobs/{job_id}` | 删除任务，可选删除输出视频及字幕、metadata、缩略图、description 等相关文件。 | 查询参数 `delete_files` |
 | `GET` | `/api/events` | SSE 任务事件流。 | `text/event-stream` |
@@ -62,6 +64,10 @@
 `item_ids` 是同一 job 下要删除的 `JobItem.id` 列表；`delete_files=false` 只删除任务记录，`delete_files=true` 同时删除每个子视频的输出文件和相关 sidecar。若删除的是父 playlist 的最后一个子视频，响应中的 `job_deleted=true` 且 `job=null`。
 
 任务级批量删除继续使用 `POST /api/jobs/batch`。当 `action="delete"` 且 `delete_files=true` 时，后端会删除每个任务的输出文件和相关 sidecar；前端任务中心提供独立按钮，不依赖全局开关。
+
+### Local Open Actions
+
+播放视频接口不接收路径参数，只使用数据库中的 `JobItem.output_path`。缺少输出路径或文件不存在时返回 `409`；任务或子视频不存在时返回 `404`；系统打开器失败时返回 `400`。
 
 ## 关键响应模型
 

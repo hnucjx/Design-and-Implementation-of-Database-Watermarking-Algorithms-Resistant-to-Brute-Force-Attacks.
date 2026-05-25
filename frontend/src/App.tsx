@@ -28,6 +28,8 @@ import {
   importBrowserCookies,
   listJobs,
   pauseJob,
+  playJobItemVideo,
+  playJobVideo,
   restartJob,
   restartJobItem,
   selectDownloadDirectory,
@@ -361,6 +363,8 @@ export default function App() {
                 void handleDeleteJobItems(jobId, itemIds, deleteFiles).catch((err) => setError(err.message))
               }
               onPause={(jobId) => void handlePauseJob(jobId).catch((err) => setError(err.message))}
+              onPlay={(jobId) => void playJobVideo(jobId).catch((err) => setError(err.message))}
+              onPlayItem={(jobId, itemId) => void playJobItemVideo(jobId, itemId).catch((err) => setError(err.message))}
               onRestart={(jobId, resolution) => void handleRestartJob(jobId, resolution).catch((err) => setError(err.message))}
               onRestartItem={(jobId, itemId, resolution) => void handleRestartJobItem(jobId, itemId, resolution).catch((err) => setError(err.message))}
               onToggleJobSelection={toggleJobSelection}

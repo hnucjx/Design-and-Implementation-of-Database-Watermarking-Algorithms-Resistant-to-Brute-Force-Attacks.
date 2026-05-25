@@ -245,11 +245,25 @@ def create_app(
         await _open_local_path(open_local_path, _output_file(item))
         return Response(status_code=204)
 
+    @app.post("/api/jobs/{job_id}/open-folder", status_code=204)
+    async def open_job_video_folder(job_id: str, session: SessionDep) -> Response:
+        job = _require_job(session, job_id)
+        item = _single_job_item(session, job)
+        await _open_local_path(open_local_path, _output_folder(item))
+        return Response(status_code=204)
+
     @app.post("/api/jobs/{job_id}/items/{item_id}/play", status_code=204)
     async def play_job_item_video(job_id: str, item_id: str, session: SessionDep) -> Response:
         _require_job(session, job_id)
         item = _require_job_item(session, job_id, item_id)
         await _open_local_path(open_local_path, _output_file(item))
+        return Response(status_code=204)
+
+    @app.post("/api/jobs/{job_id}/items/{item_id}/open-folder", status_code=204)
+    async def open_job_item_video_folder(job_id: str, item_id: str, session: SessionDep) -> Response:
+        _require_job(session, job_id)
+        item = _require_job_item(session, job_id, item_id)
+        await _open_local_path(open_local_path, _output_folder(item))
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/items/delete", response_model=DeleteJobItemsResponse)
@@ -442,6 +456,13 @@ def _output_file(item: JobItem) -> Path:
     if not path.is_file():
         raise HTTPException(status_code=409, detail="视频文件不存在。")
     return path
+
+
+def _output_folder(item: JobItem) -> Path:
+    folder = _output_file(item).parent
+    if not folder.is_dir():
+        raise HTTPException(status_code=409, detail="视频文件夹不存在。")
+    return folder
 
 
 async def _open_local_path(path_opener: Callable[[Path], None], path: Path) -> None:

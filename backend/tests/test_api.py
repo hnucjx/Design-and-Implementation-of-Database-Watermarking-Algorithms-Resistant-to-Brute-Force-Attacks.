@@ -1491,6 +1491,60 @@ def test_play_playlist_item_opens_downloaded_file(tmp_path: Path) -> None:
     assert opened == [output_file]
 
 
+def test_open_single_video_folder_opens_output_parent(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    output_file = tmp_path / "downloads" / "video.mp4"
+    output_file.parent.mkdir(parents=True)
+    output_file.write_text("video", encoding="utf-8")
+    seed_job(tmp_path, "job-open-folder", status="succeeded", output_path=output_file)
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-open-folder/open-folder")
+
+    assert response.status_code == 204
+    assert opened == [output_file.parent]
+
+
+def test_open_playlist_item_folder_opens_output_parent(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    playlist_dir = tmp_path / "downloads" / "Course"
+    output_file = playlist_dir / "one.mp4"
+    playlist_dir.mkdir(parents=True)
+    output_file.write_text("video", encoding="utf-8")
+    engine = create_app_engine(make_settings(tmp_path))
+    init_db(engine)
+    with Session(engine) as session:
+        session.add(
+            Job(
+                id="job-playlist-item-folder",
+                url="https://youtube.com/playlist?list=abc",
+                title="Course",
+                status="succeeded",
+                options_json="{}",
+                total_items=1,
+                download_dir=str(playlist_dir),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-one",
+                job_id="job-playlist-item-folder",
+                source_url="https://youtu.be/one",
+                title="Part one",
+                index=1,
+                status="succeeded",
+                output_path=str(output_file),
+            )
+        )
+        session.commit()
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-playlist-item-folder/items/item-one/open-folder")
+
+    assert response.status_code == 204
+    assert opened == [playlist_dir]
+
+
 def test_batch_job_actions_pause_restart_and_delete_multiple_jobs(tmp_path: Path) -> None:
     client = make_client(tmp_path)
     first_id = "job-first"

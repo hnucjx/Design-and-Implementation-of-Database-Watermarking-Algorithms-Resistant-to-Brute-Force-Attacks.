@@ -93,8 +93,16 @@ export function playJobVideo(jobId: string): Promise<void> {
   return request<void>(`/api/jobs/${jobId}/play`, { method: "POST" });
 }
 
+export function openJobFolder(jobId: string): Promise<void> {
+  return request<void>(`/api/jobs/${jobId}/open-folder`, { method: "POST" });
+}
+
 export function playJobItemVideo(jobId: string, itemId: string): Promise<void> {
   return request<void>(`/api/jobs/${jobId}/items/${itemId}/play`, { method: "POST" });
+}
+
+export function openJobItemFolder(jobId: string, itemId: string): Promise<void> {
+  return request<void>(`/api/jobs/${jobId}/items/${itemId}/open-folder`, { method: "POST" });
 }
 
 export function deleteJob(jobId: string, deleteFiles = false): Promise<void> {

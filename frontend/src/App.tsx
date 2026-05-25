@@ -27,6 +27,8 @@ import {
   getSettings,
   importBrowserCookies,
   listJobs,
+  openJobFolder,
+  openJobItemFolder,
   pauseJob,
   playJobItemVideo,
   playJobVideo,
@@ -363,6 +365,8 @@ export default function App() {
                 void handleDeleteJobItems(jobId, itemIds, deleteFiles).catch((err) => setError(err.message))
               }
               onPause={(jobId) => void handlePauseJob(jobId).catch((err) => setError(err.message))}
+              onOpenFolder={(jobId) => void openJobFolder(jobId).catch((err) => setError(err.message))}
+              onOpenItemFolder={(jobId, itemId) => void openJobItemFolder(jobId, itemId).catch((err) => setError(err.message))}
               onPlay={(jobId) => void playJobVideo(jobId).catch((err) => setError(err.message))}
               onPlayItem={(jobId, itemId) => void playJobItemVideo(jobId, itemId).catch((err) => setError(err.message))}
               onRestart={(jobId, resolution) => void handleRestartJob(jobId, resolution).catch((err) => setError(err.message))}

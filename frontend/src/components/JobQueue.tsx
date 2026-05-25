@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState } from "react";
-import { ChevronDown, FileX2, Gauge, Pause, Play, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronDown, FileX2, FolderOpen, Gauge, Pause, Play, RotateCcw, Trash2 } from "lucide-react";
 import type { Job, JobBatchAction, ResolutionFallback } from "../types";
 import {
   formatBytesPerSecond,
@@ -16,6 +16,8 @@ export function JobQueue({
   onBatchAction,
   onDelete,
   onDeleteItems,
+  onOpenFolder,
+  onOpenItemFolder,
   onPause,
   onPlay,
   onPlayItem,
@@ -28,6 +30,8 @@ export function JobQueue({
   onBatchAction: (action: JobBatchAction, deleteFiles?: boolean) => void;
   onDelete: (jobId: string, deleteFiles?: boolean) => void;
   onDeleteItems: (jobId: string, itemIds: string[], deleteFiles?: boolean) => void;
+  onOpenFolder: (jobId: string) => void;
+  onOpenItemFolder: (jobId: string, itemId: string) => void;
   onPause: (jobId: string) => void;
   onPlay: (jobId: string) => void;
   onPlayItem: (jobId: string, itemId: string) => void;
@@ -155,6 +159,18 @@ export function JobQueue({
                     <Play size={18} />
                   </button>
                 )}
+                {!isPlaylist && (
+                  <button
+                    className="icon-button"
+                    type="button"
+                    title={canPlayJob ? "打开视频所在文件夹" : "视频文件尚不可用"}
+                    aria-label={`打开视频文件夹 ${title}`}
+                    disabled={!canPlayJob}
+                    onClick={() => onOpenFolder(job.id)}
+                  >
+                    <FolderOpen size={18} />
+                  </button>
+                )}
                 {["queued", "running"].includes(job.status) && (
                   <button className="icon-button" type="button" title="暂停" aria-label={`暂停 ${title}`} onClick={() => onPause(job.id)}>
                     <Pause size={18} />
@@ -264,6 +280,16 @@ export function JobQueue({
                           onClick={() => onPlayItem(job.id, item.id)}
                         >
                           <Play size={16} />
+                        </button>
+                        <button
+                          className="icon-button item-action-button"
+                          type="button"
+                          title={item.output_path ? "打开视频所在文件夹" : "视频文件尚不可用"}
+                          aria-label={`打开视频文件夹 ${item.title}`}
+                          disabled={!item.output_path}
+                          onClick={() => onOpenItemFolder(job.id, item.id)}
+                        >
+                          <FolderOpen size={16} />
                         </button>
                         {item.status !== "running" && (
                           <button

@@ -92,6 +92,8 @@ describe("App", () => {
         }
         if (
           (url.endsWith("/api/jobs/job-running/play") ||
+            url.endsWith("/api/jobs/job-running/open-folder") ||
+            url.endsWith("/api/jobs/job-playlist/items/item-playlist-1/open-folder") ||
             url.endsWith("/api/jobs/job-playlist/items/item-playlist-1/play")) &&
           init?.method === "POST"
         ) {
@@ -505,6 +507,34 @@ describe("App", () => {
     expect(await screen.findByText("Running video")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "播放 Running video" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "播放 Part one" })).toBeDisabled();
+  });
+
+  test("opens downloaded single video and playlist item folders from task center", async () => {
+    currentJobsPayload = [
+      {
+        ...jobPayload,
+        items: [{ ...jobPayload.items[0], output_path: "D:\\Videos\\running.mp4" }]
+      },
+      {
+        ...playlistJobPayload,
+        items: [
+          { ...playlistJobPayload.items[0], output_path: "D:\\Videos\\Playlist\\one.mp4" },
+          playlistJobPayload.items[1]
+        ]
+      }
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "打开视频文件夹 Running video" }));
+    await user.click(screen.getByRole("button", { name: "打开视频文件夹 Part one" }));
+
+    expect(fetch).toHaveBeenCalledWith("/api/jobs/job-running/open-folder", expect.objectContaining({ method: "POST" }));
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/jobs/job-playlist/items/item-playlist-1/open-folder",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 
   test("passes delete files option to batch delete", async () => {

@@ -609,3 +609,38 @@ Thumbs.db
 ## Assumptions
 - 本应用为本机单用户控制台，后端在用户本机调用系统播放器/文件管理器符合预期。
 - “播放视频”只打开主视频文件，不自动打开字幕、metadata、缩略图或 description。
+
+---
+
+# 2026-05-26 +08:00 - Windows 打开文件夹前置修复计划
+
+## Summary
+当前“打开视频所在文件夹”和“打开合集文件夹”在 Windows 下可成功打开目录，但 `os.startfile()` 容易复用已有 Explorer 窗口，导致窗口只在任务栏闪烁而不明显弹出。修复目标是在不改变 API 和前端交互的前提下，让目录打开行为更符合用户预期。
+
+## Key Changes
+- Windows 下打开目录改为显式调用 `explorer.exe /n, <folder>` 新开 Explorer 窗口，减少只闪烁不前置的情况。
+- Windows 下播放视频文件仍使用 `os.startfile()`，保持系统默认播放器关联不变。
+- macOS/Linux 保持 `open` / `xdg-open` 行为不变。
+- 同步更新 API、用户手册、实现说明和手动验收文档。
+
+## Test Plan
+- 新增后端单测覆盖 Windows 目录使用新 Explorer 窗口、Windows 文件仍使用默认文件关联。
+- 全量验证：`python -m compileall backend\app`、`python -m pytest backend\tests -q`、`cd frontend && npm test`、`cd frontend && npm run build`、`git diff --check`。
+
+---
+
+# 2026-05-26 +08:00 - 文档启动端口与命令去重计划
+
+## Summary
+README 快速启动当前混用了单端口托管和 Vite 开发模式，导致用户只启动后端或使用已构建前端时访问 `5173` 失败，而 `8000` 可正常打开。修复目标是把普通使用、开发模式和测试验证的命令职责拆清楚，并通过本地链接复用，避免 README、用户手册、开发文档和测试文档重复维护同一组命令。
+
+## Key Changes
+- README 改为普通用户单端口快速启动：先 `npm run build`，再启动 FastAPI，打开 `http://127.0.0.1:8000`。
+- 用户手册不再复制安装命令，只说明启动入口、预期首页效果，并引用 README 和开发文档。
+- 开发文档保留开发者安装说明和 Vite 热更新模式，明确 `5173` 只适用于已启动 Vite dev server。
+- 测试和维护文档集中链接到测试文档，避免多处复制同一套验证命令。
+- 新增首页截图 `docs/assets/screenshots/home.png`，用于说明打开后的预期页面。
+
+## Test Plan
+- 通过临时后端托管构建后的前端，确认首页可在后端端口访问并生成截图。
+- 运行 `git diff --check`、前端构建和必要的测试验证后提交推送。

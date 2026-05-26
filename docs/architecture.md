@@ -8,7 +8,7 @@
 
 PlantUML 源文件：[system-context.puml](diagrams/system-context.puml)。
 
-系统由本机浏览器中的 React 前端、本机 FastAPI 后端、SQLite 数据库、`yt-dlp`、`ffmpeg`、浏览器 cookies 存储和 YouTube 媒体服务组成。默认运行方式见 [开发文档](development.md#本地运行)。
+系统由本机浏览器中的 React 前端、本机 FastAPI 后端、SQLite 数据库、`yt-dlp`、`ffmpeg`、浏览器 cookies 存储和 YouTube 媒体服务组成。普通使用默认由 FastAPI 在 `8000` 端口托管构建后的前端，见 [README 快速启动](../README.md#快速启动)；前端热更新开发模式见 [开发文档](development.md#本地运行)。
 
 ## 容器与职责
 

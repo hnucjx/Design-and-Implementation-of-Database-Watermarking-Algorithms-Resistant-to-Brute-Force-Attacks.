@@ -16,7 +16,7 @@
 | 修改任务删除或文件清理行为 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |
 | 修改配置或依赖 | [开发文档](development.md)、[技术文档](technical.md)、README 快速启动 |
 | 修改数据库模型或补列 | [实现文档](implementation.md)、[架构设计](architecture.md)、[data-model.puml](diagrams/data-model.puml) |
-| 修改测试命令或测试策略 | [测试文档](testing.md)、README 测试摘要 |
+| 修改测试命令或测试策略 | [测试文档](testing.md)、README 测试摘要入口 |
 | 重构模块边界 | [架构设计](architecture.md)、[实现文档](implementation.md)、组件图 |
 
 ## 排障流程
@@ -41,17 +41,7 @@ PlantUML 渲染命令见 [开发文档](development.md#plantuml-图更新)。
 
 ## 提交流程
 
-文档或代码完成后：
-
-```powershell
-python -m compileall backend\app
-python -m pytest backend\tests -q
-cd frontend
-npm test
-npm run build
-git diff --check
-git status -sb
-```
+文档或代码完成后，按 [测试文档的自动测试命令](testing.md#自动测试命令) 执行对应验证，并在提交前运行 `git diff --check` 与 `git status -sb`。
 
 仅文档变更原则上也应运行全量验证，确保没有误改源码或破坏构建。
 

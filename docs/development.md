@@ -1,6 +1,6 @@
 # 开发文档
 
-适用读者：需要搭建本地环境、运行服务、修改文档或参与开发的维护者。
+适用读者：需要搭建本地环境、运行服务、修改文档或参与开发的维护者。普通用户只需要按 [README 快速启动](../README.md#快速启动) 使用单端口模式；本文只展开开发者需要理解的依赖、配置和热更新模式。
 
 ## 技术栈
 
@@ -30,12 +30,16 @@ winget install Graphviz.Graphviz
 
 ## 安装依赖
 
+README 的快速启动只安装运行依赖；开发者建议安装后端 `dev` extras，以获得 pytest/httpx 等测试依赖。
+
 后端：
 
 ```powershell
 cd backend
 python -m pip install -e ".[dev]"
 ```
+
+这会以可编辑模式安装后端应用和开发/测试依赖，便于本地修改后立即被 `uvicorn` 和 pytest 使用。
 
 前端：
 
@@ -44,23 +48,31 @@ cd frontend
 npm install
 ```
 
+这会安装 React/Vite/Vitest 依赖，并为 `npm run build`、`npm run dev` 和 `npm test` 做准备。
+
 ## 本地运行
 
-开发模式后端：
+### 普通单端口模式
+
+普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成 `frontend/dist`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L373)。
+
+### 前端热更新开发模式
+
+需要修改 React UI 时，先启动后端 API：
 
 ```powershell
 cd backend
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-开发模式前端：
+再启动 Vite dev server：
 
 ```powershell
 cd frontend
 npm run dev -- --port 5173
 ```
 
-Vite 开发服务器将 `/api` 请求代理到后端。若先执行 `npm run build`，后端会在 `frontend/dist` 存在时托管静态文件，见 [main.py](../backend/app/main.py#L321)。
+开发时打开 `http://127.0.0.1:5173`。Vite 会热更新前端代码，并将 `/api` 请求代理到 `http://127.0.0.1:8000`，代理配置见 [vite.config.ts](../frontend/vite.config.ts)。
 
 ## 目录结构
 

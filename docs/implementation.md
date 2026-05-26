@@ -96,6 +96,8 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 任务中心播放和打开文件夹入口调用后端受控本机打开 API：单视频任务调用 `POST /api/jobs/{job_id}/play` 与 `POST /api/jobs/{job_id}/open-folder`，playlist 子视频调用对应的 item endpoint，playlist 任务行用同一个 open-folder endpoint 打开 `Job.download_dir`。后端只根据数据库中的 `output_path` 或 `download_dir` 打开本地文件/目录，不接受前端传入任意路径。
 
+本机打开器位于 [system_open.py](../backend/app/system_open.py)。Windows 下播放视频文件仍使用系统默认文件关联；打开目录时显式调用 `explorer.exe /n, <folder>` 新开 Explorer 窗口，减少已有窗口只在任务栏闪烁但没有前置的情况。macOS 和 Linux 仍分别使用 `open` 与 `xdg-open`。
+
 任务中心复制链接入口是纯前端行为，使用 `navigator.clipboard.writeText()` 复制 `Job.url` 或 `JobItem.source_url`，成功后按钮短暂显示“已复制”。
 
 任务中心跳转 YouTube 页面同样是纯前端行为，使用 `window.open(sourceUrl, "_blank", "noopener,noreferrer")` 打开 `Job.url` 或 `JobItem.source_url`，不经过后端本地文件打开接口。

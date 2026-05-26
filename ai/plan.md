@@ -609,3 +609,20 @@ Thumbs.db
 ## Assumptions
 - 本应用为本机单用户控制台，后端在用户本机调用系统播放器/文件管理器符合预期。
 - “播放视频”只打开主视频文件，不自动打开字幕、metadata、缩略图或 description。
+
+---
+
+# 2026-05-26 +08:00 - Windows 打开文件夹前置修复计划
+
+## Summary
+当前“打开视频所在文件夹”和“打开合集文件夹”在 Windows 下可成功打开目录，但 `os.startfile()` 容易复用已有 Explorer 窗口，导致窗口只在任务栏闪烁而不明显弹出。修复目标是在不改变 API 和前端交互的前提下，让目录打开行为更符合用户预期。
+
+## Key Changes
+- Windows 下打开目录改为显式调用 `explorer.exe /n, <folder>` 新开 Explorer 窗口，减少只闪烁不前置的情况。
+- Windows 下播放视频文件仍使用 `os.startfile()`，保持系统默认播放器关联不变。
+- macOS/Linux 保持 `open` / `xdg-open` 行为不变。
+- 同步更新 API、用户手册、实现说明和手动验收文档。
+
+## Test Plan
+- 新增后端单测覆盖 Windows 目录使用新 Explorer 窗口、Windows 文件仍使用默认文件关联。
+- 全量验证：`python -m compileall backend\app`、`python -m pytest backend\tests -q`、`cd frontend && npm test`、`cd frontend && npm run build`、`git diff --check`。

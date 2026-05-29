@@ -55,10 +55,10 @@ class AnalyzeResponse(BaseModel):
 
 class DownloadOptions(BaseModel):
     mode: DownloadMode = "video_subtitles"
-    resolution: str = "best"
+    resolution: str = "1440p"
     format_id: str | None = None
     subtitle_languages: list[str] = Field(default_factory=list)
-    subtitle_source: SubtitleSource = "human"
+    subtitle_source: SubtitleSource = "both"
     subtitle_format: SubtitleFormat = "best"
     playlist_items: list[int] | None = None
     write_metadata: bool = False

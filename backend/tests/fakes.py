@@ -160,6 +160,10 @@ class SplitStreamProgressYtDlpService(FakeYtDlpService):
             progress_hook,
             wait=False,
         )
+        if download_dir is not None:
+            final_file = Path(download_dir) / "video.mp4"
+            final_file.parent.mkdir(parents=True, exist_ok=True)
+            final_file.write_text("video", encoding="utf-8")
 
     def _emit(self, stage, payload, progress_hook, wait=True):
         progress_hook(payload)
@@ -183,7 +187,13 @@ class BlockingYtDlpService(FakeYtDlpService):
 
 class PreparedBlockingYtDlpService(BlockingYtDlpService):
     def prepare_download(self, url, options, cookies_path=None):
-        return SimpleNamespace(is_selectable=True, width=1920, height=1080, actual_format="mp4 · avc1 + mp4a")
+        return SimpleNamespace(
+            is_selectable=True,
+            width=1920,
+            height=1080,
+            actual_format="mp4 · avc1 + mp4a",
+            filesize=10_485_760,
+        )
 
 
 class SingleAutoFallbackYtDlpService(FakeYtDlpService):

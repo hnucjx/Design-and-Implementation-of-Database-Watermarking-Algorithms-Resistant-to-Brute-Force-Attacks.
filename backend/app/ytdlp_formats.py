@@ -98,6 +98,20 @@ def actual_format_from_info_dict(info: dict[str, Any]) -> str | None:
     return " · ".join(part for part in [ext, codec_label] if part) or None
 
 
+def filesize_from_info_dict(info: dict[str, Any]) -> int | None:
+    requested_formats = info.get("requested_formats")
+    if isinstance(requested_formats, list):
+        total = 0
+        for fmt in requested_formats:
+            if not isinstance(fmt, dict):
+                continue
+            size = positive_int(fmt.get("filesize")) or positive_int(fmt.get("filesize_approx"))
+            if size is not None:
+                total += size
+        return total or None
+    return positive_int(info.get("filesize")) or positive_int(info.get("filesize_approx"))
+
+
 def resolution_from_mapping(value: dict[str, Any]) -> tuple[int, int] | None:
     width = positive_int(value.get("width"))
     height = positive_int(value.get("height"))

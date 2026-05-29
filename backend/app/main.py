@@ -15,6 +15,7 @@ from .events import EventBroker
 from .job_read_model import read_job
 from .job_manager import JobManager, new_id
 from .models import Job, JobItem, Setting
+from .output_paths import discover_existing_output_path, discover_output_file_candidates, resolve_existing_output_path
 from .paths import safe_path_name
 from .schemas import (
     AnalyzeRequest,
@@ -33,7 +34,7 @@ from .schemas import (
     SettingsUpdate,
     VideoEntry,
 )
-from .system_open import open_path_with_default_app
+from .system_open import LocalOpenError, open_path_with_default_app, open_video_with_best_player
 from .ytdlp_service import BrowserCookieImportError, YtDlpService
 
 
@@ -42,6 +43,7 @@ def create_app(
     ytdlp_service: YtDlpService | None = None,
     directory_picker: Callable[[Path], Path | None] | None = None,
     system_opener: Callable[[Path], None] | None = None,
+    video_opener: Callable[[Path, str | None], None] | None = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
     app_settings.ensure_directories()
@@ -65,6 +67,9 @@ def create_app(
     get_session = session_dependency(engine)
     pick_directory = directory_picker or _select_directory_with_tkinter
     open_local_path = system_opener or open_path_with_default_app
+    open_video_path = video_opener or (
+        (lambda path, _actual_format=None: system_opener(path)) if system_opener else open_video_with_best_player
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -242,7 +247,7 @@ def create_app(
     async def play_job_video(job_id: str, session: SessionDep) -> Response:
         job = _require_job(session, job_id)
         item = _single_job_item(session, job)
-        await _open_local_path(open_local_path, _output_file(item))
+        await _open_video_path(open_video_path, _output_file(item, job.download_dir), item.actual_format)
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/open-folder", status_code=204)
@@ -253,16 +258,16 @@ def create_app(
 
     @app.post("/api/jobs/{job_id}/items/{item_id}/play", status_code=204)
     async def play_job_item_video(job_id: str, item_id: str, session: SessionDep) -> Response:
-        _require_job(session, job_id)
+        job = _require_job(session, job_id)
         item = _require_job_item(session, job_id, item_id)
-        await _open_local_path(open_local_path, _output_file(item))
+        await _open_video_path(open_video_path, _output_file(item, job.download_dir), item.actual_format)
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/items/{item_id}/open-folder", status_code=204)
     async def open_job_item_video_folder(job_id: str, item_id: str, session: SessionDep) -> Response:
-        _require_job(session, job_id)
+        job = _require_job(session, job_id)
         item = _require_job_item(session, job_id, item_id)
-        await _open_local_path(open_local_path, _output_folder(item))
+        await _open_local_path(open_local_path, _output_folder(item, job.download_dir))
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/items/delete", response_model=DeleteJobItemsResponse)
@@ -371,12 +376,14 @@ def create_app(
         return CookieStatus(enabled=False, filename=None, source="none")
 
     frontend_dist = REPO_ROOT / "frontend" / "dist"
-    if frontend_dist.exists():
-        app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+    frontend_assets = frontend_dist / "assets"
+    frontend_index_path = frontend_dist / "index.html"
+    if frontend_index_path.is_file() and frontend_assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=frontend_assets), name="assets")
 
         @app.get("/")
         def frontend_index() -> FileResponse:
-            return FileResponse(frontend_dist / "index.html")
+            return FileResponse(frontend_index_path)
 
     return app
 
@@ -448,33 +455,47 @@ def _single_job_item(session: Session, job: Job) -> JobItem:
     return items[0]
 
 
-def _output_file(item: JobItem) -> Path:
-    if not item.output_path:
+def _output_file(item: JobItem, base_dir: str | Path | None = None) -> Path:
+    base_path = Path(base_dir) if base_dir else None
+    path = resolve_existing_output_path(Path(item.output_path), base_path) if item.output_path else None
+    if path is None:
+        path = discover_existing_output_path(item.source_url, base_path)
+    if path is None:
         raise HTTPException(status_code=409, detail="视频文件尚不可用。")
-    path = Path(item.output_path).expanduser()
     if not path.is_file():
         raise HTTPException(status_code=409, detail="视频文件不存在。")
     return path
 
 
-def _output_folder(item: JobItem) -> Path:
-    folder = _output_file(item).parent
-    if not folder.is_dir():
-        raise HTTPException(status_code=409, detail="视频文件夹不存在。")
-    return folder
+def _item_folder(item: JobItem, base_dir: str | Path | None = None) -> Path:
+    base_path = Path(base_dir) if base_dir else None
+    path = resolve_existing_output_path(Path(item.output_path), base_path) if item.output_path else None
+    if not path:
+        discovered = discover_output_file_candidates(item.source_url, base_path)
+        path = discovered[0] if discovered else None
+    if path:
+        folder = path.parent
+        if folder.is_dir():
+            return folder
+    if base_path and base_path.is_dir():
+        return base_path
+    raise HTTPException(status_code=409, detail="视频文件夹不存在。")
+
+
+def _output_folder(item: JobItem, base_dir: str | Path | None = None) -> Path:
+    return _item_folder(item, base_dir)
 
 
 def _job_folder(session: Session, job: Job) -> Path:
     items = session.exec(select(JobItem).where(JobItem.job_id == job.id).order_by(JobItem.index)).all()
     if len(items) == 1:
-        return _output_folder(items[0])
+        return _output_folder(items[0], job.download_dir)
     if not job.download_dir:
         raise HTTPException(status_code=409, detail="合集文件夹尚不可用。")
     folder = Path(job.download_dir).expanduser()
     if not folder.is_dir():
         raise HTTPException(status_code=409, detail="合集文件夹不存在。")
     return folder
-
 
 async def _open_local_path(path_opener: Callable[[Path], None], path: Path) -> None:
     try:
@@ -483,6 +504,21 @@ async def _open_local_path(path_opener: Callable[[Path], None], path: Path) -> N
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"无法打开本地路径：{exc}") from exc
+
+
+async def _open_video_path(
+    video_opener: Callable[[Path, str | None], None],
+    path: Path,
+    actual_format: str | None,
+) -> None:
+    try:
+        await asyncio.to_thread(video_opener, path, actual_format)
+    except HTTPException:
+        raise
+    except LocalOpenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"无法打开本地视频：{exc}") from exc
 
 
 def _job_download_dir(root_dir: Path, analysis: AnalyzeResponse, job_id: str) -> Path:

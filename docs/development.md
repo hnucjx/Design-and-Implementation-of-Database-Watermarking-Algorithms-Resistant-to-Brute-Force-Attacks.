@@ -54,7 +54,7 @@ npm install
 
 ### 普通单端口模式
 
-普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成 `frontend/dist`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L373)。
+普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L373)。
 
 ### 前端热更新开发模式
 
@@ -96,7 +96,7 @@ npm run dev -- --port 5173
 | `YTDL_DOWNLOAD_DIR` | `downloads/` | 下载产物目录。 |
 | `YTDL_DATABASE_PATH` | `data/app.sqlite3` | SQLite 文件路径。 |
 | `YTDL_DEFAULT_CONCURRENCY` | 来自 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` 或 `5` | 后台 worker 并发。 |
-| `YTDL_DEFAULT_RESOLUTION` | `1080p` | 默认清晰度。 |
+| `YTDL_DEFAULT_RESOLUTION` | `1440p` | 默认清晰度。 |
 | `YTDL_YOUTUBE_PO_TOKEN` | 空 | 高级排障用 YouTube PO token。 |
 | `YTDL_YOUTUBE_VISITOR_DATA` | 空 | 与 PO token 配套的 visitor data。 |
 | `YTDL_YOUTUBE_PO_BROWSER_PATH` | 空 | PO-token provider 使用的浏览器路径。 |

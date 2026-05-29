@@ -206,7 +206,7 @@ export const settingsPayload = {
   download_dir: "downloads",
   default_concurrency: 2,
   default_subtitle_languages: ["en"],
-  default_resolution: "1080p",
+  default_resolution: "1440p",
   cookies_enabled: false,
   ffmpeg: { ffmpeg: true, ffprobe: true }
 };

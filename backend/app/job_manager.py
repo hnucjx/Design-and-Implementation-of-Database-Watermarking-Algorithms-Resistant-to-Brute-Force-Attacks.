@@ -21,6 +21,7 @@ from .fallback_policy import (
 )
 from .log_safety import sanitize_log_message
 from .models import Job, JobEvent, JobItem, JobStatus, utc_now
+from .output_paths import discover_output_file_candidates, output_file_candidates, resolve_existing_output_path
 from .schemas import DownloadOptions
 from .transfer_stats import TransferStats
 from .ytdlp_service import DownloadCancelled, MIN_AUTO_FALLBACK_HEIGHT, YtDlpService
@@ -237,8 +238,8 @@ class JobManager:
             for item in targets:
                 self._deleted_items.add(item.id)
                 deleted_item_ids.append(item.id)
-                if delete_files and item.output_path:
-                    output_paths.append(Path(item.output_path))
+                if delete_files:
+                    output_paths.extend(self._item_output_paths(item, job_download_dir))
                 for event in session.exec(select(JobEvent).where(JobEvent.item_id == item.id)).all():
                     session.delete(event)
                 session.delete(item)
@@ -282,8 +283,8 @@ class JobManager:
                 session.delete(event)
             for item in session.exec(select(JobItem).where(JobItem.job_id == job_id)).all():
                 self._deleted_items.add(item.id)
-                if delete_files and item.output_path:
-                    output_paths.append(Path(item.output_path))
+                if delete_files:
+                    output_paths.extend(self._item_output_paths(item, job_download_dir))
                 session.delete(item)
             if job:
                 session.delete(job)
@@ -300,7 +301,7 @@ class JobManager:
                 allowed_roots.append(job_download_dir.expanduser().resolve())
 
         for output_path in output_paths:
-            for candidate in self._output_file_candidates(output_path):
+            for candidate in output_file_candidates(output_path, job_download_dir):
                 with suppress(OSError):
                     resolved = candidate.expanduser().resolve()
                     if not self._is_under_allowed_root(resolved, allowed_roots):
@@ -314,12 +315,22 @@ class JobManager:
                 if resolved_dir != download_root and download_root in resolved_dir.parents and resolved_dir.exists():
                     resolved_dir.rmdir()
 
-    def _output_file_candidates(self, output_path: Path) -> list[Path]:
-        sidecar_suffixes = [".description", ".info.json", ".jpg", ".jpeg", ".png", ".webp", ".srt", ".vtt"]
-        return [output_path, *(output_path.with_suffix(suffix) for suffix in sidecar_suffixes)]
-
     def _is_under_allowed_root(self, path: Path, allowed_roots: list[Path]) -> bool:
         return any(path == root or root in path.parents for root in allowed_roots)
+
+    def _item_output_paths(self, item: JobItem, job_download_dir: Path | None) -> list[Path]:
+        paths: list[Path] = []
+        if item.output_path:
+            paths.append(Path(item.output_path))
+        paths.extend(discover_output_file_candidates(item.source_url, job_download_dir))
+        deduped: list[Path] = []
+        seen: set[Path] = set()
+        for path in paths:
+            if path in seen:
+                continue
+            seen.add(path)
+            deduped.append(path)
+        return deduped
 
     async def _worker(self, worker_index: int) -> None:
         assert self._queue is not None
@@ -497,7 +508,13 @@ class JobManager:
                 return
             session.refresh(item)
             if item.output_path is None and progress_aggregator.output_path:
-                item.output_path = progress_aggregator.output_path
+                progress_output_path = Path(progress_aggregator.output_path)
+                if not progress_output_path.is_absolute():
+                    progress_output_path = download_dir / progress_output_path
+                item.output_path = str(
+                    resolve_existing_output_path(progress_output_path)
+                    or progress_output_path
+                )
             if item.actual_width is None and item.actual_height is None and item.output_path:
                 resolution = self.service.detect_file_resolution(Path(item.output_path))
                 if resolution is not None:
@@ -790,6 +807,9 @@ class JobManager:
             item.actual_height = int(preparation.height)
         if preparation.actual_format:
             item.actual_format = str(preparation.actual_format)
+        filesize = getattr(preparation, "filesize", None)
+        if filesize is not None and not item.total_bytes:
+            item.total_bytes = int(filesize)
         item.updated_at = utc_now()
         session.add(item)
         session.commit()
@@ -801,6 +821,7 @@ class JobManager:
                 "actual_width": item.actual_width,
                 "actual_height": item.actual_height,
                 "actual_format": item.actual_format,
+                "total_bytes": item.total_bytes,
             }
         )
 

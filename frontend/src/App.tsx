@@ -71,10 +71,10 @@ const BROWSER_COOKIE_OPTIONS = [
 
 const INITIAL_OPTIONS: DownloadOptions = {
   mode: "video_subtitles",
-  resolution: "1080p",
+  resolution: "1440p",
   format_id: null,
   subtitle_languages: [],
-  subtitle_source: "human",
+  subtitle_source: "both",
   subtitle_format: "best",
   playlist_items: null,
   write_metadata: false,
@@ -179,6 +179,7 @@ export default function App() {
       const job = await createJob(analysis.url, {
         ...options,
         format_id: null,
+        subtitle_source: effectiveSubtitleSourceForAnalysis(analysis, options.subtitle_source),
         playlist_items: playlistItems
       });
       setJobs((current) => [job, ...current.filter((item) => item.id !== job.id)]);
@@ -384,11 +385,11 @@ export default function App() {
               }
               onCopyLink={(sourceUrl) => handleCopySourceLink(sourceUrl)}
               onPause={(jobId) => void handlePauseJob(jobId).catch((err) => setError(err.message))}
-              onOpenFolder={(jobId) => void openJobFolder(jobId).catch((err) => setError(err.message))}
-              onOpenItemFolder={(jobId, itemId) => void openJobItemFolder(jobId, itemId).catch((err) => setError(err.message))}
+              onOpenFolder={(jobId) => openJobFolder(jobId)}
+              onOpenItemFolder={(jobId, itemId) => openJobItemFolder(jobId, itemId)}
               onOpenSourcePage={openSourcePage}
-              onPlay={(jobId) => void playJobVideo(jobId).catch((err) => setError(err.message))}
-              onPlayItem={(jobId, itemId) => void playJobItemVideo(jobId, itemId).catch((err) => setError(err.message))}
+              onPlay={(jobId) => playJobVideo(jobId)}
+              onPlayItem={(jobId, itemId) => playJobItemVideo(jobId, itemId)}
               onRestart={(jobId, resolution) => void handleRestartJob(jobId, resolution).catch((err) => setError(err.message))}
               onRestartItem={(jobId, itemId, resolution) => void handleRestartJobItem(jobId, itemId, resolution).catch((err) => setError(err.message))}
               onToggleJobSelection={toggleJobSelection}
@@ -655,6 +656,7 @@ function DownloadOptionsPanel({
     !ffmpegAvailable &&
     options.mode !== "subtitles_only" &&
     Boolean(resolutionHeight(options.resolution));
+  const subtitleInfo = formatSubtitleInfo(analysis, options);
 
   return (
     <section className="panel options-panel">
@@ -731,6 +733,11 @@ function DownloadOptionsPanel({
         </label>
       </div>
 
+      <div className="subtitle-info" aria-live="polite">
+        <Captions size={16} />
+        <span>{subtitleInfo}</span>
+      </div>
+
       <div className="toggle-list">
         <Toggle icon={<FileText size={16} />} label="保存 metadata" checked={options.write_metadata} onChange={(value) => onOptionChange("write_metadata", value)} />
         <Toggle icon={<Captions size={16} />} label="保存缩略图" checked={options.write_thumbnail} onChange={(value) => onOptionChange("write_thumbnail", value)} />
@@ -769,6 +776,52 @@ function DownloadOptionsPanel({
       </button>
     </section>
   );
+}
+
+function formatSubtitleInfo(analysis: AnalyzeResponse | null, options: DownloadOptions): string {
+  if (!analysis) {
+    return "字幕：待解析 · 来源 两者都要 · 格式 最佳";
+  }
+  if (options.mode === "video_only") {
+    return "字幕：无字幕（仅视频模式）";
+  }
+
+  const hasHuman = analysis.subtitles.length > 0;
+  const hasAuto = analysis.automatic_subtitles.length > 0;
+  if (!hasHuman && !hasAuto) {
+    return "字幕：无字幕";
+  }
+
+  const source = subtitleSourceDescription(options.subtitle_source, hasHuman, hasAuto);
+  const format = subtitleFormatLabel(options.subtitle_format);
+  return `字幕：来源 ${source} · 格式 ${format}`;
+}
+
+function subtitleSourceDescription(source: SubtitleSource, hasHuman: boolean, hasAuto: boolean): string {
+  if (source === "both") {
+    if (hasHuman && hasAuto) return "两者都要（人工字幕 + 自动字幕）";
+    if (hasHuman) return "人工字幕（自动字幕缺失，已 fallback）";
+    return "自动字幕（人工字幕缺失，已 fallback）";
+  }
+  if (source === "human") {
+    return hasHuman ? "人工字幕" : "自动字幕（人工字幕缺失，已 fallback）";
+  }
+  return hasAuto ? "自动字幕" : "人工字幕（自动字幕缺失，已 fallback）";
+}
+
+function effectiveSubtitleSourceForAnalysis(analysis: AnalyzeResponse, source: SubtitleSource): SubtitleSource {
+  const hasHuman = analysis.subtitles.length > 0;
+  const hasAuto = analysis.automatic_subtitles.length > 0;
+  if (source === "both" && hasHuman !== hasAuto) return hasHuman ? "human" : "auto";
+  if (source === "human" && !hasHuman && hasAuto) return "auto";
+  if (source === "auto" && !hasAuto && hasHuman) return "human";
+  return source;
+}
+
+function subtitleFormatLabel(format: SubtitleFormat): string {
+  if (format === "srt") return "SRT";
+  if (format === "vtt") return "VTT";
+  return "最佳";
 }
 
 function SearchableLanguageSelect({

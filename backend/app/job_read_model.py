@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlmodel import Session, select
 
 from .fallback_policy import build_resolution_fallback
 from .models import Job, JobItem, utc_now
+from .output_paths import discover_existing_output_path, resolve_existing_output_path
 from .schemas import JobItemRead, JobRead, ResolutionFallback
 
 
@@ -34,11 +36,11 @@ def read_job(session: Session, job_id: str) -> JobRead | None:
         started_at=job.started_at,
         finished_at=job.finished_at,
         elapsed_seconds=_elapsed_seconds(job.started_at, job.finished_at),
-        items=[_read_job_item(item) for item in items],
+        items=[_read_job_item(item, job.download_dir) for item in items],
     )
 
 
-def _read_job_item(item: JobItem) -> JobItemRead:
+def _read_job_item(item: JobItem, job_download_dir: str | None) -> JobItemRead:
     return JobItemRead(
         id=item.id,
         job_id=item.job_id,
@@ -51,7 +53,7 @@ def _read_job_item(item: JobItem) -> JobItemRead:
         total_bytes=item.total_bytes,
         speed=item.speed,
         eta=item.eta,
-        output_path=item.output_path,
+        output_path=_project_output_path(item, job_download_dir),
         actual_width=item.actual_width,
         actual_height=item.actual_height,
         actual_format=item.actual_format,
@@ -71,6 +73,15 @@ def _read_job_item(item: JobItem) -> JobItemRead:
         finished_at=item.finished_at,
         elapsed_seconds=_elapsed_seconds(item.started_at, item.finished_at),
     )
+
+
+def _project_output_path(item: JobItem, job_download_dir: str | None) -> str | None:
+    base_dir = Path(job_download_dir) if job_download_dir else None
+    if item.output_path:
+        resolved = resolve_existing_output_path(Path(item.output_path), base_dir)
+        return str(resolved or item.output_path)
+    discovered = discover_existing_output_path(item.source_url, base_dir)
+    return str(discovered) if discovered else None
 
 
 def _actual_resolution(items: list[JobItem]) -> str | None:

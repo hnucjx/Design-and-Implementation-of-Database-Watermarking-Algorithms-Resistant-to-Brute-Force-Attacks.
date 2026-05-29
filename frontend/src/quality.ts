@@ -41,14 +41,8 @@ export function buildResolutionOptions(analysis: AnalyzeResponse | null): string
   return ["best", ...Array.from(heights).sort((a, b) => b - a).map((height) => `${height}p`)];
 }
 
-export function chooseAvailableResolution(analysis: AnalyzeResponse, preferredResolution: string): string {
-  if (preferredResolution === "best") return preferredResolution;
-  const preferredHeight = resolutionHeight(preferredResolution);
-  const heights = formatHeights(analysis);
-  if (!preferredHeight || !heights.length || heights.includes(preferredHeight)) {
-    return preferredResolution;
-  }
-  return `${heights[0]}p`;
+export function chooseAvailableResolution(_analysis: AnalyzeResponse, preferredResolution: string): string {
+  return preferredResolution === "best" ? "best" : preferredResolution;
 }
 
 export function formatSelectedQualitySize(analysis: AnalyzeResponse, options: DownloadOptions): string {

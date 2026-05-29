@@ -415,6 +415,21 @@ def test_actual_format_can_be_extracted_from_progress_payload_requested_formats(
     assert actual_format == "mp4 · avc1 + mp4a"
 
 
+def test_filesize_sums_requested_formats_for_prepared_download(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    filesize = service._filesize_from_info_dict(
+        {
+            "requested_formats": [
+                {"format_id": "137", "filesize": 12_000},
+                {"format_id": "140", "filesize_approx": 3_000},
+            ]
+        }
+    )
+
+    assert filesize == 15_000
+
+
 def test_suggests_highest_available_resolution_below_requested(tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
 
@@ -495,6 +510,17 @@ def test_subtitle_only_options_skip_video_and_include_languages(tmp_path: Path) 
     assert opts["subtitleslangs"] == ["en", "zh-Hans"]
     assert opts["subtitlesformat"] == "srt"
     assert opts["cookiefile"] == str(tmp_path / "cookies.txt")
+
+
+def test_download_options_default_to_1440p_and_both_subtitle_sources(tmp_path: Path) -> None:
+    options = DownloadOptions()
+    service = YtDlpService(download_dir=tmp_path)
+    opts = service.build_download_options(options, cookies_path=None)
+
+    assert options.resolution == "1440p"
+    assert options.subtitle_source == "both"
+    assert opts["writesubtitles"] is True
+    assert opts["writeautomaticsub"] is True
 
 
 def test_explicit_resolution_uses_single_file_selector_without_any_ffmpeg(monkeypatch, tmp_path: Path) -> None:

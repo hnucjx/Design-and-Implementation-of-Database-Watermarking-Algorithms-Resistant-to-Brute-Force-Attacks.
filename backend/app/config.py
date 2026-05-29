@@ -24,7 +24,7 @@ class AppSettings(BaseSettings):
     database_path: Path = Field(default_factory=lambda: REPO_ROOT / "data" / "app.sqlite3")
     cookies_filename: str = "cookies.txt"
     default_concurrency: int = Field(default_factory=default_download_concurrency)
-    default_resolution: str = "1080p"
+    default_resolution: str = "1440p"
     default_subtitle_languages: list[str] = Field(default_factory=lambda: ["en"])
     youtube_po_token: str | None = None
     youtube_visitor_data: str | None = None

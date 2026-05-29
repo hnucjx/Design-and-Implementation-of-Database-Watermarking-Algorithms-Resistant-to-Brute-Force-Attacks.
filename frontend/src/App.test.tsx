@@ -22,6 +22,7 @@ let currentJobsPayload: Job[] = [jobPayload, pausedJobPayload, playlistJobPayloa
 let currentSettingsPayload = settingsPayload;
 let browserCookieImportLocked = false;
 let analyzeLockedByEdgeCookies = false;
+let localFileActionFailure: string | null = null;
 
 describe("App", () => {
   beforeEach(() => {
@@ -30,6 +31,7 @@ describe("App", () => {
     currentSettingsPayload = settingsPayload;
     browserCookieImportLocked = false;
     analyzeLockedByEdgeCookies = false;
+    localFileActionFailure = null;
     vi.stubGlobal("confirm", vi.fn(() => true));
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -104,6 +106,9 @@ describe("App", () => {
             url.endsWith("/api/jobs/job-playlist/items/item-playlist-1/play")) &&
           init?.method === "POST"
         ) {
+          if (localFileActionFailure) {
+            return Response.json({ detail: localFileActionFailure }, { status: 409 });
+          }
           return new Response(null, { status: 204 });
         }
         if (url.endsWith("/api/jobs/job-playlist/items/delete")) {
@@ -164,7 +169,8 @@ describe("App", () => {
     expect(await screen.findByText("Batch")).toBeInTheDocument();
     expect(screen.getByText("One")).toBeInTheDocument();
     expect(screen.getByText("Two")).toBeInTheDocument();
-    expect(screen.getByLabelText("清晰度")).toHaveValue("resolution:1080p");
+    expect(screen.getByLabelText("清晰度")).toHaveValue("resolution:1440p");
+    expect(screen.getByText("字幕：来源 两者都要（人工字幕 + 自动字幕） · 格式 最佳")).toBeInTheDocument();
 
     await user.click(screen.getByLabelText("选择 One"));
     await user.selectOptions(screen.getByLabelText("下载模式"), "subtitles_only");
@@ -196,6 +202,7 @@ describe("App", () => {
       String((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[1]?.body)
     );
     expect(submittedBody.options.subtitle_languages).toEqual(expect.arrayContaining(["en", "zh-Hans"]));
+    expect(submittedBody.options.subtitle_source).toBe("both");
   }, 10_000);
 
   test("omits redundant panel subtitle text", async () => {
@@ -384,7 +391,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "解析链接" }));
 
     await screen.findByText("Batch");
-    expect(screen.getByText("当前选择：1080p · 大小未知")).toBeInTheDocument();
+    expect(screen.getByText("当前选择：1440p · 大小未知")).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("清晰度"), "resolution:720p");
     expect(screen.getByText("当前选择：720p · 10.0 MB")).toBeInTheDocument();
@@ -415,7 +422,7 @@ describe("App", () => {
     });
   });
 
-  test("falls back to highest available resolution when 1080p is unsupported", async () => {
+  test("keeps the default 1440p selection so the backend can explain any fallback", async () => {
     currentAnalyzePayload = {
       ...analyzePayload,
       formats: [
@@ -430,7 +437,51 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "解析链接" }));
 
     await screen.findByText("Batch");
-    expect(screen.getByLabelText("清晰度")).toHaveValue("resolution:720p");
+    expect(screen.getByLabelText("清晰度")).toHaveValue("resolution:1440p");
+  });
+
+  test("shows subtitle fallback information and submits the available source", async () => {
+    currentAnalyzePayload = {
+      ...analyzePayload,
+      subtitles: [],
+      automatic_subtitles: [{ language: "zh-Hans", name: null, formats: ["vtt"] }]
+    };
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    expect(screen.getByText("字幕：来源 自动字幕（人工字幕缺失，已 fallback） · 格式 最佳")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("字幕来源"), "human");
+    expect(screen.getByText("字幕：来源 自动字幕（人工字幕缺失，已 fallback） · 格式 最佳")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "加入下载队列" }));
+
+    await waitFor(() => {
+      const createJobCall = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+        ([url, init]) => String(url).endsWith("/api/jobs") && init?.method === "POST"
+      );
+      const submittedBody = JSON.parse(String(createJobCall?.[1]?.body));
+      expect(submittedBody.options.subtitle_source).toBe("auto");
+    });
+  });
+
+  test("shows no subtitles when neither human nor automatic captions are available", async () => {
+    currentAnalyzePayload = {
+      ...analyzePayload,
+      subtitles: [],
+      automatic_subtitles: []
+    };
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    await screen.findByText("Batch");
+    expect(screen.getByText("字幕：无字幕")).toBeInTheDocument();
   });
 
   test("submits selected resolution with null concrete format", async () => {
@@ -542,6 +593,68 @@ describe("App", () => {
       "/api/jobs/job-playlist/items/item-playlist-1/open-folder",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  test("opens a task folder even before a final output path is known", async () => {
+    currentJobsPayload = [
+      {
+        ...jobPayload,
+        download_dir: "D:\\Videos",
+        items: [{ ...jobPayload.items[0], output_path: null }]
+      }
+    ];
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "打开视频文件夹 Running video" }));
+
+    expect(fetch).toHaveBeenCalledWith("/api/jobs/job-running/open-folder", expect.objectContaining({ method: "POST" }));
+  });
+
+  test("shows local file action failures beside the affected task", async () => {
+    currentJobsPayload = [
+      {
+        ...jobPayload,
+        items: [{ ...jobPayload.items[0], output_path: "D:\\Videos\\missing.mp4" }]
+      }
+    ];
+    localFileActionFailure = "视频文件不存在。";
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "播放 Running video" }));
+
+    const jobCard = screen.getByText("Running video").closest(".job-card");
+    expect(jobCard).toBeInTheDocument();
+    const localAlert = within(jobCard as HTMLElement).getByRole("alert");
+    expect(localAlert).toHaveClass("local-action-error");
+    expect(localAlert).toHaveTextContent("视频文件不存在。");
+  });
+
+  test("shows playlist item local file action failures beside the affected item", async () => {
+    currentJobsPayload = [
+      {
+        ...playlistJobPayload,
+        items: [
+          { ...playlistJobPayload.items[0], output_path: "D:\\Videos\\Playlist\\missing.mp4" },
+          playlistJobPayload.items[1]
+        ]
+      }
+    ];
+    localFileActionFailure = "视频文件不存在。";
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "打开视频文件夹 Part one" }));
+
+    const itemDetail = screen.getByText("1. Part one · running").closest(".job-item-detail");
+    expect(itemDetail).toBeInTheDocument();
+    const localAlert = within(itemDetail as HTMLElement).getByRole("alert");
+    expect(localAlert).toHaveClass("local-action-error");
+    expect(localAlert).toHaveTextContent("视频文件不存在。");
   });
 
   test("opens playlist folders from task center", async () => {
@@ -723,11 +836,14 @@ describe("App", () => {
     expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
     expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
     expect(screen.getByText("50.0%")).toBeInTheDocument();
-    expect(screen.getByText("5.0 MB / 10.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("大小 已知 10.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("大小 10.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("已下载 5.0 MB")).toBeInTheDocument();
     expect(screen.getAllByText("已用 00:42").length).toBeGreaterThan(0);
     expect(screen.getByText("剩余 00:20")).toBeInTheDocument();
     expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
-    expect(screen.getByText("大小未知 / 大小未知")).toBeInTheDocument();
+    expect(screen.getByText("大小 未知")).toBeInTheDocument();
+    expect(screen.getByText("已下载 未知")).toBeInTheDocument();
     expect(screen.getAllByText("分辨率 1920x1080").length).toBeGreaterThan(0);
     expect(screen.getAllByText("格式 mp4 · avc1 + mp4a").length).toBeGreaterThan(0);
   });

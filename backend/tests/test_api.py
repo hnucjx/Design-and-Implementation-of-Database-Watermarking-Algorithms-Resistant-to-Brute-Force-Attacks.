@@ -137,6 +137,18 @@ def test_job_item_shows_predetected_resolution_and_format_while_downloading(tmp_
             service.release.set()
 
 
+def test_create_app_ignores_incomplete_frontend_dist(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import app.main as main_module
+
+    frontend_dist = tmp_path / "frontend" / "dist"
+    frontend_dist.mkdir(parents=True)
+    (frontend_dist / "index.html").write_text("<div id=\"root\"></div>", encoding="utf-8")
+    monkeypatch.setattr(main_module, "REPO_ROOT", tmp_path)
+
+    with TestClient(main_module.create_app(settings=make_settings(tmp_path), ytdlp_service=FakeYtDlpService())) as client:
+        assert client.get("/api/settings").status_code == 200
+
+
 def test_default_concurrency_is_five(tmp_path: Path) -> None:
     settings = AppSettings(
         data_dir=tmp_path / "data",
@@ -716,6 +728,7 @@ def test_split_stream_download_progress_does_not_look_like_restart(tmp_path: Pat
     assert item["downloaded_bytes"] == 120
     assert item["total_bytes"] == 120
     assert item["speed"] is not None
+    assert item["output_path"].endswith("video.mp4")
 
 
 def test_single_video_failed_job_surfaces_item_error(tmp_path: Path) -> None:
@@ -1395,6 +1408,43 @@ def test_play_single_video_opens_downloaded_file(tmp_path: Path) -> None:
 
     assert response.status_code == 204
     assert opened == [output_file]
+
+
+def test_play_single_video_resolves_merged_output_from_stale_stream_path(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    final_file = tmp_path / "downloads" / "video.mp4"
+    stale_stream_file = tmp_path / "downloads" / "video.f137.mp4"
+    final_file.parent.mkdir(parents=True)
+    final_file.write_text("video", encoding="utf-8")
+    seed_job(tmp_path, "job-play-merged-video", status="succeeded", output_path=stale_stream_file)
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-play-merged-video/play")
+
+    assert response.status_code == 204
+    assert opened == [final_file]
+
+
+def test_play_single_video_resolves_relative_stale_stream_path_from_job_directory(tmp_path: Path) -> None:
+    opened: list[Path] = []
+    download_dir = tmp_path / "downloads"
+    final_file = download_dir / "relative.mp4"
+    final_file.parent.mkdir(parents=True)
+    final_file.write_text("video", encoding="utf-8")
+    seed_job(tmp_path, "job-play-relative-video", status="succeeded", download_dir=download_dir)
+    engine = create_app_engine(make_settings(tmp_path))
+    with Session(engine) as session:
+        item = session.get(JobItem, "job-play-relative-video-item")
+        assert item is not None
+        item.output_path = "relative.f140.m4a"
+        session.add(item)
+        session.commit()
+    client = make_client(tmp_path, system_opener=opened.append)
+
+    response = client.post("/api/jobs/job-play-relative-video/play")
+
+    assert response.status_code == 204
+    assert opened == [final_file]
 
 
 def test_play_single_video_returns_409_when_output_missing(tmp_path: Path) -> None:

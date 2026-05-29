@@ -15,6 +15,7 @@ from .events import EventBroker
 from .job_read_model import read_job
 from .job_manager import JobManager, new_id
 from .models import Job, JobItem, Setting
+from .output_paths import resolve_existing_output_path
 from .paths import safe_path_name
 from .schemas import (
     AnalyzeRequest,
@@ -242,7 +243,7 @@ def create_app(
     async def play_job_video(job_id: str, session: SessionDep) -> Response:
         job = _require_job(session, job_id)
         item = _single_job_item(session, job)
-        await _open_local_path(open_local_path, _output_file(item))
+        await _open_local_path(open_local_path, _output_file(item, job.download_dir))
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/open-folder", status_code=204)
@@ -253,16 +254,16 @@ def create_app(
 
     @app.post("/api/jobs/{job_id}/items/{item_id}/play", status_code=204)
     async def play_job_item_video(job_id: str, item_id: str, session: SessionDep) -> Response:
-        _require_job(session, job_id)
+        job = _require_job(session, job_id)
         item = _require_job_item(session, job_id, item_id)
-        await _open_local_path(open_local_path, _output_file(item))
+        await _open_local_path(open_local_path, _output_file(item, job.download_dir))
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/items/{item_id}/open-folder", status_code=204)
     async def open_job_item_video_folder(job_id: str, item_id: str, session: SessionDep) -> Response:
-        _require_job(session, job_id)
+        job = _require_job(session, job_id)
         item = _require_job_item(session, job_id, item_id)
-        await _open_local_path(open_local_path, _output_folder(item))
+        await _open_local_path(open_local_path, _output_folder(item, job.download_dir))
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/items/delete", response_model=DeleteJobItemsResponse)
@@ -371,12 +372,14 @@ def create_app(
         return CookieStatus(enabled=False, filename=None, source="none")
 
     frontend_dist = REPO_ROOT / "frontend" / "dist"
-    if frontend_dist.exists():
-        app.mount("/assets", StaticFiles(directory=frontend_dist / "assets"), name="assets")
+    frontend_assets = frontend_dist / "assets"
+    frontend_index_path = frontend_dist / "index.html"
+    if frontend_index_path.is_file() and frontend_assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=frontend_assets), name="assets")
 
         @app.get("/")
         def frontend_index() -> FileResponse:
-            return FileResponse(frontend_dist / "index.html")
+            return FileResponse(frontend_index_path)
 
     return app
 
@@ -448,17 +451,17 @@ def _single_job_item(session: Session, job: Job) -> JobItem:
     return items[0]
 
 
-def _output_file(item: JobItem) -> Path:
+def _output_file(item: JobItem, base_dir: str | Path | None = None) -> Path:
     if not item.output_path:
         raise HTTPException(status_code=409, detail="视频文件尚不可用。")
-    path = Path(item.output_path).expanduser()
-    if not path.is_file():
+    path = resolve_existing_output_path(Path(item.output_path), Path(base_dir) if base_dir else None)
+    if not path:
         raise HTTPException(status_code=409, detail="视频文件不存在。")
     return path
 
 
-def _output_folder(item: JobItem) -> Path:
-    folder = _output_file(item).parent
+def _output_folder(item: JobItem, base_dir: str | Path | None = None) -> Path:
+    folder = _output_file(item, base_dir).parent
     if not folder.is_dir():
         raise HTTPException(status_code=409, detail="视频文件夹不存在。")
     return folder
@@ -467,14 +470,13 @@ def _output_folder(item: JobItem) -> Path:
 def _job_folder(session: Session, job: Job) -> Path:
     items = session.exec(select(JobItem).where(JobItem.job_id == job.id).order_by(JobItem.index)).all()
     if len(items) == 1:
-        return _output_folder(items[0])
+        return _output_folder(items[0], job.download_dir)
     if not job.download_dir:
         raise HTTPException(status_code=409, detail="合集文件夹尚不可用。")
     folder = Path(job.download_dir).expanduser()
     if not folder.is_dir():
         raise HTTPException(status_code=409, detail="合集文件夹不存在。")
     return folder
-
 
 async def _open_local_path(path_opener: Callable[[Path], None], path: Path) -> None:
     try:

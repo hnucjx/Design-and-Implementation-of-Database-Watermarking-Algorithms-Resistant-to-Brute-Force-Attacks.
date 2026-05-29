@@ -10,6 +10,9 @@ import {
   formatPercent
 } from "../formatting";
 import { resolutionFallbackRestartLabel } from "../quality";
+
+type MaybePromise = void | Promise<void>;
+
 export function JobQueue({
   jobs,
   selectedJobIds,
@@ -33,12 +36,12 @@ export function JobQueue({
   onCopyLink: (sourceUrl: string) => Promise<void>;
   onDelete: (jobId: string, deleteFiles?: boolean) => void;
   onDeleteItems: (jobId: string, itemIds: string[], deleteFiles?: boolean) => void;
-  onOpenFolder: (jobId: string) => void;
-  onOpenItemFolder: (jobId: string, itemId: string) => void;
+  onOpenFolder: (jobId: string) => MaybePromise;
+  onOpenItemFolder: (jobId: string, itemId: string) => MaybePromise;
   onOpenSourcePage: (sourceUrl: string) => void;
   onPause: (jobId: string) => void;
-  onPlay: (jobId: string) => void;
-  onPlayItem: (jobId: string, itemId: string) => void;
+  onPlay: (jobId: string) => MaybePromise;
+  onPlayItem: (jobId: string, itemId: string) => MaybePromise;
   onRestart: (jobId: string, resolution?: string) => void;
   onRestartItem: (jobId: string, itemId: string, resolution?: string) => void;
   onToggleJobSelection: (jobId: string) => void;
@@ -47,6 +50,7 @@ export function JobQueue({
   const [expandedJobIds, setExpandedJobIds] = useState<Record<string, boolean>>({});
   const [selectedItemIdsByJob, setSelectedItemIdsByJob] = useState<Record<string, Set<string>>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [localActionError, setLocalActionError] = useState<{ key: string; message: string } | null>(null);
 
   useEffect(() => {
     setExpandedJobIds((current) => {
@@ -90,6 +94,17 @@ export function JobQueue({
       window.setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 1500);
     } catch {
       // The parent surfaces clipboard failures in the shared alert area.
+    }
+  }
+
+  function runLocalFileAction(key: string, action: () => MaybePromise) {
+    setLocalActionError(null);
+    try {
+      Promise.resolve(action()).catch((error) => {
+        setLocalActionError({ key, message: localActionErrorMessage(error) });
+      });
+    } catch (error) {
+      setLocalActionError({ key, message: localActionErrorMessage(error) });
     }
   }
 
@@ -138,6 +153,7 @@ export function JobQueue({
           const jobRestartLabel = job.resolution_fallback
             ? resolutionFallbackRestartLabel(job.resolution_fallback, "job")
             : undefined;
+          const jobLocalActionKey = `job:${job.id}`;
           return (
           <article key={job.id} className="job-card">
             <div className="job-row">
@@ -172,7 +188,7 @@ export function JobQueue({
                     title={canOpenPlaylistFolder ? "打开合集文件夹" : "合集文件夹尚不可用"}
                     aria-label={`打开合集文件夹 ${title}`}
                     disabled={!canOpenPlaylistFolder}
-                    onClick={() => onOpenFolder(job.id)}
+                    onClick={() => runLocalFileAction(jobLocalActionKey, () => onOpenFolder(job.id))}
                   >
                     <FolderOpen size={18} />
                   </button>
@@ -184,7 +200,7 @@ export function JobQueue({
                     title={canPlayJob ? "播放视频" : "视频文件尚不可用"}
                     aria-label={`播放 ${title}`}
                     disabled={!canPlayJob}
-                    onClick={() => onPlay(job.id)}
+                    onClick={() => runLocalFileAction(jobLocalActionKey, () => onPlay(job.id))}
                   >
                     <Play size={18} />
                   </button>
@@ -196,7 +212,7 @@ export function JobQueue({
                     title={canPlayJob ? "打开视频所在文件夹" : "视频文件尚不可用"}
                     aria-label={`打开视频文件夹 ${title}`}
                     disabled={!canPlayJob}
-                    onClick={() => onOpenFolder(job.id)}
+                    onClick={() => runLocalFileAction(jobLocalActionKey, () => onOpenFolder(job.id))}
                   >
                     <FolderOpen size={18} />
                   </button>
@@ -249,6 +265,11 @@ export function JobQueue({
                 </button>
               </div>
             </div>
+            {localActionError?.key === jobLocalActionKey && (
+              <div className="local-action-error" role="alert">
+                {localActionError.message}
+              </div>
+            )}
             <div className="job-metrics">
               <span>{formatPercent(job.progress)}</span>
               <span>开始 {formatDateTime(job.started_at)}</span>
@@ -306,6 +327,7 @@ export function JobQueue({
                     ? resolutionFallbackRestartLabel(item.resolution_fallback, "item")
                     : undefined;
                   const itemCopyKey = `item:${item.id}`;
+                  const itemLocalActionKey = `item:${item.id}`;
                   const isItemCopied = copiedKey === itemCopyKey;
                   return (
                   <div key={item.id} className="job-item-detail">
@@ -327,7 +349,7 @@ export function JobQueue({
                           title={item.output_path ? "播放视频" : "视频文件尚不可用"}
                           aria-label={`播放 ${item.title}`}
                           disabled={!item.output_path}
-                          onClick={() => onPlayItem(job.id, item.id)}
+                          onClick={() => runLocalFileAction(itemLocalActionKey, () => onPlayItem(job.id, item.id))}
                         >
                           <Play size={16} />
                         </button>
@@ -337,7 +359,7 @@ export function JobQueue({
                           title={item.output_path ? "打开视频所在文件夹" : "视频文件尚不可用"}
                           aria-label={`打开视频文件夹 ${item.title}`}
                           disabled={!item.output_path}
-                          onClick={() => onOpenItemFolder(job.id, item.id)}
+                          onClick={() => runLocalFileAction(itemLocalActionKey, () => onOpenItemFolder(job.id, item.id))}
                         >
                           <FolderOpen size={16} />
                         </button>
@@ -390,6 +412,11 @@ export function JobQueue({
                         </button>
                       </div>
                     </div>
+                    {localActionError?.key === itemLocalActionKey && (
+                      <div className="local-action-error" role="alert">
+                        {localActionError.message}
+                      </div>
+                    )}
                     <div className="item-metrics">
                       <span>{formatPercent(item.progress)}</span>
                       <span>{formatFileSize(item.downloaded_bytes)} / {formatFileSize(item.total_bytes)}</span>
@@ -425,6 +452,10 @@ export function JobQueue({
       </div>
     </section>
   );
+}
+
+function localActionErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "本地文件操作失败。";
 }
 
 function ResolutionFallbackNotice({

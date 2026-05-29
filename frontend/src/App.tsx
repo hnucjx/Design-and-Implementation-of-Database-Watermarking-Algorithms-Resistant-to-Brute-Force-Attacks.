@@ -384,11 +384,11 @@ export default function App() {
               }
               onCopyLink={(sourceUrl) => handleCopySourceLink(sourceUrl)}
               onPause={(jobId) => void handlePauseJob(jobId).catch((err) => setError(err.message))}
-              onOpenFolder={(jobId) => void openJobFolder(jobId).catch((err) => setError(err.message))}
-              onOpenItemFolder={(jobId, itemId) => void openJobItemFolder(jobId, itemId).catch((err) => setError(err.message))}
+              onOpenFolder={(jobId) => openJobFolder(jobId)}
+              onOpenItemFolder={(jobId, itemId) => openJobItemFolder(jobId, itemId)}
               onOpenSourcePage={openSourcePage}
-              onPlay={(jobId) => void playJobVideo(jobId).catch((err) => setError(err.message))}
-              onPlayItem={(jobId, itemId) => void playJobItemVideo(jobId, itemId).catch((err) => setError(err.message))}
+              onPlay={(jobId) => playJobVideo(jobId)}
+              onPlayItem={(jobId, itemId) => playJobItemVideo(jobId, itemId)}
               onRestart={(jobId, resolution) => void handleRestartJob(jobId, resolution).catch((err) => setError(err.message))}
               onRestartItem={(jobId, itemId, resolution) => void handleRestartJobItem(jobId, itemId, resolution).catch((err) => setError(err.message))}
               onToggleJobSelection={toggleJobSelection}

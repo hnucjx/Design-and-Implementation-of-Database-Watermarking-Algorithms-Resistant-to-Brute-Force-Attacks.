@@ -22,6 +22,7 @@ let currentJobsPayload: Job[] = [jobPayload, pausedJobPayload, playlistJobPayloa
 let currentSettingsPayload = settingsPayload;
 let browserCookieImportLocked = false;
 let analyzeLockedByEdgeCookies = false;
+let localFileActionFailure: string | null = null;
 
 describe("App", () => {
   beforeEach(() => {
@@ -30,6 +31,7 @@ describe("App", () => {
     currentSettingsPayload = settingsPayload;
     browserCookieImportLocked = false;
     analyzeLockedByEdgeCookies = false;
+    localFileActionFailure = null;
     vi.stubGlobal("confirm", vi.fn(() => true));
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -104,6 +106,9 @@ describe("App", () => {
             url.endsWith("/api/jobs/job-playlist/items/item-playlist-1/play")) &&
           init?.method === "POST"
         ) {
+          if (localFileActionFailure) {
+            return Response.json({ detail: localFileActionFailure }, { status: 409 });
+          }
           return new Response(null, { status: 204 });
         }
         if (url.endsWith("/api/jobs/job-playlist/items/delete")) {
@@ -542,6 +547,51 @@ describe("App", () => {
       "/api/jobs/job-playlist/items/item-playlist-1/open-folder",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  test("shows local file action failures beside the affected task", async () => {
+    currentJobsPayload = [
+      {
+        ...jobPayload,
+        items: [{ ...jobPayload.items[0], output_path: "D:\\Videos\\missing.mp4" }]
+      }
+    ];
+    localFileActionFailure = "视频文件不存在。";
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "播放 Running video" }));
+
+    const jobCard = screen.getByText("Running video").closest(".job-card");
+    expect(jobCard).toBeInTheDocument();
+    const localAlert = within(jobCard as HTMLElement).getByRole("alert");
+    expect(localAlert).toHaveClass("local-action-error");
+    expect(localAlert).toHaveTextContent("视频文件不存在。");
+  });
+
+  test("shows playlist item local file action failures beside the affected item", async () => {
+    currentJobsPayload = [
+      {
+        ...playlistJobPayload,
+        items: [
+          { ...playlistJobPayload.items[0], output_path: "D:\\Videos\\Playlist\\missing.mp4" },
+          playlistJobPayload.items[1]
+        ]
+      }
+    ];
+    localFileActionFailure = "视频文件不存在。";
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "打开视频文件夹 Part one" }));
+
+    const itemDetail = screen.getByText("1. Part one · running").closest(".job-item-detail");
+    expect(itemDetail).toBeInTheDocument();
+    const localAlert = within(itemDetail as HTMLElement).getByRole("alert");
+    expect(localAlert).toHaveClass("local-action-error");
+    expect(localAlert).toHaveTextContent("视频文件不存在。");
   });
 
   test("opens playlist folders from task center", async () => {

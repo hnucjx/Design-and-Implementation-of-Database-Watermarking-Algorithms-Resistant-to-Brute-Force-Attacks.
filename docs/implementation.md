@@ -96,7 +96,11 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 任务中心播放和打开文件夹入口调用后端受控本机打开 API：单视频任务调用 `POST /api/jobs/{job_id}/play` 与 `POST /api/jobs/{job_id}/open-folder`，playlist 子视频调用对应的 item endpoint，playlist 任务行用同一个 open-folder endpoint 打开 `Job.download_dir`。后端只根据数据库中的 `output_path` 或 `download_dir` 打开本地文件/目录，不接受前端传入任意路径。
 
+`output_path` 可能来自 yt-dlp 分离音视频流的中间文件名，例如 `title [id].f137.mp4` 或 `title [id].f140.m4a`。下载完成时和本地打开前，后端会通过 [output_paths.py](../backend/app/output_paths.py) 解析到合并后的最终文件，例如 `title [id].mp4`，避免中间文件被合并删除后误报“视频文件不存在”。
+
 本机打开器位于 [system_open.py](../backend/app/system_open.py)。Windows 下播放视频文件仍使用系统默认文件关联；打开目录时显式调用 `explorer.exe /n, <folder>` 新开 Explorer 窗口，减少已有窗口只在任务栏闪烁但没有前置的情况。macOS 和 Linux 仍分别使用 `open` 与 `xdg-open`。
+
+播放和打开文件夹这类本地文件操作失败时，前端在 [JobQueue](../frontend/src/components/JobQueue.tsx) 的对应任务行或子视频行附近显示错误，而不是只放在页面顶部的全局提示区。
 
 任务中心复制链接入口是纯前端行为，使用 `navigator.clipboard.writeText()` 复制 `Job.url` 或 `JobItem.source_url`，成功后按钮短暂显示“已复制”。
 

@@ -54,7 +54,7 @@ npm install
 
 ### 普通单端口模式
 
-普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成 `frontend/dist`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L373)。
+普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L373)。
 
 ### 前端热更新开发模式
 

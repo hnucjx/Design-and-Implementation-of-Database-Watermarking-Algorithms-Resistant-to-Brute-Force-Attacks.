@@ -657,6 +657,20 @@ th {
   background: linear-gradient(90deg, #1f6feb, #0ea5a4);
 }
 
+.local-action-error {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.4;
+}
+
 .resolution-fallback-note {
   display: flex;
   flex-wrap: wrap;

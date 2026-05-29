@@ -160,6 +160,10 @@ class SplitStreamProgressYtDlpService(FakeYtDlpService):
             progress_hook,
             wait=False,
         )
+        if download_dir is not None:
+            final_file = Path(download_dir) / "video.mp4"
+            final_file.parent.mkdir(parents=True, exist_ok=True)
+            final_file.write_text("video", encoding="utf-8")
 
     def _emit(self, stage, payload, progress_hook, wait=True):
         progress_hook(payload)

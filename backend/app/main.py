@@ -34,7 +34,7 @@ from .schemas import (
     SettingsUpdate,
     VideoEntry,
 )
-from .system_open import open_path_with_default_app
+from .system_open import LocalOpenError, open_path_with_default_app, open_video_with_best_player
 from .ytdlp_service import BrowserCookieImportError, YtDlpService
 
 
@@ -43,6 +43,7 @@ def create_app(
     ytdlp_service: YtDlpService | None = None,
     directory_picker: Callable[[Path], Path | None] | None = None,
     system_opener: Callable[[Path], None] | None = None,
+    video_opener: Callable[[Path, str | None], None] | None = None,
 ) -> FastAPI:
     app_settings = settings or get_settings()
     app_settings.ensure_directories()
@@ -66,6 +67,9 @@ def create_app(
     get_session = session_dependency(engine)
     pick_directory = directory_picker or _select_directory_with_tkinter
     open_local_path = system_opener or open_path_with_default_app
+    open_video_path = video_opener or (
+        (lambda path, _actual_format=None: system_opener(path)) if system_opener else open_video_with_best_player
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -243,7 +247,7 @@ def create_app(
     async def play_job_video(job_id: str, session: SessionDep) -> Response:
         job = _require_job(session, job_id)
         item = _single_job_item(session, job)
-        await _open_local_path(open_local_path, _output_file(item, job.download_dir))
+        await _open_video_path(open_video_path, _output_file(item, job.download_dir), item.actual_format)
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/open-folder", status_code=204)
@@ -256,7 +260,7 @@ def create_app(
     async def play_job_item_video(job_id: str, item_id: str, session: SessionDep) -> Response:
         job = _require_job(session, job_id)
         item = _require_job_item(session, job_id, item_id)
-        await _open_local_path(open_local_path, _output_file(item, job.download_dir))
+        await _open_video_path(open_video_path, _output_file(item, job.download_dir), item.actual_format)
         return Response(status_code=204)
 
     @app.post("/api/jobs/{job_id}/items/{item_id}/open-folder", status_code=204)
@@ -485,6 +489,21 @@ async def _open_local_path(path_opener: Callable[[Path], None], path: Path) -> N
         raise
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"无法打开本地路径：{exc}") from exc
+
+
+async def _open_video_path(
+    video_opener: Callable[[Path, str | None], None],
+    path: Path,
+    actual_format: str | None,
+) -> None:
+    try:
+        await asyncio.to_thread(video_opener, path, actual_format)
+    except HTTPException:
+        raise
+    except LocalOpenError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"无法打开本地视频：{exc}") from exc
 
 
 def _job_download_dir(root_dir: Path, analysis: AnalyzeResponse, job_id: str) -> Path:

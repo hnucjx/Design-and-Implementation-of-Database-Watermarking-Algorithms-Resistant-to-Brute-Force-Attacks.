@@ -24,6 +24,7 @@ from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOpt
 from .ytdlp_formats import (
     DEFAULT_MIN_AUTO_FALLBACK_HEIGHT,
     actual_format_from_info_dict,
+    filesize_from_info_dict,
     format_selector,
     has_resolution_at_or_above,
     positive_int,
@@ -79,6 +80,7 @@ class DownloadPreparation:
     width: int | None = None
     height: int | None = None
     actual_format: str | None = None
+    filesize: int | None = None
 
 
 class YtDlpService:
@@ -221,11 +223,13 @@ class YtDlpService:
         selected_format = selected[0]
         resolution = self._resolution_from_info_dict(selected_format)
         actual_format = self._actual_format_from_info_dict(selected_format)
+        filesize = self._filesize_from_info_dict(selected_format)
         return DownloadPreparation(
             is_selectable=True,
             width=resolution[0] if resolution else None,
             height=resolution[1] if resolution else None,
             actual_format=actual_format,
+            filesize=filesize,
         )
 
     def build_download_options(
@@ -397,6 +401,9 @@ class YtDlpService:
 
     def _actual_format_from_info_dict(self, info: dict[str, Any]) -> str | None:
         return actual_format_from_info_dict(info)
+
+    def _filesize_from_info_dict(self, info: dict[str, Any]) -> int | None:
+        return filesize_from_info_dict(info)
 
     def detect_file_resolution(self, file_path: Path) -> tuple[int, int] | None:
         ffmpeg_path = self._ffmpeg_executable()

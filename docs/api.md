@@ -84,8 +84,11 @@
 子视频级字段包括：
 
 - `actual_width`、`actual_height`、`actual_format`：下载前预检测后写入，完成后校准。
+- `downloaded_bytes`、`total_bytes`：下载前若 yt-dlp 能预估计划大小，会先写入 `total_bytes`；下载中持续校准；下载完成后保留最终大小。
 - `requested_resolution`、`fallback_resolution`、`fallback_reason`、`resolution_fallback`：清晰度降级和重启建议。
 - `speed`：运行中是瞬时速度；终态是平均速度。
+
+本地文件操作 endpoint 不接收前端传入的任意路径，只使用数据库中的 `output_path` 或 `download_dir`。播放视频时后端会选择可用播放器；找不到可确认能解码当前格式的播放器时返回 `409`，错误内容包含当前格式和建议安装的播放器。打开文件夹时 Windows 会新开 Explorer 窗口并尽量置前。
 
 ### ResolutionFallback
 

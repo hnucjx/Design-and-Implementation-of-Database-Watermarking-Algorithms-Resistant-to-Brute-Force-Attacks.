@@ -23,8 +23,9 @@
 - `actual_width`
 - `actual_height`
 - `actual_format`
+- `total_bytes`，当 yt-dlp 能从所选格式得到 `filesize` 或 `filesize_approx` 时写入
 
-因此任务中心可以在下载开始后尽早显示计划分辨率和格式。下载完成后仍会根据 progress payload 或输出文件进行校准，避免预检测与最终文件不一致。
+因此任务中心可以在下载开始后尽早显示计划分辨率、格式和视频大小。下载完成后仍会根据 progress payload 或输出文件进行校准，避免预检测与最终文件不一致。
 
 ## 分辨率降级原因
 

@@ -773,11 +773,14 @@ describe("App", () => {
     expect(await screen.findByText("Playlist batch")).toBeInTheDocument();
     expect(screen.getByText("1. Part one · running")).toBeInTheDocument();
     expect(screen.getByText("50.0%")).toBeInTheDocument();
-    expect(screen.getByText("5.0 MB / 10.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("大小 已知 10.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("大小 10.0 MB")).toBeInTheDocument();
+    expect(screen.getByText("已下载 5.0 MB")).toBeInTheDocument();
     expect(screen.getAllByText("已用 00:42").length).toBeGreaterThan(0);
     expect(screen.getByText("剩余 00:20")).toBeInTheDocument();
     expect(screen.getAllByText("2.0 KB/s").length).toBeGreaterThan(0);
-    expect(screen.getByText("大小未知 / 大小未知")).toBeInTheDocument();
+    expect(screen.getByText("大小 未知")).toBeInTheDocument();
+    expect(screen.getByText("已下载 未知")).toBeInTheDocument();
     expect(screen.getAllByText("分辨率 1920x1080").length).toBeGreaterThan(0);
     expect(screen.getAllByText("格式 mp4 · avc1 + mp4a").length).toBeGreaterThan(0);
   });

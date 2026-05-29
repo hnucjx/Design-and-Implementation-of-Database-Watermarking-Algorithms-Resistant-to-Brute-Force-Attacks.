@@ -276,6 +276,7 @@ export function JobQueue({
               <span>结束 {formatDateTime(job.finished_at)}</span>
               <span>分辨率 {job.actual_resolution ?? "检测中"}</span>
               <span>格式 {job.actual_format ?? "检测中"}</span>
+              <span>大小 {formatJobVideoSize(job)}</span>
               <span>已用 {formatClock(job.elapsed_seconds)}</span>
               <span>剩余 {formatClock(job.eta)}</span>
               {job.speed ? <span>{formatBytesPerSecond(job.speed)}</span> : <span>-- KB/s</span>}
@@ -419,7 +420,8 @@ export function JobQueue({
                     )}
                     <div className="item-metrics">
                       <span>{formatPercent(item.progress)}</span>
-                      <span>{formatFileSize(item.downloaded_bytes)} / {formatFileSize(item.total_bytes)}</span>
+                      <span>大小 {formatVideoSize(item.total_bytes)}</span>
+                      <span>已下载 {formatVideoSize(item.downloaded_bytes)}</span>
                       <span>分辨率 {formatItemResolution(item)}</span>
                       <span>格式 {item.actual_format ?? "检测中"}</span>
                       <span>已用 {formatClock(item.elapsed_seconds)}</span>
@@ -456,6 +458,26 @@ export function JobQueue({
 
 function localActionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "本地文件操作失败。";
+}
+
+function formatVideoSize(bytes: number | null | undefined): string {
+  return bytes == null ? "未知" : formatFileSize(bytes);
+}
+
+function formatJobVideoSize(job: Job): string {
+  if (job.items.length === 1) {
+    return formatVideoSize(job.items[0]?.total_bytes);
+  }
+  const knownSizes = job.items
+    .map((item) => item.total_bytes)
+    .filter((size): size is number => typeof size === "number" && size > 0);
+  if (!knownSizes.length) {
+    return "未知";
+  }
+  const totalSize = knownSizes.reduce((total, size) => total + size, 0);
+  return knownSizes.length === job.items.length
+    ? formatFileSize(totalSize)
+    : `已知 ${formatFileSize(totalSize)}`;
 }
 
 function ResolutionFallbackNotice({

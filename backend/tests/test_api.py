@@ -133,6 +133,7 @@ def test_job_item_shows_predetected_resolution_and_format_while_downloading(tmp_
             assert item["actual_width"] == 1920
             assert item["actual_height"] == 1080
             assert item["actual_format"] == "mp4 · avc1 + mp4a"
+            assert item["total_bytes"] == 10_485_760
         finally:
             service.release.set()
 

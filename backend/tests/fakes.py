@@ -187,7 +187,13 @@ class BlockingYtDlpService(FakeYtDlpService):
 
 class PreparedBlockingYtDlpService(BlockingYtDlpService):
     def prepare_download(self, url, options, cookies_path=None):
-        return SimpleNamespace(is_selectable=True, width=1920, height=1080, actual_format="mp4 · avc1 + mp4a")
+        return SimpleNamespace(
+            is_selectable=True,
+            width=1920,
+            height=1080,
+            actual_format="mp4 · avc1 + mp4a",
+            filesize=10_485_760,
+        )
 
 
 class SingleAutoFallbackYtDlpService(FakeYtDlpService):

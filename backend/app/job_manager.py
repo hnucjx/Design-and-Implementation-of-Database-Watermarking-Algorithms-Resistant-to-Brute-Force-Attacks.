@@ -793,6 +793,9 @@ class JobManager:
             item.actual_height = int(preparation.height)
         if preparation.actual_format:
             item.actual_format = str(preparation.actual_format)
+        filesize = getattr(preparation, "filesize", None)
+        if filesize is not None and not item.total_bytes:
+            item.total_bytes = int(filesize)
         item.updated_at = utc_now()
         session.add(item)
         session.commit()
@@ -804,6 +807,7 @@ class JobManager:
                 "actual_width": item.actual_width,
                 "actual_height": item.actual_height,
                 "actual_format": item.actual_format,
+                "total_bytes": item.total_bytes,
             }
         )
 

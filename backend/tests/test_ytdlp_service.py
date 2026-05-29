@@ -415,6 +415,21 @@ def test_actual_format_can_be_extracted_from_progress_payload_requested_formats(
     assert actual_format == "mp4 · avc1 + mp4a"
 
 
+def test_filesize_sums_requested_formats_for_prepared_download(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    filesize = service._filesize_from_info_dict(
+        {
+            "requested_formats": [
+                {"format_id": "137", "filesize": 12_000},
+                {"format_id": "140", "filesize_approx": 3_000},
+            ]
+        }
+    )
+
+    assert filesize == 15_000
+
+
 def test_suggests_highest_available_resolution_below_requested(tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
 

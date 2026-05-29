@@ -69,6 +69,8 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L37) 创建，启动时：
 
 yt-dlp 对分离视频/音频流会多次发送 progress payload。为避免 UI 在视频流 100% 后音频流从 0% 开始造成进度回退，后端使用 [DownloadProgressAggregator](../backend/app/download_progress.py#L21) 聚合多子流。
 
+视频大小复用 `JobItem.total_bytes`：下载前由 `prepare_download()` 从所选格式的 `filesize/filesize_approx` 写入，下载中由 progress payload 校准，下载完成后继续保留，前端在任务行和 playlist 子视频行展示。
+
 平均速度由 [TransferStats](../backend/app/transfer_stats.py#L5) 根据聚合下载字节和时间计算。运行中 `speed` 是 yt-dlp 当前瞬时速度，终态 `speed` 是平均速度，终态聚合见 [_terminal_job_speed](../backend/app/job_manager.py#L585)。
 
 ## 读模型
@@ -98,7 +100,7 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 `output_path` 可能来自 yt-dlp 分离音视频流的中间文件名，例如 `title [id].f137.mp4` 或 `title [id].f140.m4a`。下载完成时和本地打开前，后端会通过 [output_paths.py](../backend/app/output_paths.py) 解析到合并后的最终文件，例如 `title [id].mp4`，避免中间文件被合并删除后误报“视频文件不存在”。
 
-本机打开器位于 [system_open.py](../backend/app/system_open.py)。Windows 下播放视频文件仍使用系统默认文件关联；打开目录时显式调用 `explorer.exe /n, <folder>` 新开 Explorer 窗口，减少已有窗口只在任务栏闪烁但没有前置的情况。macOS 和 Linux 仍分别使用 `open` 与 `xdg-open`。
+本机打开器位于 [system_open.py](../backend/app/system_open.py)。打开目录时显式调用 `explorer.exe /n, <folder>` 并尽量把窗口置前，减少已有窗口只在任务栏闪烁但没有前置的情况。播放视频不再盲目使用默认文件关联，而是优先选择 VLC、mpv、PotPlayer、MPC、IINA 等可确认解码能力更强的播放器；常见 MP4 可回退到 Windows Media Player。找不到合适播放器时返回 `409`，错误内容包含当前格式和建议安装的播放器。
 
 播放和打开文件夹这类本地文件操作失败时，前端在 [JobQueue](../frontend/src/components/JobQueue.tsx) 的对应任务行或子视频行附近显示错误，而不是只放在页面顶部的全局提示区。
 

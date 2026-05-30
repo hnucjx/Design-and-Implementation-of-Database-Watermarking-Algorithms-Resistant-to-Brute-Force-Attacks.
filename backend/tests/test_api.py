@@ -31,6 +31,7 @@ from fakes import (
     LowOnlyFallbackYtDlpService,
     MediaStreamBlockedUntilLowerResolutionService,
     PreparedBlockingYtDlpService,
+    RuntimeRestartYtDlpService,
     SingleAutoFallbackYtDlpService,
     SplitStreamProgressYtDlpService,
     UnselectableHighWithSafeFallbackService,
@@ -220,6 +221,122 @@ def test_updating_concurrency_starts_additional_worker_without_restart(tmp_path:
         assert update_response.json()["default_concurrency"] == 2
         assert service.started.get(timeout=2) == "https://youtu.be/second"
         service.release.set()
+
+
+def test_settings_return_and_persist_runtime_download_defaults(tmp_path: Path) -> None:
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=FakeYtDlpService())) as client:
+        defaults = client.get("/api/settings").json()
+        assert defaults["default_speed_limit_kbps"] is None
+        assert defaults["default_retries"] == 10
+
+        update_response = client.put(
+            "/api/settings",
+            json={"default_speed_limit_kbps": 512, "default_retries": 4},
+        )
+
+        assert update_response.status_code == 200
+        assert update_response.json()["default_speed_limit_kbps"] == 512
+        assert update_response.json()["default_retries"] == 4
+        assert client.get("/api/settings").json()["default_speed_limit_kbps"] == 512
+
+        clear_response = client.put("/api/settings", json={"default_speed_limit_kbps": None})
+
+        assert clear_response.status_code == 200
+        assert clear_response.json()["default_speed_limit_kbps"] is None
+
+
+def test_runtime_download_default_update_preserves_item_resolution_override(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    engine = create_app_engine(settings)
+    init_db(engine)
+    with Session(engine) as session:
+        job_options = DownloadOptions(resolution="1080p", speed_limit_kbps=None, retries=10)
+        item_options = DownloadOptions(resolution="720p", speed_limit_kbps=None, retries=10)
+        session.add(
+            Job(
+                id="job-runtime-options",
+                url="https://youtu.be/playlist",
+                title="Runtime options",
+                status="queued",
+                options_json=job_options.model_dump_json(),
+                total_items=2,
+                download_dir=str(tmp_path / "downloads"),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-override",
+                job_id="job-runtime-options",
+                source_url="https://youtu.be/one",
+                title="One",
+                index=1,
+                status="queued",
+                options_json=item_options.model_dump_json(),
+            )
+        )
+        session.add(
+            JobItem(
+                id="item-done",
+                job_id="job-runtime-options",
+                source_url="https://youtu.be/two",
+                title="Two",
+                index=2,
+                status="succeeded",
+                options_json=item_options.model_dump_json(),
+            )
+        )
+        session.commit()
+
+    with TestClient(create_app(settings=settings, ytdlp_service=FakeYtDlpService())) as client:
+        response = client.put(
+            "/api/settings",
+            json={"default_speed_limit_kbps": 256, "default_retries": 3},
+        )
+        assert response.status_code == 200
+
+    with Session(engine) as session:
+        job = session.get(Job, "job-runtime-options")
+        item = session.get(JobItem, "item-override")
+        done_item = session.get(JobItem, "item-done")
+        assert job is not None and item is not None and done_item is not None
+        updated_job_options = DownloadOptions.model_validate_json(job.options_json)
+        updated_item_options = DownloadOptions.model_validate_json(item.options_json or "{}")
+        unchanged_done_options = DownloadOptions.model_validate_json(done_item.options_json or "{}")
+        assert updated_job_options.resolution == "1080p"
+        assert updated_job_options.speed_limit_kbps == 256
+        assert updated_job_options.retries == 3
+        assert updated_item_options.resolution == "720p"
+        assert updated_item_options.speed_limit_kbps == 256
+        assert updated_item_options.retries == 3
+        assert unchanged_done_options.speed_limit_kbps is None
+        assert unchanged_done_options.retries == 10
+
+
+def test_runtime_download_default_update_restarts_running_item_with_new_options(tmp_path: Path) -> None:
+    service = RuntimeRestartYtDlpService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        create_response = client.post(
+            "/api/jobs",
+            json={"url": "https://youtu.be/runtime", "options": {"mode": "video_subtitles", "resolution": "720p"}},
+        )
+        assert create_response.status_code == 201
+        job_id = create_response.json()["id"]
+        first_options = service.started.get(timeout=2)
+        assert first_options.speed_limit_kbps is None
+        assert first_options.retries == 10
+
+        update_response = client.put(
+            "/api/settings",
+            json={"default_speed_limit_kbps": 768, "default_retries": 6},
+        )
+
+        assert update_response.status_code == 200
+        restarted_options = service.started.get(timeout=2)
+        assert restarted_options.speed_limit_kbps == 768
+        assert restarted_options.retries == 6
+        service.release.set()
+        assert wait_for_job_status(client, job_id, "succeeded")["status"] == "succeeded"
 
 
 def test_analyze_returns_video_metadata(tmp_path: Path) -> None:

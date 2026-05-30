@@ -106,7 +106,7 @@ export default function App() {
   const [history, setHistory] = useState<string[]>(() => JSON.parse(localStorage.getItem("download-history") ?? "[]"));
 
   useEffect(() => {
-    void getSettings().then(setSettings).catch((err) => setError(err.message));
+    void getSettings().then(applySettings).catch((err) => setError(err.message));
     void listJobs().then(setJobs).catch(() => setJobs([]));
   }, []);
 
@@ -129,6 +129,15 @@ export default function App() {
   }, [analysis]);
 
   const duplicateWarning = url.trim().length > 0 && history.includes(url.trim());
+
+  function applySettings(updated: Settings) {
+    setSettings(updated);
+    setOptions((current) => ({
+      ...current,
+      speed_limit_kbps: updated.default_speed_limit_kbps,
+      retries: updated.default_retries
+    }));
+  }
 
   function applyAnalysisResult(result: AnalyzeResponse) {
     setAnalysis(result);
@@ -197,6 +206,16 @@ export default function App() {
     setOptions((current) => ({ ...current, [key]: value }));
   }
 
+  async function updateRuntimeDownloadOption<K extends "speed_limit_kbps" | "retries">(key: K, value: DownloadOptions[K]) {
+    updateOption(key, value);
+    const updated = await updateSettings(
+      key === "speed_limit_kbps"
+        ? { default_speed_limit_kbps: value as number | null }
+        : { default_retries: value as number }
+    );
+    applySettings(updated);
+  }
+
   function updateQuality(resolution: string) {
     setOptions((current) => ({ ...current, resolution, format_id: null }));
   }
@@ -204,19 +223,19 @@ export default function App() {
   async function handleCookieUpload(file: File | null) {
     if (!file) return;
     await uploadCookies(file);
-    setSettings(await getSettings());
+    applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
   async function handleCookieDelete() {
     await deleteCookies();
-    setSettings(await getSettings());
+    applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
   async function handleBrowserCookieImport(browser: string, closeBrowserIfLocked = false) {
     await importBrowserCookies(browser, closeBrowserIfLocked);
-    setSettings(await getSettings());
+    applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
@@ -406,8 +425,11 @@ export default function App() {
               onCreateJob={handleCreateJob}
               onOptionChange={updateOption}
               onQualityChange={updateQuality}
+              onRuntimeOptionChange={(key, value) =>
+                void updateRuntimeDownloadOption(key, value).catch((err) => handleAppError(err, "保存下载设置失败"))
+              }
             />
-            {settings && <SettingsPanel settings={settings} onSettingsChange={setSettings} />}
+            {settings && <SettingsPanel settings={settings} onSettingsChange={applySettings} />}
           </aside>
         </section>
       </section>
@@ -639,7 +661,8 @@ function DownloadOptionsPanel({
   isSubmitting,
   onCreateJob,
   onOptionChange,
-  onQualityChange
+  onQualityChange,
+  onRuntimeOptionChange
 }: {
   analysis: AnalyzeResponse | null;
   ffmpegAvailable: boolean;
@@ -649,6 +672,7 @@ function DownloadOptionsPanel({
   onCreateJob: () => void;
   onOptionChange: <K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) => void;
   onQualityChange: (resolution: string) => void;
+  onRuntimeOptionChange: <K extends "speed_limit_kbps" | "retries">(key: K, value: DownloadOptions[K]) => void;
 }) {
   const resolutionOptions = buildResolutionOptions(analysis);
   const qualityValue = `resolution:${options.resolution}`;
@@ -756,7 +780,7 @@ function DownloadOptionsPanel({
             type="number"
             min={1}
             value={options.speed_limit_kbps ?? ""}
-            onChange={(event) => onOptionChange("speed_limit_kbps", event.target.value ? Number(event.target.value) : null)}
+            onChange={(event) => onRuntimeOptionChange("speed_limit_kbps", event.target.value ? Number(event.target.value) : null)}
           />
         </div>
         <label className="field">
@@ -766,7 +790,7 @@ function DownloadOptionsPanel({
             min={0}
             max={20}
             value={options.retries}
-            onChange={(event) => onOptionChange("retries", Number(event.target.value))}
+            onChange={(event) => onRuntimeOptionChange("retries", Number(event.target.value))}
           />
         </label>
       </div>

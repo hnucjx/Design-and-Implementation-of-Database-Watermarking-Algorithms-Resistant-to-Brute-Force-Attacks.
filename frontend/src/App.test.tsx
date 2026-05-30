@@ -53,7 +53,8 @@ describe("App", () => {
           return Response.json(currentSettingsPayload);
         }
         if (url.endsWith("/api/settings") && init?.method === "PUT") {
-          return Response.json({ ...currentSettingsPayload, ...JSON.parse(String(init.body)) });
+          currentSettingsPayload = { ...currentSettingsPayload, ...JSON.parse(String(init.body)) };
+          return Response.json(currentSettingsPayload);
         }
         if (url.endsWith("/api/settings/download-dir/select")) {
           return Response.json({ ...currentSettingsPayload, download_dir: "D:\\Videos" });
@@ -418,6 +419,39 @@ describe("App", () => {
         String(createJobCall?.[1]?.body)
       );
       expect(submittedBody.options.speed_limit_kbps).toBeNull();
+    });
+  });
+
+  test("saves speed limit and retries as runtime settings before creating jobs", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const speedLimit = screen.getByLabelText("限速 KB/s（清空：不限速）");
+    const retries = screen.getByLabelText("重试次数");
+    await user.type(speedLimit, "512");
+    await user.clear(retries);
+    await user.type(retries, "6");
+
+    await waitFor(() => {
+      const settingsCalls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([url, init]) => String(url).endsWith("/api/settings") && init?.method === "PUT"
+      );
+      expect(settingsCalls.some(([, init]) => JSON.parse(String(init?.body)).default_speed_limit_kbps === 512)).toBe(true);
+      expect(settingsCalls.some(([, init]) => JSON.parse(String(init?.body)).default_retries === 6)).toBe(true);
+    });
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+    await screen.findByText("Batch");
+    await user.click(screen.getByRole("button", { name: "加入下载队列" }));
+
+    await waitFor(() => {
+      const createJobCall = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+        ([url, init]) => String(url).endsWith("/api/jobs") && init?.method === "POST"
+      );
+      const submittedBody = JSON.parse(String(createJobCall?.[1]?.body));
+      expect(submittedBody.options.speed_limit_kbps).toBe(512);
+      expect(submittedBody.options.retries).toBe(6);
     });
   });
 

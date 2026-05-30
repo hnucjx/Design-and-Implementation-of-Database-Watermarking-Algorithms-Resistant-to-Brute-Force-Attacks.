@@ -29,15 +29,16 @@
 | FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除、批量操作，以及本地播放/打开文件夹。 | [`batch_job_action`](../backend/app/main.py#L170)、[`system_open.py`](../backend/app/system_open.py) |
 | FR-8 | 默认请求人工字幕和自动字幕；缺少某类字幕时 fallback 到另一类可用字幕，并显示来源与格式。 | [`DownloadOptions`](../backend/app/schemas.py#L56)、[`DownloadOptionsPanel`](../frontend/src/App.tsx#L640) |
 | FR-9 | 支持 cookies 上传、浏览器导入和清除。 | [`/api/cookies`](../backend/app/main.py#L293)、[`BrowserCookieImporter`](../backend/app/browser_cookies.py#L55) |
-| FR-10 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/main.py#L243)、[`EventBroker`](../backend/app/events.py#L7) |
-| FR-11 | 支持诊断依赖状态。 | [`/api/diagnostics`](../backend/app/main.py#L102)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L110) |
+| FR-10 | 支持并发、限速和重试次数作为运行时设置即时保存；限速/重试变更会让当前视频断点续传重启以应用新参数。 | [`SettingsUpdate`](../backend/app/schemas.py#L162)、[`set_runtime_download_defaults`](../backend/app/job_manager.py#L75) |
+| FR-11 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/main.py#L243)、[`EventBroker`](../backend/app/events.py#L7) |
+| FR-12 | 支持诊断依赖状态。 | [`/api/diagnostics`](../backend/app/main.py#L102)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L110) |
 
 ## 非功能需求
 
 | 类别 | 要求 |
 | --- | --- |
 | 可维护性 | 下载策略、降级原因、读模型、cookies 导入和格式选择拆分到独立模块，详见 [实现文档](implementation.md)。 |
-| 稳定性 | 支持并发设为 1 的稳定优先运行方式，并保留断点续传、小 HTTP chunk、低速重取 URL、同清晰度多 profile 重试。 |
+| 稳定性 | 支持并发设为 1 的稳定优先运行方式，并保留断点续传、小 HTTP chunk、低速重取 URL、同清晰度多 profile 重试；运行中修改限速/重试时通过断点续传重启当前项应用新参数。 |
 | 可观测性 | 任务中心显示进度、速度、视频大小、ETA、实际分辨率、实际格式和错误原因；诊断接口返回依赖状态。 |
 | 安全性 | 不在 UI 或日志回显 cookies、token、敏感 URL query；日志清洗见 [log_safety.py](../backend/app/log_safety.py#L11)。 |
 | 本地化 | 当前 UI 和主要错误信息面向中文用户。 |

@@ -207,6 +207,8 @@ export const settingsPayload = {
   default_concurrency: 2,
   default_subtitle_languages: ["en"],
   default_resolution: "1440p",
+  default_speed_limit_kbps: null,
+  default_retries: 10,
   cookies_enabled: false,
   ffmpeg: { ffmpeg: true, ffprobe: true }
 };

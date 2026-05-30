@@ -327,6 +327,20 @@ def create_app(
         if update.default_resolution is not None:
             app_settings.default_resolution = update.default_resolution
             _set_setting(session, "default_resolution", update.default_resolution)
+        runtime_options_changed = False
+        if "default_speed_limit_kbps" in update.model_fields_set:
+            app_settings.default_speed_limit_kbps = update.default_speed_limit_kbps
+            _set_setting(session, "default_speed_limit_kbps", "" if update.default_speed_limit_kbps is None else str(update.default_speed_limit_kbps))
+            runtime_options_changed = True
+        if update.default_retries is not None:
+            app_settings.default_retries = update.default_retries
+            _set_setting(session, "default_retries", str(update.default_retries))
+            runtime_options_changed = True
+        if runtime_options_changed:
+            await manager.set_runtime_download_defaults(
+                app_settings.default_speed_limit_kbps,
+                app_settings.default_retries,
+            )
         return _settings_response(session, app_settings, service)
 
     @app.post("/api/settings/download-dir/select", response_model=SettingsRead)
@@ -561,6 +575,10 @@ def _apply_stored_settings(session: Session, settings: AppSettings, service: YtD
         settings.default_concurrency = int(stored["default_concurrency"])
     if stored.get("default_resolution"):
         settings.default_resolution = stored["default_resolution"]
+    if "default_speed_limit_kbps" in stored:
+        settings.default_speed_limit_kbps = int(stored["default_speed_limit_kbps"]) if stored["default_speed_limit_kbps"] else None
+    if stored.get("default_retries"):
+        settings.default_retries = int(stored["default_retries"])
     if stored.get("default_subtitle_languages") is not None:
         settings.default_subtitle_languages = [
             lang for lang in stored["default_subtitle_languages"].split(",") if lang
@@ -574,6 +592,8 @@ def _settings_response(session: Session, settings: AppSettings, service: YtDlpSe
         default_concurrency=settings.default_concurrency,
         default_subtitle_languages=settings.default_subtitle_languages,
         default_resolution=settings.default_resolution,
+        default_speed_limit_kbps=settings.default_speed_limit_kbps,
+        default_retries=settings.default_retries,
         cookies_enabled=settings.cookies_path.exists(),
         ffmpeg=service.get_ffmpeg_status(),
     )

@@ -61,6 +61,17 @@
 | `speed_limit_kbps` | 空值表示不限速；有值时启用 yt-dlp `ratelimit`。 |
 | `retries` | 下载重试次数，默认 10。 |
 
+### SettingsRead / SettingsUpdate
+
+`GET /api/settings` 返回全局运行时设置。除下载目录、并发、默认清晰度和字幕语言外，还包含：
+
+| 字段 | 说明 |
+| --- | --- |
+| `default_speed_limit_kbps` | 全局默认限速；`null` 表示不限速。 |
+| `default_retries` | 全局默认下载重试次数，范围 `0..20`。 |
+
+`PUT /api/settings` 可更新上述两个字段。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。
+
 ### DeleteJobItemsRequest
 
 `item_ids` 是同一 job 下要删除的 `JobItem.id` 列表；`delete_files=false` 只删除任务记录，`delete_files=true` 同时删除每个子视频的输出文件和相关 sidecar。若删除的是父 playlist 的最后一个子视频，响应中的 `job_deleted=true` 且 `job=null`。

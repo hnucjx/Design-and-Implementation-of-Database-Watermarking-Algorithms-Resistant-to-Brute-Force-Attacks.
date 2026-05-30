@@ -166,6 +166,8 @@ class SettingsRead(BaseModel):
     default_concurrency: int
     default_subtitle_languages: list[str]
     default_resolution: str
+    default_speed_limit_kbps: int | None
+    default_retries: int
     cookies_enabled: bool
     ffmpeg: dict[str, bool]
 
@@ -175,6 +177,8 @@ class SettingsUpdate(BaseModel):
     default_concurrency: int | None = Field(default=None, ge=1)
     default_subtitle_languages: list[str] | None = None
     default_resolution: str | None = None
+    default_speed_limit_kbps: int | None = Field(default=None, ge=1)
+    default_retries: int | None = Field(default=None, ge=0, le=20)
 
 
 class CookieStatus(BaseModel):

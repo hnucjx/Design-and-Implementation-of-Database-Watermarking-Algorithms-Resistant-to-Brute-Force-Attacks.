@@ -363,19 +363,20 @@ th {
 }
 
 .cookie-inline {
+  --cookie-control-height: 44px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 10px 0 0;
+  gap: 10px 14px;
+  padding: 12px 0 0;
 }
 
 .cookie-inline-primary {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .cookie-inline-status,
@@ -383,20 +384,34 @@ th {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .browser-cookie-import {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
   margin-left: auto;
+  min-width: 0;
 }
 
 .cookie-inline-status {
+  min-height: var(--cookie-control-height);
   color: #48556a;
   font-size: 13px;
   font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.cookie-inline .ghost-button,
+.cookie-inline .file-button {
+  min-height: var(--cookie-control-height);
+  height: var(--cookie-control-height);
+  padding: 0 14px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .cookie-lock-note {
@@ -420,21 +435,19 @@ th {
 .compact-file-button {
   flex-direction: row;
   width: auto;
-  min-width: 116px;
-  white-space: nowrap;
-  line-height: 1;
+  min-width: 130px;
   margin-top: 0;
 }
 
 .cookie-clear-button {
-  min-width: 116px;
-  white-space: nowrap;
+  min-width: 130px;
 }
 
 .compact-select-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: var(--cookie-control-height);
   color: #48556a;
   font-size: 13px;
   font-weight: 850;
@@ -442,8 +455,25 @@ th {
 
 .compact-select {
   width: auto;
-  min-width: 128px;
-  padding: 8px 10px;
+  min-width: 154px;
+  height: var(--cookie-control-height);
+  padding: 0 34px 0 14px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+@media (max-width: 860px) {
+  .browser-cookie-import {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .cookie-inline-primary,
+  .cookie-inline-actions {
+    flex-wrap: wrap;
+  }
 }
 
 .toggle-row {

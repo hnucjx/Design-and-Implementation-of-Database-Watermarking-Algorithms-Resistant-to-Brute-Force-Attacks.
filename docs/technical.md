@@ -56,7 +56,7 @@
 - `throttledratelimit=64 KiB/s` 默认值，用于低速重取 fresh media URL，不是限速。
 - 默认 worker 并发为 5；若追求稳定，可在设置面板或 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS=1` 中降为 1。配置见 [default_download_concurrency](../backend/app/config.py#L12)。
 
-并发、限速和重试次数属于运行时设置。并发修改会直接调整后台 worker 数；限速和重试次数修改会更新 queued/running/paused 任务的 `DownloadOptions`。如果某个视频正在 yt-dlp 内下载，任务管理器会请求当前项退出并重新入队，依靠 `continuedl=True` 和保留的 `.part` 文件断点续传，从而让新的 `ratelimit` 或 `retries` 尽快生效。
+并发、限速和重试次数属于运行时设置。并发修改会直接调整后台 worker 数；限速和重试次数修改会更新 queued/running/paused 任务的 `DownloadOptions`，前端会显示保存中、保存成功或保存失败状态。如果某个视频正在 yt-dlp 内下载，任务管理器会请求当前项退出并重新入队，依靠 `continuedl=True` 和保留的 `.part` 文件断点续传，从而让新的 `ratelimit` 或 `retries` 尽快生效。
 
 YouTube 媒体流 403 或连接中断时，`YtDlpService.download()` 会在同一清晰度下依次尝试 profile，见 [download](../backend/app/ytdlp_service.py#L312)：
 

@@ -15,7 +15,7 @@
   Settings as SettingsIcon,
   XCircle
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   analyzeUrl,
@@ -104,6 +104,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [browserCookieLock, setBrowserCookieLock] = useState<BrowserCookieLock | null>(null);
   const [history, setHistory] = useState<string[]>(() => JSON.parse(localStorage.getItem("download-history") ?? "[]"));
+  const [runtimeSaveMessage, setRuntimeSaveMessage] = useState("");
+  const runtimeSaveRequestSeq = useRef(0);
+  const runtimeSaveClearTimer = useRef<number | null>(null);
 
   useEffect(() => {
     void getSettings().then(applySettings).catch((err) => setError(err.message));
@@ -117,6 +120,15 @@ export default function App() {
     };
     return () => source.close();
   }, []);
+
+  useEffect(
+    () => () => {
+      if (runtimeSaveClearTimer.current !== null) {
+        window.clearTimeout(runtimeSaveClearTimer.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     setSelectedJobIds((current) => new Set(Array.from(current).filter((jobId) => jobs.some((job) => job.id === jobId))));
@@ -207,13 +219,37 @@ export default function App() {
   }
 
   async function updateRuntimeDownloadOption<K extends "speed_limit_kbps" | "retries">(key: K, value: DownloadOptions[K]) {
+    const requestSeq = runtimeSaveRequestSeq.current + 1;
+    runtimeSaveRequestSeq.current = requestSeq;
+    if (runtimeSaveClearTimer.current !== null) {
+      window.clearTimeout(runtimeSaveClearTimer.current);
+      runtimeSaveClearTimer.current = null;
+    }
     updateOption(key, value);
-    const updated = await updateSettings(
-      key === "speed_limit_kbps"
-        ? { default_speed_limit_kbps: value as number | null }
-        : { default_retries: value as number }
-    );
-    applySettings(updated);
+    setRuntimeSaveMessage("保存中...");
+    try {
+      const updated = await updateSettings(
+        key === "speed_limit_kbps"
+          ? { default_speed_limit_kbps: value as number | null }
+          : { default_retries: value as number }
+      );
+      if (runtimeSaveRequestSeq.current === requestSeq) {
+        applySettings(updated);
+        setRuntimeSaveMessage("已保存");
+      }
+    } catch (err) {
+      if (runtimeSaveRequestSeq.current === requestSeq) {
+        setRuntimeSaveMessage("保存失败");
+      }
+      throw err;
+    } finally {
+      if (runtimeSaveRequestSeq.current === requestSeq) {
+        runtimeSaveClearTimer.current = window.setTimeout(() => {
+          setRuntimeSaveMessage("");
+          runtimeSaveClearTimer.current = null;
+        }, 1800);
+      }
+    }
   }
 
   function updateQuality(resolution: string) {
@@ -425,6 +461,7 @@ export default function App() {
               onCreateJob={handleCreateJob}
               onOptionChange={updateOption}
               onQualityChange={updateQuality}
+              runtimeSaveMessage={runtimeSaveMessage}
               onRuntimeOptionChange={(key, value) =>
                 void updateRuntimeDownloadOption(key, value).catch((err) => handleAppError(err, "保存下载设置失败"))
               }
@@ -662,6 +699,7 @@ function DownloadOptionsPanel({
   onCreateJob,
   onOptionChange,
   onQualityChange,
+  runtimeSaveMessage,
   onRuntimeOptionChange
 }: {
   analysis: AnalyzeResponse | null;
@@ -672,6 +710,7 @@ function DownloadOptionsPanel({
   onCreateJob: () => void;
   onOptionChange: <K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) => void;
   onQualityChange: (resolution: string) => void;
+  runtimeSaveMessage: string;
   onRuntimeOptionChange: <K extends "speed_limit_kbps" | "retries">(key: K, value: DownloadOptions[K]) => void;
 }) {
   const resolutionOptions = buildResolutionOptions(analysis);
@@ -794,6 +833,7 @@ function DownloadOptionsPanel({
           />
         </label>
       </div>
+      {runtimeSaveMessage && <span className="settings-save-status">{runtimeSaveMessage}</span>}
 
       <button className="primary-button full" type="button" disabled={!analysis || isSubmitting} onClick={onCreateJob}>
         {isSubmitting ? <Loader2 className="spin" size={18} /> : <Download size={18} />}

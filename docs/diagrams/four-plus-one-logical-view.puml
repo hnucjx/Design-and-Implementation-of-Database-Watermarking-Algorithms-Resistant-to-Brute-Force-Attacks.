@@ -1,0 +1,57 @@
+@startuml
+title 4+1 Logical View
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "UI domain" {
+  [Analyze form] as AnalyzeForm
+  [Download options] as Options
+  [Task center] as TaskCenter
+  [Settings panel] as SettingsPanel
+}
+
+package "Application services" {
+  [FastAPI routes] as Routes
+  [JobManager] as JobManager
+  [Job read model] as ReadModel
+  [YtDlpService] as YtDlpService
+  [BrowserCookieImporter] as Cookies
+}
+
+package "Domain policies" {
+  [Format selector] as Formats
+  [Fallback policy] as Fallback
+  [Progress aggregation] as Progress
+  [Transfer stats] as Stats
+}
+
+package "Persistent model" {
+  [Job] as Job
+  [JobItem] as JobItem
+  [JobEvent] as JobEvent
+  [Setting] as Setting
+}
+
+AnalyzeForm --> Routes : analyze URL
+Options --> Routes : create job
+TaskCenter --> Routes : task actions
+SettingsPanel --> Routes : runtime settings
+
+Routes --> JobManager : enqueue/control
+Routes --> ReadModel : project jobs
+Routes --> YtDlpService : metadata/diagnostics
+JobManager --> YtDlpService : prepare/download
+YtDlpService --> Cookies : cookie import
+YtDlpService --> Formats : select streams
+JobManager --> Fallback : reason/message
+JobManager --> Progress : aggregate raw streams
+JobManager --> Stats : current/average speed
+
+Job --> JobItem : contains
+Job --> JobEvent : emits
+Setting ..> Routes : persisted configuration
+ReadModel --> Job
+ReadModel --> JobItem
+JobManager --> Job
+JobManager --> JobItem
+@enduml

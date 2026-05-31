@@ -1,0 +1,15 @@
+- [x] 同时删除文件功能起作用了吗
+- [x] 支持删除单视频下载任务与对应下载的文件
+- [x] 文档：4 + 1 视图
+- [ ] 上传 B 站功能
+- [ ] 选择"保存 metadata" 与/或 "保存缩略图" 可能导致下载进度条错误（一开始就冲到99%，然后一直保持在 99% 进行视频下载）。
+
+- 测速功能
+- 目前下载速度较慢（不超过 300KiB/s）
+- 并发度真得起作用了吗
+- [x] 美化：cookies，并发，重试次数变窄一些
+- 要求关闭浏览器后才能导入 Cookies 不合理
+- 并发度、限速、重试次数可以实时调整、即可生效吗？
+- 限速：显示速度仪表盘；playlist 的速度显示好像并不是该合集内单视频下载速度之和？（包括平均速度）
+- 重启的具体语义
+- ERROR: [youtube] TMTnWEQrMng: Video unavailable. This content isn't available, try again later. The current session has been rate-limited by YouTube for up to an hour. It is recommended to use `-t sleep` to add a delay between video requests to avoid exceeding the rate limit. For more information, refer to https://github.com/yt-dlp/yt-dlp/wiki/Extractors#this-content-isnt-available-try-again-later

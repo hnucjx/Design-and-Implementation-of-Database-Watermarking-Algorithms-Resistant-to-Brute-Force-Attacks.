@@ -34,7 +34,9 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | [用户手册](docs/user-manual.md) | 启动入口、下载操作、cookies 和常见排障入口。 |
 | [需求分析](docs/requirements.md) | 项目目标、功能需求、非功能需求和边界。 |
 | [架构设计](docs/architecture.md) | 前后端、SQLite、yt-dlp、ffmpeg、SSE 和外部依赖关系。 |
+| [4+1 架构视图](docs/4-plus-1-view.md) | 逻辑、开发、进程、物理和场景视图，用于架构审查。 |
 | [开发文档](docs/development.md) | 环境准备、依赖安装、配置项、目录结构和运行命令。 |
+| [文档写作环境](docs/documentation-workflow.md) | 初始化文档工具、渲染 UML、检查本地链接和生成产物。 |
 | [API 文档](docs/api.md) | HTTP endpoint、请求响应模型、任务状态和诊断字段。 |
 | [技术文档](docs/technical.md) | 清晰度/格式选择、降级策略、cookies、PO token 和稳定下载策略。 |
 | [实现文档](docs/implementation.md) | 核心模块职责、任务调度、进度聚合、读模型和数据库补列。 |
@@ -47,4 +49,4 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 ## 维护约定
 
-功能、命令、配置、API、架构、下载策略或测试方式变化时，必须同步更新 `docs/` 中的对应文档和 UML 图。README 只作为入口页，不承载详细设计内容。
+功能、命令、配置、API、架构、4+1 视图、下载策略或测试方式变化时，必须同步更新 `docs/` 中的对应文档和 UML 图。README 只作为入口页，不承载详细设计内容。

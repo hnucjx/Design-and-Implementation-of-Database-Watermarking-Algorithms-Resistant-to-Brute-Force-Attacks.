@@ -2,6 +2,8 @@
 
 适用读者：需要理解系统组成、模块边界和数据流的开发者与维护者。
 
+如果需要按软件工程架构规范进行系统性审查，请先阅读 [4+1 架构视图](4-plus-1-view.md)。本页继续保留系统上下文、组件、数据流和状态生命周期的详细说明。
+
 ## 系统上下文
 
 ![系统上下文](assets/diagrams/system-context.svg)
@@ -69,6 +71,10 @@ PlantUML 源文件：[download-lifecycle.puml](diagrams/download-lifecycle.puml)
 PlantUML 源文件：[data-model.puml](diagrams/data-model.puml)。
 
 核心表是 `Job`、`JobItem`、`JobEvent` 和 `Setting`。旧数据库兼容列通过 `_ensure_columns()` 自动补齐，见 [db.py](../backend/app/db.py#L21)。
+
+## 文档工具链
+
+文档写作和 UML 生成环境也作为工程系统的一部分交付。仓库内 [docs.py](../scripts/docs.py) 管理固定版本 PlantUML jar 缓存、SVG 渲染、本地链接检查和 UML 产物一致性检查；Java 与 Graphviz 作为开发机系统依赖。安装和使用方式见 [文档写作与生成环境](documentation-workflow.md)。
 
 ## 设计取舍
 

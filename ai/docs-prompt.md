@@ -45,10 +45,13 @@
 - `docs/implementation.md`：实现文档，覆盖核心模块职责、关键类/函数、任务调度、进度聚合、读模型、数据库补列、日志安全。
 - `docs/testing.md`：测试文档，覆盖后端/前端测试命令、测试层次、mock 策略、手动验收和回归重点。
 - `docs/maintenance.md`：维护文档，覆盖文档同步规则、变更 checklist、排障流程、配置变更记录方式和持续维护约定。
+- `docs/documentation-workflow.md`：文档写作与生成环境，覆盖仓库内文档工具初始化、UML 渲染、本地链接检查和产物一致性检查。
 
 ## UML 与图片交付物
 
 使用 PlantUML 创建源码文件，并生成对应 SVG 图片。PlantUML 源文件放在 `docs/diagrams/`，SVG 放在 `docs/assets/diagrams/`，两者都必须纳入 Git。
+
+使用仓库内 `python scripts/docs.py bootstrap` 初始化固定版本 PlantUML 工具缓存，使用 `python scripts/docs.py render` 统一渲染 SVG；不要要求开发者手工安装全局 `plantuml` CLI 或自行寻找 jar。
 
 至少生成以下图：
 
@@ -80,6 +83,7 @@
 - 每份文档只承担一个主要职责；如果内容属于另一份文档，应链接过去。
 - 每个 UML 图都应服务于某份文档中的具体说明，不生成装饰性图片。
 - 所有新增 Markdown、PlantUML 和 README 内容通过 `git diff --check`。
+- 运行 `python scripts/docs.py check`，确认本地 Markdown 链接有效、每个 `.puml` 都有对应 SVG，且 SVG 与当前 UML 源一致。
 - 运行并通过：
   - `python -m compileall backend\app`
   - `python -m pytest backend\tests -q`

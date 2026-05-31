@@ -42,6 +42,8 @@ class JobManager:
         self._paused: set[str] = set()
         self._deleted: set[str] = set()
         self._deleted_items: set[str] = set()
+        self._runtime_restart_items: set[str] = set()
+        self._runtime_restarting_jobs: set[str] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._cookie_import_lock = threading.Lock()
 
@@ -73,6 +75,46 @@ class JobManager:
             return
         for _ in range(current - desired):
             await self._queue.put(None)
+
+    async def set_runtime_download_defaults(self, speed_limit_kbps: int | None, retries: int) -> None:
+        restart_job_ids: set[str] = set()
+        active_statuses = {JobStatus.queued.value, JobStatus.running.value, JobStatus.paused.value}
+        restartable_item_statuses = active_statuses | {JobStatus.failed.value, JobStatus.cancelled.value}
+        with Session(self.engine) as session:
+            jobs = session.exec(select(Job).where(Job.status.in_(active_statuses))).all()
+            for job in jobs:
+                job.options_json = self._options_with_runtime_defaults(
+                    DownloadOptions.model_validate_json(job.options_json),
+                    speed_limit_kbps,
+                    retries,
+                ).model_dump_json()
+                job.updated_at = utc_now()
+                session.add(job)
+
+                items = session.exec(select(JobItem).where(JobItem.job_id == job.id)).all()
+                for item in items:
+                    if item.options_json and item.status in restartable_item_statuses:
+                        item.options_json = self._options_with_runtime_defaults(
+                            DownloadOptions.model_validate_json(item.options_json),
+                            speed_limit_kbps,
+                            retries,
+                        ).model_dump_json()
+                        item.updated_at = utc_now()
+                        session.add(item)
+                    if item.status == JobStatus.running.value:
+                        self._runtime_restart_items.add(item.id)
+                        restart_job_ids.add(job.id)
+            session.commit()
+
+        for job_id in sorted(restart_job_ids):
+            await self._publish(
+                {
+                    "type": "runtime_download_options_changed",
+                    "job_id": job_id,
+                    "speed_limit_kbps": speed_limit_kbps,
+                    "retries": retries,
+                }
+            )
 
     async def enqueue(self, job_id: str) -> None:
         await self.start()
@@ -388,6 +430,9 @@ class JobManager:
                     session.commit()
                     break
                 self._run_item(session, job, item, self._item_options(item, options), download_dir)
+                if job.id in self._runtime_restarting_jobs:
+                    self._runtime_restarting_jobs.discard(job.id)
+                    return
 
             self._finish_job(session, job)
 
@@ -421,6 +466,7 @@ class JobManager:
         self._publish_threadsafe({"type": "item_started", "job_id": job.id, "item_id": item.id, "title": item.title})
         transfer_stats = TransferStats()
         progress_aggregator = DownloadProgressAggregator()
+        runtime_restart_requested = False
 
         def progress_hook(payload: dict[str, Any]) -> None:
             if job.id in self._deleted:
@@ -477,6 +523,7 @@ class JobManager:
                 or job.id in self._paused
                 or job.id in self._deleted
                 or item.id in self._deleted_items
+                or item.id in self._runtime_restart_items
             )
             self._download_with_cookie_refresh(
                 item.source_url,
@@ -486,7 +533,24 @@ class JobManager:
                 download_dir=download_dir,
             )
         except DownloadCancelled:
-            if job.id in self._paused:
+            if item.id in self._runtime_restart_items:
+                self._runtime_restart_items.discard(item.id)
+                self._runtime_restarting_jobs.add(job.id)
+                runtime_restart_requested = True
+                item.status = JobStatus.queued.value
+                item.progress = 0.0
+                item.speed = None
+                item.eta = None
+                item.error = None
+                item.started_at = None
+                item.finished_at = None
+                job.status = JobStatus.queued.value
+                job.current_item_title = None
+                job.speed = None
+                job.eta = None
+                job.error = None
+                job.finished_at = None
+            elif job.id in self._paused:
                 item.status = JobStatus.paused.value
                 item.error = None
             elif job.id in self._deleted:
@@ -525,6 +589,23 @@ class JobManager:
             item.progress = 100.0
         finally:
             if job.id in self._deleted or item.id in self._deleted_items:
+                return
+            if runtime_restart_requested:
+                item.updated_at = utc_now()
+                job.updated_at = item.updated_at
+                session.add(item)
+                session.add(job)
+                session.commit()
+                self._refresh_job_counts(session, job)
+                self._publish_threadsafe(
+                    {
+                        "type": "item_requeued",
+                        "job_id": job.id,
+                        "item_id": item.id,
+                        "reason": "runtime_download_options_changed",
+                    }
+                )
+                self._enqueue_threadsafe(job.id)
                 return
             item.finished_at = utc_now() if item.status != JobStatus.paused.value else None
             if item.status in {JobStatus.succeeded.value, JobStatus.failed.value, JobStatus.cancelled.value}:
@@ -828,6 +909,14 @@ class JobManager:
     def _options_with_resolution(self, options: DownloadOptions, resolution: str) -> DownloadOptions:
         return options.model_copy(update={"resolution": resolution, "format_id": None})
 
+    def _options_with_runtime_defaults(
+        self,
+        options: DownloadOptions,
+        speed_limit_kbps: int | None,
+        retries: int,
+    ) -> DownloadOptions:
+        return options.model_copy(update={"speed_limit_kbps": speed_limit_kbps, "retries": retries})
+
     def _annotate_media_stream_fallback(self, item: JobItem, options: DownloadOptions) -> None:
         if options.format_id:
             return
@@ -957,6 +1046,10 @@ class JobManager:
             session.commit()
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(asyncio.create_task, self.broker.publish(payload))
+
+    def _enqueue_threadsafe(self, job_id: str) -> None:
+        if self._loop and self._loop.is_running() and self._queue is not None:
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, job_id)
 
 
 def new_id() -> str:

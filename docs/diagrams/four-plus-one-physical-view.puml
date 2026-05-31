@@ -1,0 +1,52 @@
+@startuml
+title 4+1 Physical View
+skinparam shadowing false
+
+node "User workstation" as Workstation {
+  node "Browser process" as Browser {
+    artifact "React UI\nserved from :8000" as UI
+  }
+
+  node "Python process\nuvicorn app.main:app" as Python {
+    component "FastAPI API + SSE" as API
+    component "JobManager workers" as Workers
+    component "yt-dlp Python API" as YTDLP
+  }
+
+  database "SQLite\n data/app.sqlite3" as SQLite
+  folder "Downloads\n downloads/" as Downloads
+  folder "Cookies\n data/cookies.txt" as CookiesFile
+  component "Installed browsers\nEdge/Chrome/Firefox" as Browsers
+  component "ffmpeg / imageio-ffmpeg" as FFMPEG
+  component "Optional aria2c" as Aria2
+  component "System opener\nExplorer/player" as Opener
+
+  node "Documentation toolchain" as DocsToolchain {
+    component "scripts/docs.py" as DocsScript
+    folder ".tools/docs/\nPlantUML jar cache" as PlantUMLCache
+    component "Java + Graphviz" as DocsRuntime
+    folder "docs/diagrams/*.puml" as DiagramSources
+    folder "docs/assets/diagrams/*.svg" as DiagramAssets
+  }
+}
+
+cloud "YouTube" as YouTube
+
+UI --> API : HTTP + SSE\n127.0.0.1:8000
+API --> Workers : enqueue/control
+API --> SQLite : jobs/settings/events
+Workers --> SQLite : progress/status
+Workers --> YTDLP : metadata/download
+YTDLP --> YouTube : HTTPS metadata/media
+YTDLP --> Downloads : video/subtitles/sidecar
+YTDLP --> FFMPEG : merge streams
+YTDLP ..> Aria2 : optional fallback
+API --> Browsers : import cookies
+API --> CookiesFile : read/write cookies
+API --> Downloads : delete known outputs
+API --> Opener : play/open folder
+DocsScript --> PlantUMLCache : download + SHA-256 verify
+DocsScript --> DocsRuntime : render
+DocsScript --> DiagramSources : read UML sources
+DocsRuntime --> DiagramAssets : generate SVG
+@enduml

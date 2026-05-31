@@ -1,10 +1,11 @@
 ﻿import queue
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 from app.schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
-from app.ytdlp_service import BrowserCookieImportError
+from app.ytdlp_service import BrowserCookieImportError, DownloadCancelled
 class FakeYtDlpService:
     def __init__(self):
         self.downloads = []
@@ -182,6 +183,21 @@ class BlockingYtDlpService(FakeYtDlpService):
     def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
         self.started.put(url)
         self.release.wait(timeout=5)
+        progress_hook({"status": "finished", "filename": f"{url}.mp4"})
+
+
+class RuntimeRestartYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.started: queue.Queue[DownloadOptions] = queue.Queue()
+        self.release = threading.Event()
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        self.started.put(options)
+        while not self.release.is_set():
+            if should_cancel():
+                raise DownloadCancelled("Download options changed.")
+            time.sleep(0.02)
         progress_hook({"status": "finished", "filename": f"{url}.mp4"})
 
 

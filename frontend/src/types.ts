@@ -125,6 +125,8 @@ export interface Settings {
   default_concurrency: number;
   default_subtitle_languages: string[];
   default_resolution: string;
+  default_speed_limit_kbps: number | null;
+  default_retries: number;
   cookies_enabled: boolean;
   ffmpeg: Record<string, boolean>;
 }

@@ -15,7 +15,7 @@
   Settings as SettingsIcon,
   XCircle
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
   analyzeUrl,
@@ -104,9 +104,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [browserCookieLock, setBrowserCookieLock] = useState<BrowserCookieLock | null>(null);
   const [history, setHistory] = useState<string[]>(() => JSON.parse(localStorage.getItem("download-history") ?? "[]"));
+  const [runtimeSaveMessage, setRuntimeSaveMessage] = useState("");
+  const runtimeSaveRequestSeq = useRef(0);
+  const runtimeSaveClearTimer = useRef<number | null>(null);
 
   useEffect(() => {
-    void getSettings().then(setSettings).catch((err) => setError(err.message));
+    void getSettings().then(applySettings).catch((err) => setError(err.message));
     void listJobs().then(setJobs).catch(() => setJobs([]));
   }, []);
 
@@ -117,6 +120,15 @@ export default function App() {
     };
     return () => source.close();
   }, []);
+
+  useEffect(
+    () => () => {
+      if (runtimeSaveClearTimer.current !== null) {
+        window.clearTimeout(runtimeSaveClearTimer.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     setSelectedJobIds((current) => new Set(Array.from(current).filter((jobId) => jobs.some((job) => job.id === jobId))));
@@ -129,6 +141,15 @@ export default function App() {
   }, [analysis]);
 
   const duplicateWarning = url.trim().length > 0 && history.includes(url.trim());
+
+  function applySettings(updated: Settings) {
+    setSettings(updated);
+    setOptions((current) => ({
+      ...current,
+      speed_limit_kbps: updated.default_speed_limit_kbps,
+      retries: updated.default_retries
+    }));
+  }
 
   function applyAnalysisResult(result: AnalyzeResponse) {
     setAnalysis(result);
@@ -197,6 +218,40 @@ export default function App() {
     setOptions((current) => ({ ...current, [key]: value }));
   }
 
+  async function updateRuntimeDownloadOption<K extends "speed_limit_kbps" | "retries">(key: K, value: DownloadOptions[K]) {
+    const requestSeq = runtimeSaveRequestSeq.current + 1;
+    runtimeSaveRequestSeq.current = requestSeq;
+    if (runtimeSaveClearTimer.current !== null) {
+      window.clearTimeout(runtimeSaveClearTimer.current);
+      runtimeSaveClearTimer.current = null;
+    }
+    updateOption(key, value);
+    setRuntimeSaveMessage("保存中...");
+    try {
+      const updated = await updateSettings(
+        key === "speed_limit_kbps"
+          ? { default_speed_limit_kbps: value as number | null }
+          : { default_retries: value as number }
+      );
+      if (runtimeSaveRequestSeq.current === requestSeq) {
+        applySettings(updated);
+        setRuntimeSaveMessage("已保存");
+      }
+    } catch (err) {
+      if (runtimeSaveRequestSeq.current === requestSeq) {
+        setRuntimeSaveMessage("保存失败");
+      }
+      throw err;
+    } finally {
+      if (runtimeSaveRequestSeq.current === requestSeq) {
+        runtimeSaveClearTimer.current = window.setTimeout(() => {
+          setRuntimeSaveMessage("");
+          runtimeSaveClearTimer.current = null;
+        }, 1800);
+      }
+    }
+  }
+
   function updateQuality(resolution: string) {
     setOptions((current) => ({ ...current, resolution, format_id: null }));
   }
@@ -204,19 +259,19 @@ export default function App() {
   async function handleCookieUpload(file: File | null) {
     if (!file) return;
     await uploadCookies(file);
-    setSettings(await getSettings());
+    applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
   async function handleCookieDelete() {
     await deleteCookies();
-    setSettings(await getSettings());
+    applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
   async function handleBrowserCookieImport(browser: string, closeBrowserIfLocked = false) {
     await importBrowserCookies(browser, closeBrowserIfLocked);
-    setSettings(await getSettings());
+    applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
@@ -406,8 +461,12 @@ export default function App() {
               onCreateJob={handleCreateJob}
               onOptionChange={updateOption}
               onQualityChange={updateQuality}
+              runtimeSaveMessage={runtimeSaveMessage}
+              onRuntimeOptionChange={(key, value) =>
+                void updateRuntimeDownloadOption(key, value).catch((err) => handleAppError(err, "保存下载设置失败"))
+              }
             />
-            {settings && <SettingsPanel settings={settings} onSettingsChange={setSettings} />}
+            {settings && <SettingsPanel settings={settings} onSettingsChange={applySettings} />}
           </aside>
         </section>
       </section>
@@ -488,24 +547,25 @@ function UrlAnalyzer({
         <textarea value={url} onChange={(event) => onUrlChange(event.target.value)} rows={3} />
       </label>
       <div className="cookie-inline">
-        <span className="cookie-inline-status">
-          <Cookie size={16} />
-          {settings?.cookies_enabled ? "已启用 cookies" : "未上传 cookies"}
-        </span>
-        <div className="cookie-inline-actions">
-          <label className="file-button compact-file-button">
-            <span>选择</span>
-            <span>cookies</span>
-            <input
-              aria-label="选择 cookies"
-              type="file"
-              accept=".txt"
-              onChange={(event) => onCookieUpload(event.target.files?.[0] ?? null)}
-            />
-          </label>
-          <button className="ghost-button" type="button" onClick={onCookieDelete} disabled={!settings?.cookies_enabled}>
-            清除 cookies
-          </button>
+        <div className="cookie-inline-primary">
+          <span className="cookie-inline-status">
+            <Cookie size={16} />
+            {settings?.cookies_enabled ? "已启用 cookies" : "未上传 cookies"}
+          </span>
+          <div className="cookie-inline-actions">
+            <label className="file-button compact-file-button">
+              <span>选择 cookies</span>
+              <input
+                aria-label="选择 cookies"
+                type="file"
+                accept=".txt"
+                onChange={(event) => onCookieUpload(event.target.files?.[0] ?? null)}
+              />
+            </label>
+            <button className="ghost-button cookie-clear-button" type="button" onClick={onCookieDelete} disabled={!settings?.cookies_enabled}>
+              清除 cookies
+            </button>
+          </div>
         </div>
         <div className="browser-cookie-import">
           <label className="compact-select-label">
@@ -638,7 +698,9 @@ function DownloadOptionsPanel({
   isSubmitting,
   onCreateJob,
   onOptionChange,
-  onQualityChange
+  onQualityChange,
+  runtimeSaveMessage,
+  onRuntimeOptionChange
 }: {
   analysis: AnalyzeResponse | null;
   ffmpegAvailable: boolean;
@@ -648,6 +710,8 @@ function DownloadOptionsPanel({
   onCreateJob: () => void;
   onOptionChange: <K extends keyof DownloadOptions>(key: K, value: DownloadOptions[K]) => void;
   onQualityChange: (resolution: string) => void;
+  runtimeSaveMessage: string;
+  onRuntimeOptionChange: <K extends "speed_limit_kbps" | "retries">(key: K, value: DownloadOptions[K]) => void;
 }) {
   const resolutionOptions = buildResolutionOptions(analysis);
   const qualityValue = `resolution:${options.resolution}`;
@@ -755,7 +819,7 @@ function DownloadOptionsPanel({
             type="number"
             min={1}
             value={options.speed_limit_kbps ?? ""}
-            onChange={(event) => onOptionChange("speed_limit_kbps", event.target.value ? Number(event.target.value) : null)}
+            onChange={(event) => onRuntimeOptionChange("speed_limit_kbps", event.target.value ? Number(event.target.value) : null)}
           />
         </div>
         <label className="field">
@@ -765,10 +829,11 @@ function DownloadOptionsPanel({
             min={0}
             max={20}
             value={options.retries}
-            onChange={(event) => onOptionChange("retries", Number(event.target.value))}
+            onChange={(event) => onRuntimeOptionChange("retries", Number(event.target.value))}
           />
         </label>
       </div>
+      {runtimeSaveMessage && <span className="settings-save-status">{runtimeSaveMessage}</span>}
 
       <button className="primary-button full" type="button" disabled={!analysis || isSubmitting} onClick={onCreateJob}>
         {isSubmitting ? <Loader2 className="spin" size={18} /> : <Download size={18} />}

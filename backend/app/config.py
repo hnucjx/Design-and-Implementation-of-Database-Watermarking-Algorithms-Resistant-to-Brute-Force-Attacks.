@@ -26,6 +26,8 @@ class AppSettings(BaseSettings):
     default_concurrency: int = Field(default_factory=default_download_concurrency)
     default_resolution: str = "1440p"
     default_subtitle_languages: list[str] = Field(default_factory=lambda: ["en"])
+    default_speed_limit_kbps: int | None = Field(default=None, ge=1)
+    default_retries: int = Field(default=10, ge=0, le=20)
     youtube_po_token: str | None = None
     youtube_visitor_data: str | None = None
     youtube_po_browser_path: str | None = None

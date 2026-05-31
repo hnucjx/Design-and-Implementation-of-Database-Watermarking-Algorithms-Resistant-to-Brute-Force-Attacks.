@@ -1,0 +1,48 @@
+@startuml
+title 4+1 Scenario View
+left to right direction
+skinparam shadowing false
+
+actor "Local user" as User
+
+rectangle "YouTube Downloader" {
+  usecase "Analyze URL" as Analyze
+  usecase "Create video job" as CreateVideo
+  usecase "Create playlist job" as CreatePlaylist
+  usecase "Choose quality/subtitles" as Options
+  usecase "Monitor progress" as Monitor
+  usecase "Change runtime\nconcurrency/limit/retries" as RuntimeSettings
+  usecase "Import cookies" as ImportCookies
+  usecase "Retry with suggested\nresolution" as RetryResolution
+  usecase "Play downloaded video" as Play
+  usecase "Open output folder" as OpenFolder
+  usecase "Delete task only" as DeleteTask
+  usecase "Delete task and\nrelated files" as DeleteFiles
+  usecase "Inspect diagnostics" as Diagnostics
+}
+
+User --> Analyze
+User --> Options
+User --> CreateVideo
+User --> CreatePlaylist
+User --> Monitor
+User --> RuntimeSettings
+User --> ImportCookies
+User --> RetryResolution
+User --> Play
+User --> OpenFolder
+User --> DeleteTask
+User --> DeleteFiles
+User --> Diagnostics
+
+CreateVideo ..> Analyze : requires metadata
+CreatePlaylist ..> Analyze : requires entries
+CreateVideo ..> Options : uses
+CreatePlaylist ..> Options : uses
+Monitor ..> RuntimeSettings : reflects changes
+RetryResolution ..> Monitor : triggered by fallback
+Play ..> Monitor : requires output path
+OpenFolder ..> Monitor : requires output directory
+DeleteFiles ..> DeleteTask : includes
+Diagnostics ..> ImportCookies : guides troubleshooting
+@enduml

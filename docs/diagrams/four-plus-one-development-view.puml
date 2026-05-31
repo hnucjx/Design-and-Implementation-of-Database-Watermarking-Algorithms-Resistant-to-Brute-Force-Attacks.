@@ -1,0 +1,67 @@
+@startuml
+title 4+1 Development View
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "frontend/src" {
+  [App.tsx] as App
+  [components/JobQueue.tsx] as JobQueue
+  [api.ts] as ApiClient
+  [types.ts] as FrontendTypes
+  [quality.ts] as Quality
+  [formatting.ts] as Formatting
+}
+
+package "backend/app" {
+  [main.py] as Main
+  [schemas.py] as Schemas
+  [models.py] as Models
+  [db.py] as DB
+  [job_manager.py] as Manager
+  [job_read_model.py] as ReadModel
+  [ytdlp_service.py] as Service
+  [ytdlp_formats.py] as FormatHelpers
+  [fallback_policy.py] as Fallback
+  [download_progress.py] as Progress
+  [transfer_stats.py] as TransferStats
+  [browser_cookies.py] as BrowserCookies
+  [output_paths.py] as OutputPaths
+  [system_open.py] as SystemOpen
+}
+
+package "tests" {
+  [backend/tests] as BackendTests
+  [frontend/src/App.test.tsx] as FrontendTests
+}
+
+App --> JobQueue
+App --> ApiClient
+App --> Quality
+App --> Formatting
+ApiClient --> FrontendTypes
+JobQueue --> FrontendTypes
+
+Main --> Schemas
+Main --> Manager
+Main --> ReadModel
+Main --> Service
+Main --> DB
+Manager --> Models
+Manager --> Service
+Manager --> Fallback
+Manager --> Progress
+Manager --> TransferStats
+Manager --> OutputPaths
+Manager --> SystemOpen
+ReadModel --> Models
+ReadModel --> Fallback
+Service --> FormatHelpers
+Service --> BrowserCookies
+Service --> SystemOpen
+DB --> Models
+
+BackendTests ..> Main
+BackendTests ..> Manager
+BackendTests ..> Service
+FrontendTests ..> App
+@enduml

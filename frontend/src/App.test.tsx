@@ -23,6 +23,8 @@ let currentSettingsPayload = settingsPayload;
 let browserCookieImportLocked = false;
 let analyzeLockedByEdgeCookies = false;
 let localFileActionFailure: string | null = null;
+let settingsUpdateDelayMs = 0;
+let settingsUpdateShouldFail = false;
 
 describe("App", () => {
   beforeEach(() => {
@@ -32,6 +34,8 @@ describe("App", () => {
     browserCookieImportLocked = false;
     analyzeLockedByEdgeCookies = false;
     localFileActionFailure = null;
+    settingsUpdateDelayMs = 0;
+    settingsUpdateShouldFail = false;
     vi.stubGlobal("confirm", vi.fn(() => true));
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -53,7 +57,14 @@ describe("App", () => {
           return Response.json(currentSettingsPayload);
         }
         if (url.endsWith("/api/settings") && init?.method === "PUT") {
-          return Response.json({ ...currentSettingsPayload, ...JSON.parse(String(init.body)) });
+          if (settingsUpdateDelayMs > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, settingsUpdateDelayMs));
+          }
+          if (settingsUpdateShouldFail) {
+            return Response.json({ detail: "保存失败" }, { status: 500 });
+          }
+          currentSettingsPayload = { ...currentSettingsPayload, ...JSON.parse(String(init.body)) };
+          return Response.json(currentSettingsPayload);
         }
         if (url.endsWith("/api/settings/download-dir/select")) {
           return Response.json({ ...currentSettingsPayload, download_dir: "D:\\Videos" });
@@ -226,8 +237,7 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: "Cookies" })).not.toBeInTheDocument();
 
     const file = new File(["cookie"], "cookies.txt", { type: "text/plain" });
-    expect(within(analyzer as HTMLElement).getByText("选择")).toBeInTheDocument();
-    expect(within(analyzer as HTMLElement).getByText("cookies")).toBeInTheDocument();
+    expect(within(analyzer as HTMLElement).getByText("选择 cookies")).toBeInTheDocument();
     expect(within(analyzer as HTMLElement).queryByText("选择 cookies.txt")).not.toBeInTheDocument();
     await user.upload(within(analyzer as HTMLElement).getByLabelText("选择 cookies"), file);
 
@@ -420,6 +430,60 @@ describe("App", () => {
       );
       expect(submittedBody.options.speed_limit_kbps).toBeNull();
     });
+  });
+
+  test("saves speed limit and retries as runtime settings before creating jobs", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const speedLimit = screen.getByLabelText("限速 KB/s（清空：不限速）");
+    const retries = screen.getByLabelText("重试次数");
+    await user.type(speedLimit, "512");
+    await user.clear(retries);
+    await user.type(retries, "6");
+
+    await waitFor(() => {
+      const settingsCalls = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([url, init]) => String(url).endsWith("/api/settings") && init?.method === "PUT"
+      );
+      expect(settingsCalls.some(([, init]) => JSON.parse(String(init?.body)).default_speed_limit_kbps === 512)).toBe(true);
+      expect(settingsCalls.some(([, init]) => JSON.parse(String(init?.body)).default_retries === 6)).toBe(true);
+    });
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/playlist?list=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+    await screen.findByText("Batch");
+    await user.click(screen.getByRole("button", { name: "加入下载队列" }));
+
+    await waitFor(() => {
+      const createJobCall = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+        ([url, init]) => String(url).endsWith("/api/jobs") && init?.method === "POST"
+      );
+      const submittedBody = JSON.parse(String(createJobCall?.[1]?.body));
+      expect(submittedBody.options.speed_limit_kbps).toBe(512);
+      expect(submittedBody.options.retries).toBe(6);
+    });
+  });
+
+  test("shows save status when runtime download settings are saved", async () => {
+    settingsUpdateDelayMs = 80;
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("限速 KB/s（清空：不限速）"), "5");
+
+    expect(await screen.findByText("保存中...")).toBeInTheDocument();
+    expect(await screen.findByText("已保存")).toBeInTheDocument();
+  });
+
+  test("shows save failure when runtime download settings cannot be saved", async () => {
+    settingsUpdateShouldFail = true;
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("限速 KB/s（清空：不限速）"), "5");
+
+    await waitFor(() => expect(screen.getAllByText("保存失败").length).toBeGreaterThan(0));
   });
 
   test("keeps the default 1440p selection so the backend can explain any fallback", async () => {

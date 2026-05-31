@@ -1,0 +1,42 @@
+@startuml
+title 4+1 Process View
+skinparam shadowing false
+
+start
+:User changes URL/options or task controls;
+fork
+  :React UI sends HTTP request;
+  :FastAPI validates schema;
+  if (settings update?) then (yes)
+    :Persist Setting;
+    :Adjust worker concurrency;
+    :Update queued/running/paused DownloadOptions;
+    if (current item uses changed runtime option?) then (yes)
+      :Signal current yt-dlp instance to cancel;
+      :Requeue item for continued download;
+    endif
+  else (job action)
+    :Create, pause, restart, delete, play, or open folder;
+  endif
+fork again
+  :EventSource stays connected;
+  :Backend publishes job events;
+  :UI refreshes /api/jobs;
+end fork
+
+if (queued job exists?) then (yes)
+  :Worker picks job respecting concurrency;
+  repeat
+    :Mark JobItem running;
+    :Prepare planned format, size, resolution;
+    :Run yt-dlp download with retries/profiles;
+    :Aggregate raw stream progress;
+    :Persist progress and events;
+  repeat while (more items?) is (yes)
+  :Project final job status;
+else (no)
+  :Remain idle;
+endif
+
+stop
+@enduml

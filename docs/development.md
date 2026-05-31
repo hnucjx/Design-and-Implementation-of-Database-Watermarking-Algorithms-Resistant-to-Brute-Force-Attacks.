@@ -9,13 +9,13 @@
 | 后端 | Python 3.12+、FastAPI、SQLModel、SQLite、yt-dlp、curl_cffi、yt-dlp-getpot-wpc、imageio-ffmpeg | [backend/pyproject.toml](../backend/pyproject.toml) |
 | 前端 | React 18、TypeScript、Vite、lucide-react、原生 CSS | [frontend/package.json](../frontend/package.json) |
 | 测试 | pytest、pytest-asyncio、Vitest、Testing Library、jsdom | [backend/pyproject.toml](../backend/pyproject.toml)、[frontend/package.json](../frontend/package.json) |
-| 图 | PlantUML、Java、Graphviz | [docs/diagrams](diagrams/) |
+| 文档 | Markdown、仓库内文档工具、PlantUML、Java、Graphviz | [文档写作与生成环境](documentation-workflow.md) |
 
 ## 环境要求
 
 - Python 3.12 或更高版本。
 - Node.js 20+ 推荐。
-- Java 和 Graphviz 用于渲染 PlantUML 图。
+- Java 和 Graphviz 用于渲染 PlantUML 图；PlantUML jar 由仓库内文档工具自动下载和校验。
 - `ffmpeg` 推荐安装；如果 PATH 中没有系统 `ffmpeg`，后端会尝试使用 `imageio-ffmpeg` 后备执行文件。
 - `aria2c` 可选，仅当启用 `YTDL_ARIA2C_ENABLED=true` 时作为下载 fallback。
 
@@ -24,6 +24,7 @@ Windows 可用：
 ```powershell
 winget install Python.Python.3.12
 winget install OpenJS.NodeJS.LTS
+winget install Microsoft.OpenJDK.21
 winget install Gyan.FFmpeg
 winget install Graphviz.Graphviz
 ```
@@ -84,6 +85,8 @@ npm run dev -- --port 5173
 | `data` | 本地 SQLite、cookies，已被 Git 忽略。 |
 | `downloads` | 默认下载产物目录，已被 Git 忽略。 |
 | `docs` | 工程文档、PlantUML 源和渲染图。 |
+| `scripts` | 可复现的工程辅助脚本，包括文档工具入口。 |
+| `.tools` | 文档工具自动下载的本机缓存，已被 Git 忽略。 |
 | `ai` | 任务计划、重构日志和文档生成 prompt。 |
 
 ## 环境变量
@@ -109,19 +112,25 @@ npm run dev -- --port 5173
 
 ## PlantUML 图更新
 
-UML 源文件位于 `docs/diagrams/`。推荐渲染 SVG：
+文档生成环境已经作为项目工程交付物提供，完整说明见 [文档写作与生成环境](documentation-workflow.md)。首次使用时在仓库根目录初始化：
 
 ```powershell
-plantuml -tsvg docs\diagrams\*.puml -o ..\assets\diagrams
+python scripts\docs.py bootstrap
 ```
 
-如果没有 `plantuml` CLI，可临时下载 PlantUML jar 后执行：
+修改 UML 后统一渲染 SVG：
 
 ```powershell
-java -jar <plantuml.jar> -tsvg docs\diagrams\*.puml -o ..\assets\diagrams
+python scripts\docs.py render
 ```
 
-不要把临时 jar 提交进 Git。
+提交前检查本地链接和 UML 产物一致性：
+
+```powershell
+python scripts\docs.py check
+```
+
+PlantUML jar 会下载到被 Git 忽略的 `.tools/docs/`，无需全局安装 `plantuml` CLI，也不要提交该缓存目录。
 
 ## 开发检查
 

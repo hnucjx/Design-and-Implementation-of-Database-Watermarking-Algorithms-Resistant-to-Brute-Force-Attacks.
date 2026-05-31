@@ -10,6 +10,7 @@
 | 后端开发者 | 先读 [架构设计](architecture.md)，再读 [API 文档](api.md) 和 [实现文档](implementation.md)。 |
 | 前端开发者 | 先读 [用户手册](user-manual.md) 理解工作流，再读 [API 文档](api.md) 和 [开发文档](development.md)。 |
 | 架构评审者 | 先读 [4+1 架构视图](4-plus-1-view.md)，再进入 [架构设计](architecture.md) 和 [实现文档](implementation.md)。 |
+| 文档维护者 | 先初始化 [文档写作与生成环境](documentation-workflow.md)，再按 [维护文档](maintenance.md) 更新文档和图。 |
 | 维护者 | 先读 [维护文档](maintenance.md)，再根据变更类型更新相关文档、4+1 视图和图。 |
 | 测试者 | 直接读 [测试文档](testing.md)，再对照 [需求分析](requirements.md) 验证范围。 |
 
@@ -20,6 +21,7 @@
 - [架构设计](architecture.md)：说明系统组成、模块边界、数据流和关键架构图。
 - [4+1 架构视图](4-plus-1-view.md)：按逻辑、开发、进程、物理和场景视图组织架构审查入口。
 - [开发文档](development.md)：说明本地开发环境、依赖、命令、目录、第三方工具和配置项。
+- [文档写作与生成环境](documentation-workflow.md)：说明仓库内文档工具的初始化、UML 渲染、一致性检查和推荐写作流程。
 - [API 文档](api.md)：记录后端 HTTP API、请求/响应模型、任务状态和错误语义。
 - [技术文档](technical.md)：集中解释下载策略、分辨率、格式、cookies、PO token、aria2c 和稳定性策略。
 - [实现文档](implementation.md)：面向维护者解释关键代码模块、类、函数和数据持久化方式。

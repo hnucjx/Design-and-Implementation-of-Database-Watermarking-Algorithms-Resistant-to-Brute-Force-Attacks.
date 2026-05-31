@@ -20,6 +20,14 @@ node "User workstation" as Workstation {
   component "ffmpeg / imageio-ffmpeg" as FFMPEG
   component "Optional aria2c" as Aria2
   component "System opener\nExplorer/player" as Opener
+
+  node "Documentation toolchain" as DocsToolchain {
+    component "scripts/docs.py" as DocsScript
+    folder ".tools/docs/\nPlantUML jar cache" as PlantUMLCache
+    component "Java + Graphviz" as DocsRuntime
+    folder "docs/diagrams/*.puml" as DiagramSources
+    folder "docs/assets/diagrams/*.svg" as DiagramAssets
+  }
 }
 
 cloud "YouTube" as YouTube
@@ -37,4 +45,8 @@ API --> Browsers : import cookies
 API --> CookiesFile : read/write cookies
 API --> Downloads : delete known outputs
 API --> Opener : play/open folder
+DocsScript --> PlantUMLCache : download + SHA-256 verify
+DocsScript --> DocsRuntime : render
+DocsScript --> DiagramSources : read UML sources
+DocsRuntime --> DiagramAssets : generate SVG
 @enduml

@@ -72,6 +72,10 @@ PlantUML 源文件：[data-model.puml](diagrams/data-model.puml)。
 
 核心表是 `Job`、`JobItem`、`JobEvent` 和 `Setting`。旧数据库兼容列通过 `_ensure_columns()` 自动补齐，见 [db.py](../backend/app/db.py#L21)。
 
+## 文档工具链
+
+文档写作和 UML 生成环境也作为工程系统的一部分交付。仓库内 [docs.py](../scripts/docs.py) 管理固定版本 PlantUML jar 缓存、SVG 渲染、本地链接检查和 UML 产物一致性检查；Java 与 Graphviz 作为开发机系统依赖。安装和使用方式见 [文档写作与生成环境](documentation-workflow.md)。
+
 ## 设计取舍
 
 - 下载能力集中封装在 `YtDlpService`，避免 API 层暴露任意 yt-dlp 参数。

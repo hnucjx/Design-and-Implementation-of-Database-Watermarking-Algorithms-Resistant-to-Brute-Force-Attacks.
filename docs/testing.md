@@ -32,6 +32,14 @@ npm run build
 git diff --check
 ```
 
+文档本地链接和 UML 产物一致性检查：
+
+```powershell
+python scripts\docs.py check
+```
+
+首次执行前如尚未初始化文档工具，请先阅读 [文档写作与生成环境](documentation-workflow.md)。
+
 ## 后端测试范围
 
 后端测试位于 [backend/tests](../backend/tests/)。

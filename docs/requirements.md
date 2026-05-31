@@ -37,7 +37,7 @@
 
 | 类别 | 要求 |
 | --- | --- |
-| 可维护性 | 下载策略、降级原因、读模型、cookies 导入和格式选择拆分到独立模块，详见 [实现文档](implementation.md)。 |
+| 可维护性 | 下载策略、降级原因、读模型、cookies 导入和格式选择拆分到独立模块；文档工具链可复现并检查本地链接与 UML 产物，详见 [实现文档](implementation.md) 和 [文档写作与生成环境](documentation-workflow.md)。 |
 | 稳定性 | 支持并发设为 1 的稳定优先运行方式，并保留断点续传、小 HTTP chunk、低速重取 URL、同清晰度多 profile 重试；运行中修改限速/重试时通过断点续传重启当前项应用新参数。 |
 | 可观测性 | 任务中心显示进度、速度、视频大小、ETA、实际分辨率、实际格式和错误原因；诊断接口返回依赖状态。 |
 | 安全性 | 不在 UI 或日志回显 cookies、token、敏感 URL query；日志清洗见 [log_safety.py](../backend/app/log_safety.py#L11)。 |
@@ -58,4 +58,5 @@
 
 - 对应自动测试通过，命令见 [测试文档](testing.md#自动测试命令)。
 - API、配置、下载策略或任务字段变化已同步更新 [API 文档](api.md)、[技术文档](technical.md) 和相关 UML 图。
+- 文档变更已运行 `python scripts\docs.py check`，确认本地链接和 UML 产物一致。
 - README 仍保持入口页定位，详细说明不回流到 README。

@@ -37,12 +37,12 @@
 ## UML 更新流程
 
 1. 修改对应 `.puml` 源文件。
-2. 渲染对应 SVG 到 `docs/assets/diagrams/`。
+2. 运行 `python scripts\docs.py render` 渲染 SVG 到 `docs/assets/diagrams/`。
 3. 确认相关 Markdown 已嵌入 SVG，并链接 `.puml` 源文件。
 4. 如果变更影响逻辑、开发、进程、物理或场景视图之一，同步更新 [4+1 架构视图](4-plus-1-view.md) 和对应 `four-plus-one-*.puml`。
-5. 运行 `git diff --check`。
+5. 运行 `python scripts\docs.py check` 和 `git diff --check`。
 
-PlantUML 渲染命令见 [开发文档](development.md#plantuml-图更新)。
+首次使用、系统依赖和工具缓存策略见 [文档写作与生成环境](documentation-workflow.md)。
 
 ## 提交流程
 
@@ -58,4 +58,5 @@ PlantUML 渲染命令见 [开发文档](development.md#plantuml-图更新)。
 - 新增环境变量、API 字段、任务状态、错误原因是否都有文档记录。
 - 图是否反映当前架构，而不是历史结构。
 - [4+1 架构视图](4-plus-1-view.md) 是否仍覆盖逻辑、开发、进程、物理和场景五类关注点。
+- 是否已运行 `python scripts\docs.py check`，确认本地链接和 UML 产物一致。
 - 是否遗漏 `ai/` 下的任务或审查记录。

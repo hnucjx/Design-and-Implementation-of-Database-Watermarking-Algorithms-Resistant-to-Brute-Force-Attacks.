@@ -6,7 +6,7 @@
 
 本项目提供一个本机单用户 YouTube 下载控制台，使用户能够解析公开视频或 playlist，选择清晰度和字幕选项，将下载任务加入队列，并在任务中心观察状态、失败原因和最终输出信息。
 
-系统范围由 [FastAPI 路由](../backend/app/main.py#L98)、[API schema](../backend/app/schemas.py#L14) 和 [前端类型](../frontend/src/types.ts#L1) 共同定义。
+系统范围由 [FastAPI 路由](../backend/app/main.py#L108)、[API schema](../backend/app/schemas.py#L14) 和 [前端类型](../frontend/src/types.ts#L1) 共同定义。
 
 ## 用户角色
 
@@ -20,18 +20,18 @@
 
 | 编号 | 需求 | 代码依据 |
 | --- | --- | --- |
-| FR-1 | 支持单视频和 playlist 元数据解析。 | [`POST /api/analyze`](../backend/app/main.py#L117)、[`AnalyzeResponse`](../backend/app/schemas.py#L43) |
-| FR-2 | 支持选择 playlist 子项并创建下载任务。 | [`_selected_entries`](../backend/app/main.py#L352)、[`CreateJobRequest`](../backend/app/schemas.py#L72) |
+| FR-1 | 支持单视频和 playlist 元数据解析。 | [`POST /api/analyze`](../backend/app/main.py#L127)、[`AnalyzeResponse`](../backend/app/schemas.py#L43) |
+| FR-2 | 支持选择 playlist 子项并创建下载任务。 | [`_selected_entries`](../backend/app/main.py#L425)、[`CreateJobRequest`](../backend/app/schemas.py#L72) |
 | FR-3 | 支持视频+字幕、仅视频、仅字幕三种模式。 | [`DownloadMode`](../backend/app/schemas.py#L7) |
 | FR-4 | 用户只选择清晰度，默认 `1440p`；后端自动选择具体格式。 | [`format_selector`](../backend/app/ytdlp_formats.py#L9) |
-| FR-5 | 下载前预检测计划分辨率、格式和视频大小，任务中心展示实际值。 | [`prepare_download`](../backend/app/ytdlp_service.py#L198)、[`_apply_download_preparation`](../backend/app/job_manager.py#L682) |
+| FR-5 | 下载前预检测计划分辨率、格式和视频大小，任务中心展示实际值。 | [`prepare_download`](../backend/app/ytdlp_service.py#L200)、[`_apply_download_preparation`](../backend/app/job_manager.py#L885) |
 | FR-6 | 支持明确的分辨率降级原因和重启建议。 | [`fallback_policy.py`](../backend/app/fallback_policy.py#L4) |
-| FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除、批量操作，以及本地播放/打开文件夹。 | [`batch_job_action`](../backend/app/main.py#L170)、[`system_open.py`](../backend/app/system_open.py) |
+| FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除、批量操作，以及本地播放/打开文件夹。 | [`batch_job_action`](../backend/app/main.py#L180)、[`system_open.py`](../backend/app/system_open.py) |
 | FR-8 | 默认请求人工字幕和自动字幕；缺少某类字幕时 fallback 到另一类可用字幕，并显示来源与格式。 | [`DownloadOptions`](../backend/app/schemas.py#L56)、[`DownloadOptionsPanel`](../frontend/src/App.tsx#L640) |
-| FR-9 | 支持 cookies 上传、浏览器导入和清除。 | [`/api/cookies`](../backend/app/main.py#L293)、[`BrowserCookieImporter`](../backend/app/browser_cookies.py#L55) |
-| FR-10 | 支持并发、限速和重试次数作为运行时设置即时保存；限速/重试变更会让当前视频断点续传重启以应用新参数。 | [`SettingsUpdate`](../backend/app/schemas.py#L162)、[`set_runtime_download_defaults`](../backend/app/job_manager.py#L75) |
-| FR-11 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/main.py#L243)、[`EventBroker`](../backend/app/events.py#L7) |
-| FR-12 | 支持诊断依赖状态。 | [`/api/diagnostics`](../backend/app/main.py#L102)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L110) |
+| FR-9 | 支持 cookies 上传、浏览器导入和清除。 | [`/api/cookies`](../backend/app/main.py#L364)、[`BrowserCookieImporter`](../backend/app/browser_cookies.py#L55) |
+| FR-10 | 支持并发、限速和重试次数作为运行时设置即时保存；限速/重试变更会让当前视频断点续传重启以应用新参数。 | [`SettingsUpdate`](../backend/app/schemas.py#L175)、[`set_runtime_download_defaults`](../backend/app/job_manager.py#L79) |
+| FR-11 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/main.py#L300)、[`EventBroker`](../backend/app/events.py#L7) |
+| FR-12 | 支持诊断依赖状态。 | [`/api/diagnostics`](../backend/app/main.py#L112)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L112) |
 
 ## 非功能需求
 

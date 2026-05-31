@@ -4,7 +4,7 @@
 
 ## 后端入口
 
-FastAPI 应用由 [create_app](../backend/app/main.py#L37) 创建，启动时：
+FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 
 - 创建配置和目录。
 - 初始化 SQLite engine 和表结构。
@@ -12,7 +12,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L37) 创建，启动时：
 - 创建 `YtDlpService` 并注入 PO token、chunk、throttled rate、aria2c 等配置。
 - 创建 `JobManager` 并在 lifespan 中启动/停止 worker。
 
-路由函数保留 HTTP 入口、依赖注入和错误转换；任务序列化逻辑委托给 [job_read_model.py](../backend/app/job_read_model.py#L10)。
+路由函数保留 HTTP 入口、依赖注入和错误转换；任务序列化逻辑委托给 [job_read_model.py](../backend/app/job_read_model.py#L12)。
 
 ## 数据模型
 
@@ -29,17 +29,17 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L37) 创建，启动时：
 
 ## 任务调度
 
-[JobManager](../backend/app/job_manager.py#L32) 负责队列、worker、暂停、重启、删除、任务状态和事件发布。
+[JobManager](../backend/app/job_manager.py#L33) 负责队列、worker、暂停、重启、删除、任务状态和事件发布。
 
 关键流程：
 
-1. `POST /api/jobs` 写入 `Job` 和 `JobItem`，然后调用 [enqueue](../backend/app/job_manager.py#L75)。
-2. worker 从队列取出 job id，调用 [_run_job_sync](../backend/app/job_manager.py#L278)。
+1. `POST /api/jobs` 写入 `Job` 和 `JobItem`，然后调用 [enqueue](../backend/app/job_manager.py#L119)。
+2. worker 从队列取出 job id，调用 [_run_job_sync](../backend/app/job_manager.py#L388)。
 3. `_run_job_sync` 按 `JobItem.index` 顺序执行待处理子项。
-4. 单项由 [_run_item](../backend/app/job_manager.py#L324) 处理，负责预检测、下载、进度 hook、错误分类和终态写入。
-5. 全部子项处理后调用 [_finish_job](../backend/app/job_manager.py#L521) 聚合任务终态。
+4. 单项由 [_run_item](../backend/app/job_manager.py#L439) 处理，负责预检测、下载、进度 hook、错误分类和终态写入。
+5. 全部子项处理后调用 [_finish_job](../backend/app/job_manager.py#L685) 聚合任务终态。
 
-暂停和重启会重置运行中字段，但保留可重新执行的任务记录，见 [restart](../backend/app/job_manager.py#L116) 和 [restart_item](../backend/app/job_manager.py#L166)。Playlist 子视频删除由 `delete_items()` 处理：删除指定 `JobItem` 后刷新父任务聚合状态；如果删除最后一个子视频，父任务也会被删除。
+暂停和重启会重置运行中字段，但保留可重新执行的任务记录，见 [restart](../backend/app/job_manager.py#L160) 和 [restart_item](../backend/app/job_manager.py#L210)。Playlist 子视频删除由 `delete_items()` 处理：删除指定 `JobItem` 后刷新父任务聚合状态；如果删除最后一个子视频，父任务也会被删除。
 
 运行时下载设置由 `PUT /api/settings` 触发：并发调用 `set_concurrency()` 立即调整 worker；限速和重试次数调用 `set_runtime_download_defaults()` 更新 queued/running/paused 任务的 `options_json`。当当前 `JobItem` 正在下载时，`should_cancel` 会让 yt-dlp 在下一个可中断点退出，该子项被重新置为 queued 并重新入队，依靠断点续传应用新的限速或重试次数。前端在下载选项面板复用设置保存状态样式，并用请求序号避免快速输入时旧响应覆盖最后一次输入。
 
@@ -47,11 +47,11 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L37) 创建，启动时：
 
 [YtDlpService](../backend/app/ytdlp_service.py#L84) 是 yt-dlp 的边界层。它负责：
 
-- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L161)。
-- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L198)。
-- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L231)。
-- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L312)。
-- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L110)。
+- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L163)。
+- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L200)。
+- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L235)。
+- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L316)。
+- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L112)。
 - 错误分类：cookies、403、连接重置和格式不可用。
 
 `YtDlpService` 不把任意 yt-dlp 参数暴露给 API，只接受项目定义的 `DownloadOptions`。
@@ -62,10 +62,10 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L37) 创建，启动时：
 
 下载前的两类自动处理：
 
-- [_options_for_available_resolution](../backend/app/job_manager.py#L608)：源视频没有目标高度时，选择合规的较低清晰度。
-- [_prepare_download](../backend/app/job_manager.py#L649)：目标高度存在但 selector 选不出可下载组合时，尝试 720p 或更高降级。
+- [_options_for_available_resolution](../backend/app/job_manager.py#L811)：源视频没有目标高度时，选择合规的较低清晰度。
+- [_prepare_download](../backend/app/job_manager.py#L852)：目标高度存在但 selector 选不出可下载组合时，尝试 720p 或更高降级。
 
-媒体流 403/连接重置只标注 `media_stream_blocked` 并给重启建议，不自动降清晰度重下，相关逻辑见 [_annotate_media_stream_fallback](../backend/app/job_manager.py#L705)。
+媒体流 403/连接重置只标注 `media_stream_blocked` 并给重启建议，不自动降清晰度重下，相关逻辑见 [_annotate_media_stream_fallback](../backend/app/job_manager.py#L920)。
 
 ## 进度与平均速度
 
@@ -73,11 +73,11 @@ yt-dlp 对分离视频/音频流会多次发送 progress payload。为避免 UI 
 
 视频大小复用 `JobItem.total_bytes`：下载前由 `prepare_download()` 从所选格式的 `filesize/filesize_approx` 写入，下载中由 progress payload 校准，下载完成后继续保留，前端在任务行和 playlist 子视频行展示。
 
-平均速度由 [TransferStats](../backend/app/transfer_stats.py#L5) 根据聚合下载字节和时间计算。运行中 `speed` 是 yt-dlp 当前瞬时速度，终态 `speed` 是平均速度，终态聚合见 [_terminal_job_speed](../backend/app/job_manager.py#L585)。
+平均速度由 [TransferStats](../backend/app/transfer_stats.py#L5) 根据聚合下载字节和时间计算。运行中 `speed` 是 yt-dlp 当前瞬时速度，终态 `speed` 是平均速度，终态聚合见 [_terminal_job_speed](../backend/app/job_manager.py#L788)。
 
 ## 读模型
 
-API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_model.py#L10) 生成：
+API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_model.py#L12) 生成：
 
 - 计算任务级实际分辨率和格式。
 - 将多个子项不同结果聚合为 `混合分辨率` 或 `混合格式`。
@@ -112,4 +112,4 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 ## 日志安全
 
-下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L776)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。
+下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L991)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。

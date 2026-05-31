@@ -4,7 +4,7 @@
 
 ## 基本约定
 
-- 后端应用由 [create_app](../backend/app/main.py#L37) 创建。
+- 后端应用由 [create_app](../backend/app/main.py#L41) 创建。
 - API 返回 JSON；`DELETE /api/jobs/{id}` 成功时返回 `204`。
 - 前端统一请求封装在 [request](../frontend/src/api.ts#L23)，非 2xx 响应会抛出 `ApiError`。
 - Cookies 导入锁库错误使用结构化 `detail`，字段见 [BrowserCookieImportError.to_detail](../backend/app/browser_cookies.py#L46)。
@@ -14,12 +14,13 @@
 | 方法 | 路径 | 用途 | 主要模型 |
 | --- | --- | --- | --- |
 | `GET` | `/health` | 健康检查。 | `dict[str, bool]` |
-| `GET` | `/api/diagnostics` | 依赖和运行状态诊断。 | [`DiagnosticsRead`](../backend/app/schemas.py#L182) |
+| `GET` | `/api/diagnostics` | 依赖和运行状态诊断。 | [`DiagnosticsRead`](../backend/app/schemas.py#L197) |
 | `POST` | `/api/analyze` | 解析单视频或 playlist。 | [`AnalyzeRequest`](../backend/app/schemas.py#L14)、[`AnalyzeResponse`](../backend/app/schemas.py#L43) |
-| `POST` | `/api/jobs` | 创建下载任务并入队。 | [`CreateJobRequest`](../backend/app/schemas.py#L72)、[`JobRead`](../backend/app/schemas.py#L123) |
+| `POST` | `/api/jobs` | 创建下载任务并入队。 | [`CreateJobRequest`](../backend/app/schemas.py#L72)、[`JobRead`](../backend/app/schemas.py#L128) |
 | `GET` | `/api/jobs` | 获取任务列表。 | `list[JobRead]` |
 | `GET` | `/api/jobs/{job_id}` | 获取单个任务详情。 | `JobRead` |
 | `POST` | `/api/jobs/batch` | 批量暂停、重启或删除。 | [`JobBatchActionRequest`](../backend/app/schemas.py#L81) |
+| `POST` | `/api/jobs/{job_id}/cancel` | 取消任务。 | `JobRead` |
 | `POST` | `/api/jobs/{job_id}/pause` | 暂停任务。 | `JobRead` |
 | `POST` | `/api/jobs/{job_id}/restart` | 重启任务，可覆盖清晰度。 | [`RestartJobRequest`](../backend/app/schemas.py#L77) |
 | `POST` | `/api/jobs/{job_id}/play` | 播放单视频任务已下载的视频文件。 | `204 No Content` |
@@ -30,14 +31,14 @@
 | `POST` | `/api/jobs/{job_id}/items/delete` | 删除 playlist 中一个或多个子视频任务，可选删除输出和 sidecar 文件。 | `DeleteJobItemsRequest`、`DeleteJobItemsResponse` |
 | `DELETE` | `/api/jobs/{job_id}` | 删除任务，可选删除输出视频及字幕、metadata、缩略图、description 等相关文件。 | 查询参数 `delete_files` |
 | `GET` | `/api/events` | SSE 任务事件流。 | `text/event-stream` |
-| `GET` | `/api/settings` | 获取设置。 | [`SettingsRead`](../backend/app/schemas.py#L153) |
-| `PUT` | `/api/settings` | 更新设置。 | [`SettingsUpdate`](../backend/app/schemas.py#L162) |
+| `GET` | `/api/settings` | 获取设置。 | [`SettingsRead`](../backend/app/schemas.py#L164) |
+| `PUT` | `/api/settings` | 更新设置。 | [`SettingsUpdate`](../backend/app/schemas.py#L175) |
 | `POST` | `/api/settings/download-dir/select` | 打开本机目录选择对话框。 | `SettingsRead` |
-| `POST` | `/api/cookies` | 上传 cookies 文件。 | [`CookieStatus`](../backend/app/schemas.py#L169) |
-| `POST` | `/api/cookies/from-browser` | 从浏览器导入 cookies。 | [`BrowserCookieImportRequest`](../backend/app/schemas.py#L177) |
+| `POST` | `/api/cookies` | 上传 cookies 文件。 | [`CookieStatus`](../backend/app/schemas.py#L184) |
+| `POST` | `/api/cookies/from-browser` | 从浏览器导入 cookies。 | [`BrowserCookieImportRequest`](../backend/app/schemas.py#L192) |
 | `DELETE` | `/api/cookies` | 清除本地 cookies。 | `CookieStatus` |
 
-路由实现集中在 [main.py](../backend/app/main.py#L98)。
+路由实现集中在 [main.py](../backend/app/main.py#L108)。
 
 ## 关键请求模型
 
@@ -86,11 +87,11 @@
 
 ### AnalyzeResponse
 
-包含标题、是否 playlist、条目、格式列表、字幕列表、自动字幕列表和 ffmpeg 状态。格式和字幕映射逻辑见 [extract_metadata](../backend/app/ytdlp_service.py#L161)。
+包含标题、是否 playlist、条目、格式列表、字幕列表、自动字幕列表和 ffmpeg 状态。格式和字幕映射逻辑见 [extract_metadata](../backend/app/ytdlp_service.py#L163)。
 
 ### JobRead 与 JobItemRead
 
-任务读模型由 [read_job](../backend/app/job_read_model.py#L10) 生成。任务级 `actual_resolution` 和 `actual_format` 是子视频聚合结果；单一值时显示具体值，playlist 不一致时显示 `混合分辨率` 或 `混合格式`，实现见 [job_read_model.py](../backend/app/job_read_model.py#L76)。
+任务读模型由 [read_job](../backend/app/job_read_model.py#L12) 生成。任务级 `actual_resolution` 和 `actual_format` 是子视频聚合结果；单一值时显示具体值，playlist 不一致时显示 `混合分辨率` 或 `混合格式`，实现见 [job_read_model.py](../backend/app/job_read_model.py#L76)。
 
 子视频级字段包括：
 
@@ -104,7 +105,7 @@
 
 ### ResolutionFallback
 
-字段定义见 [ResolutionFallback](../backend/app/schemas.py#L87)，消息构建逻辑见 [fallback_policy.py](../backend/app/fallback_policy.py#L10)。固定原因包括：
+字段定义见 [ResolutionFallback](../backend/app/schemas.py#L92)，消息构建逻辑见 [fallback_policy.py](../backend/app/fallback_policy.py#L10)。固定原因包括：
 
 - `requested_resolution_missing`
 - `source_below_720_only`
@@ -126,7 +127,7 @@
 
 ## 诊断字段
 
-`GET /api/diagnostics` 将 `YtDlpService.get_dependency_status()` 与配置值合并，见 [main.py](../backend/app/main.py#L102)。常见字段：
+`GET /api/diagnostics` 将 `YtDlpService.get_dependency_status()` 与配置值合并，见 [main.py](../backend/app/main.py#L112)。常见字段：
 
 - `ffmpeg`、`ffprobe`
 - `yt_dlp_version`

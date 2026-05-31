@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-YouTube Downloader 是本机单用户工具。前端提供链接解析、下载选项和任务中心，后端通过 `yt-dlp` 下载媒体并用 SQLite 保存任务状态。系统入口由 [FastAPI 应用](../backend/app/main.py#L37) 和 [React 应用](../frontend/src/App.tsx) 组成。
+YouTube Downloader 是本机单用户工具。前端提供链接解析、下载选项和任务中心，后端通过 `yt-dlp` 下载媒体并用 SQLite 保存任务状态。系统入口由 [FastAPI 应用](../backend/app/main.py#L41) 和 [React 应用](../frontend/src/App.tsx) 组成。
 
 请只下载你拥有权利或已获得许可的内容。本项目不绕过 DRM、会员、地区、年龄、私有视频等权限限制。
 
@@ -21,7 +21,7 @@ YouTube Downloader 是本机单用户工具。前端提供链接解析、下载�
 ## 基本下载流程
 
 1. 在首页输入单视频或 playlist 链接，点击解析。
-2. Playlist 会展示条目列表，可选择要下载的子视频；后端会根据选择生成 `JobItem`，见 [创建任务路由](../backend/app/main.py#L126)。
+2. Playlist 会展示条目列表，可选择要下载的子视频；后端会根据选择生成 `JobItem`，见 [创建任务路由](../backend/app/main.py#L136)。
 3. 在下载选项中选择下载模式、清晰度、字幕语言、字幕来源、字幕格式、metadata、缩略图、限速、重试和通知；默认清晰度为 `1440p`，默认字幕来源为“两者都要”。
 4. 点击加入下载队列，在任务中心观察进度、速度、预计剩余时间、实际分辨率和实际格式。
 5. 对任务执行暂停、重启、仅删除任务，或删除任务并删除已下载文件；前端 API 调用见 [api.ts](../frontend/src/api.ts#L75)。
@@ -47,7 +47,7 @@ YouTube Downloader 是本机单用户工具。前端提供链接解析、下载�
 
 ## 任务中心
 
-任务中心展示任务级和子视频级状态。后端 API 返回的字段见 [JobRead](../backend/app/schemas.py#L123) 和 [JobItemRead](../backend/app/schemas.py#L95)，前端展示组件见 [JobQueue](../frontend/src/components/JobQueue.tsx#L13)。
+任务中心展示任务级和子视频级状态。后端 API 返回的字段见 [JobRead](../backend/app/schemas.py#L128) 和 [JobItemRead](../backend/app/schemas.py#L95)，前端展示组件见 [JobQueue](../frontend/src/components/JobQueue.tsx#L13)。
 Playlist 展开后会用浅色分组背景承载子视频列表，便于区分合集任务行和单个视频任务。
 
 | 信息 | 说明 |
@@ -80,7 +80,7 @@ Cookies 会保存到本地 `data/cookies.txt`，该目录不进入 Git。
 
 ## 下载目录与产物
 
-默认下载根目录是 `downloads/`，数据库和 cookies 默认在 `data/`，配置默认值见 [AppSettings](../backend/app/config.py#L19)。Playlist 会在下载根目录下创建同名子文件夹；目录选择和保存逻辑见 [main.py](../backend/app/main.py#L275)。
+默认下载根目录是 `downloads/`，数据库和 cookies 默认在 `data/`，配置默认值见 [AppSettings](../backend/app/config.py#L19)。Playlist 会在下载根目录下创建同名子文件夹；目录选择和保存逻辑见 [main.py](../backend/app/main.py#L346)。
 
 ## 常见问题入口
 

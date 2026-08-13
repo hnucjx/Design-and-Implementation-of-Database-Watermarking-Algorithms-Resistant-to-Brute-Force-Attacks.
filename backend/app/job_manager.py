@@ -482,7 +482,7 @@ class JobManager:
                     transfer_stats.record(progress.downloaded_bytes)
                     hook_item.downloaded_bytes = progress.downloaded_bytes
                 if progress.total_bytes is not None:
-                    hook_item.total_bytes = progress.total_bytes
+                    hook_item.total_bytes = max(hook_item.total_bytes or 0, progress.total_bytes)
                 hook_item.progress = progress.progress
                 if status == "finished" and self._is_combined_format_payload(payload):
                     resolution = self.service.resolution_from_progress_payload(payload)
@@ -518,6 +518,7 @@ class JobManager:
         try:
             options = self._options_for_available_resolution(session, item, options)
             options = self._prepare_download(session, item, options)
+            progress_aggregator.set_expected_total_bytes(item.total_bytes)
             should_cancel = (
                 lambda: job.id in self._cancelled
                 or job.id in self._paused

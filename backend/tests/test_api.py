@@ -33,6 +33,7 @@ from fakes import (
     PreparedBlockingYtDlpService,
     RuntimeRestartYtDlpService,
     SingleAutoFallbackYtDlpService,
+    SidecarThenMediaProgressYtDlpService,
     SplitStreamProgressYtDlpService,
     UnselectableHighWithSafeFallbackService,
     UnselectableHighWithoutSafeFallbackService,
@@ -806,6 +807,43 @@ def test_finished_download_keeps_average_speed(tmp_path: Path, monkeypatch) -> N
     assert payload["items"][0]["speed"] == expected_speed
 
 
+def test_sidecar_then_media_progress_uses_prepared_filesize(tmp_path: Path) -> None:
+    service = SidecarThenMediaProgressYtDlpService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/sidecar-progress",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        job_id = response.json()["id"]
+
+        assert service.stages.get(timeout=2) == "sidecar_finished"
+        after_sidecar = client.get(f"/api/jobs/{job_id}").json()["items"][0]
+        assert after_sidecar["status"] == "running"
+        assert after_sidecar["progress"] < 5
+        assert after_sidecar["total_bytes"] == 1_000_000
+
+        service.continue_download()
+        assert service.stages.get(timeout=2) == "media_started"
+        after_media = client.get(f"/api/jobs/{job_id}").json()["items"][0]
+        assert after_media["progress"] == 10.2
+        assert after_media["speed"] == 50_000
+        assert after_media["eta"] == 18
+        assert after_media["total_bytes"] == 1_000_000
+
+        service.continue_download()
+        payload = wait_for_job_status(client, job_id, "succeeded")
+
+    item = payload["items"][0]
+    assert item["progress"] == 100
+    assert item["downloaded_bytes"] == 1_000_000
+    assert item["total_bytes"] == 1_000_000
+
+
 def test_split_stream_download_progress_does_not_look_like_restart(tmp_path: Path) -> None:
     service = SplitStreamProgressYtDlpService()
 
@@ -825,7 +863,7 @@ def test_split_stream_download_progress_does_not_look_like_restart(tmp_path: Pat
         assert service.stages.get(timeout=2) == "video_finished"
         after_video = client.get(f"/api/jobs/{job_id}").json()["items"][0]
         assert after_video["status"] == "running"
-        assert 0 < after_video["progress"] < 100
+        assert after_video["progress"] == 99.9
         assert after_video["downloaded_bytes"] == 100
         assert after_video["total_bytes"] == 100
 
@@ -833,7 +871,7 @@ def test_split_stream_download_progress_does_not_look_like_restart(tmp_path: Pat
         assert service.stages.get(timeout=2) == "audio_started"
         after_audio_started = client.get(f"/api/jobs/{job_id}").json()["items"][0]
         assert after_audio_started["status"] == "running"
-        assert after_audio_started["progress"] >= after_video["progress"]
+        assert after_audio_started["progress"] == 100 / 120 * 100
         assert after_audio_started["downloaded_bytes"] >= after_video["downloaded_bytes"]
         assert after_audio_started["total_bytes"] >= after_video["total_bytes"]
 

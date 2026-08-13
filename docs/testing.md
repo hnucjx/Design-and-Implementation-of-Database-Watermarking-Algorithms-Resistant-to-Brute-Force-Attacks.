@@ -48,7 +48,7 @@ python scripts\docs.py check
 | --- | --- |
 | [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置和诊断。 |
 | [test_ytdlp_service.py](../backend/tests/test_ytdlp_service.py) | yt-dlp 参数、profile、PO token、aria2c、格式选择和错误识别。 |
-| [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合，避免进度回退。 |
+| [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合：字幕/chunk 不锁死在 99.9%，分离音视频不把已下载字节重置为 0。 |
 | [test_transfer_stats.py](../backend/tests/test_transfer_stats.py) | 平均速度计算。 |
 | [test_paths.py](../backend/tests/test_paths.py) | 安全路径名。 |
 | [test_log_safety.py](../backend/tests/test_log_safety.py) | 日志敏感信息清洗。 |
@@ -93,7 +93,7 @@ python scripts\docs.py check
 ## 高风险回归点
 
 - YouTube 页面或媒体流变化导致 `yt-dlp` 解析或下载参数失效。
-- 分离音视频流导致进度回退。
+- 字幕、HTTP chunk 或分离音视频流把运行中进度锁在 99.9%，或把已下载字节重置为 0。
 - 媒体流 403/连接重置被错误地自动降清晰度重下。
 - 720p 自动降级底线失效。
 - 单视频失败原因被任务级聚合错误覆盖。

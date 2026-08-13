@@ -37,7 +37,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 2. worker 从队列取出 job id，调用 [_run_job_sync](../backend/app/job_manager.py#L388)。
 3. `_run_job_sync` 按 `JobItem.index` 顺序执行待处理子项。
 4. 单项由 [_run_item](../backend/app/job_manager.py#L439) 处理，负责预检测、下载、进度 hook、错误分类和终态写入。
-5. 全部子项处理后调用 [_finish_job](../backend/app/job_manager.py#L685) 聚合任务终态。
+5. 全部子项处理后调用 [_finish_job](../backend/app/job_manager.py#L686) 聚合任务终态。
 
 暂停和重启会重置运行中字段，但保留可重新执行的任务记录，见 [restart](../backend/app/job_manager.py#L160) 和 [restart_item](../backend/app/job_manager.py#L210)。Playlist 子视频删除由 `delete_items()` 处理：删除指定 `JobItem` 后刷新父任务聚合状态；如果删除最后一个子视频，父任务也会被删除。
 
@@ -62,18 +62,18 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 
 下载前的两类自动处理：
 
-- [_options_for_available_resolution](../backend/app/job_manager.py#L811)：源视频没有目标高度时，选择合规的较低清晰度。
-- [_prepare_download](../backend/app/job_manager.py#L852)：目标高度存在但 selector 选不出可下载组合时，尝试 720p 或更高降级。
+- [_options_for_available_resolution](../backend/app/job_manager.py#L812)：源视频没有目标高度时，选择合规的较低清晰度。
+- [_prepare_download](../backend/app/job_manager.py#L853)：目标高度存在但 selector 选不出可下载组合时，尝试 720p 或更高降级。
 
-媒体流 403/连接重置只标注 `media_stream_blocked` 并给重启建议，不自动降清晰度重下，相关逻辑见 [_annotate_media_stream_fallback](../backend/app/job_manager.py#L920)。
+媒体流 403/连接重置只标注 `media_stream_blocked` 并给重启建议，不自动降清晰度重下，相关逻辑见 [_annotate_media_stream_fallback](../backend/app/job_manager.py#L921)。
 
 ## 进度与平均速度
 
-yt-dlp 对分离视频/音频流会多次发送 progress payload。为避免 UI 在视频流 100% 后音频流从 0% 开始造成进度回退，后端使用 [DownloadProgressAggregator](../backend/app/download_progress.py#L21) 聚合多子流。
+yt-dlp 对字幕、缩略图、HTTP chunk 和分离视频/音频流会多次发送 progress payload。某个小文件或当前 chunk 的 `downloaded_bytes == total_bytes` 并不代表整个任务完成。后端使用 [DownloadProgressAggregator](../backend/app/download_progress.py#L21) 聚合多子流，并用 `prepare_download()` 得到的计划大小作为进度分母下限；当新子流让总大小增加时，允许百分比回落到真实比例，避免运行中进度被锁在 `99.9%`。已下载字节按子流单调累加，因此分离音视频时 UI 不会看起来像重新开始。
 
 视频大小复用 `JobItem.total_bytes`：下载前由 `prepare_download()` 从所选格式的 `filesize/filesize_approx` 写入，下载中由 progress payload 校准，下载完成后继续保留，前端在任务行和 playlist 子视频行展示。
 
-平均速度由 [TransferStats](../backend/app/transfer_stats.py#L5) 根据聚合下载字节和时间计算。运行中 `speed` 是 yt-dlp 当前瞬时速度，终态 `speed` 是平均速度，终态聚合见 [_terminal_job_speed](../backend/app/job_manager.py#L788)。
+平均速度由 [TransferStats](../backend/app/transfer_stats.py#L5) 根据聚合下载字节和时间计算。运行中 `speed` 是 yt-dlp 当前瞬时速度，终态 `speed` 是平均速度，终态聚合见 [_terminal_job_speed](../backend/app/job_manager.py#L789)。
 
 ## 读模型
 
@@ -112,4 +112,4 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 ## 日志安全
 
-下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L991)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。
+下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L992)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。

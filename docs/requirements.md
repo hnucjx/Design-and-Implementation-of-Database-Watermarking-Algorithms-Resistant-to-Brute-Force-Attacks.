@@ -24,7 +24,7 @@
 | FR-2 | 支持选择 playlist 子项并创建下载任务。 | [`_selected_entries`](../backend/app/main.py#L425)、[`CreateJobRequest`](../backend/app/schemas.py#L72) |
 | FR-3 | 支持视频+字幕、仅视频、仅字幕三种模式。 | [`DownloadMode`](../backend/app/schemas.py#L7) |
 | FR-4 | 用户只选择清晰度，默认 `1440p`；后端自动选择具体格式。 | [`format_selector`](../backend/app/ytdlp_formats.py#L9) |
-| FR-5 | 下载前预检测计划分辨率、格式和视频大小，任务中心展示实际值。 | [`prepare_download`](../backend/app/ytdlp_service.py#L200)、[`_apply_download_preparation`](../backend/app/job_manager.py#L885) |
+| FR-5 | 下载前预检测计划分辨率、格式和视频大小，任务中心展示实际值。 | [`prepare_download`](../backend/app/ytdlp_service.py#L200)、[`_apply_download_preparation`](../backend/app/job_manager.py#L886) |
 | FR-6 | 支持明确的分辨率降级原因和重启建议。 | [`fallback_policy.py`](../backend/app/fallback_policy.py#L4) |
 | FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除、批量操作，以及本地播放/打开文件夹。 | [`batch_job_action`](../backend/app/main.py#L180)、[`system_open.py`](../backend/app/system_open.py) |
 | FR-8 | 默认请求人工字幕和自动字幕；缺少某类字幕时 fallback 到另一类可用字幕，并显示来源与格式。 | [`DownloadOptions`](../backend/app/schemas.py#L56)、[`DownloadOptionsPanel`](../frontend/src/App.tsx#L640) |

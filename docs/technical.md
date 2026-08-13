@@ -18,7 +18,7 @@
 
 ## 下载前预检测
 
-在实际下载前，`JobManager` 会调用 [prepare_download](../backend/app/ytdlp_service.py#L200) 让 yt-dlp 按当前 selector 选择计划下载格式。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L885) 写入：
+在实际下载前，`JobManager` 会调用 [prepare_download](../backend/app/ytdlp_service.py#L200) 让 yt-dlp 按当前 selector 选择计划下载格式。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L886) 写入：
 
 - `actual_width`
 - `actual_height`
@@ -52,7 +52,7 @@
 - `fragment_retries=20`、`file_access_retries=5`、`extractor_retries=5`。
 - `socket_timeout=30`。
 - `concurrent_fragment_downloads=1`。
-- `http_chunk_size=16 MiB` 默认值。
+- `http_chunk_size=16 MiB` 默认值。进度百分比不能用单个 chunk 的 `total_bytes` 当成分母；聚合器会结合计划文件大小计算，见 [实现文档](implementation.md#进度与平均速度)。
 - `throttledratelimit=64 KiB/s` 默认值，用于低速重取 fresh media URL，不是限速。
 - 默认 worker 并发为 5；若追求稳定，可在设置面板或 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS=1` 中降为 1。配置见 [default_download_concurrency](../backend/app/config.py#L12)。
 
@@ -70,7 +70,7 @@ YouTube 媒体流 403 或连接中断时，`YtDlpService.download()` 会在同�
 
 ## Cookies 与登录态
 
-Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/main.py#L93)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L628)。
+Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/main.py#L93)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L629)。
 
 浏览器导入器只保存 YouTube/Google 相关 cookies，过滤规则见 [YOUTUBE_COOKIE_DOMAIN_SUFFIXES](../backend/app/browser_cookies.py#L20)。Edge 锁库和 DPAPI fallback 处理见 [browser_cookies.py](../backend/app/browser_cookies.py#L117)。
 

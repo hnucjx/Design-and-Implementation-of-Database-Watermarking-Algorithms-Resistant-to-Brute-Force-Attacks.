@@ -88,6 +88,65 @@ class AverageSpeedYtDlpService(FakeYtDlpService):
         progress_hook({"status": "finished", "downloaded_bytes": 8192, "total_bytes": 8192, "filename": f"{url}.mp4"})
 
 
+class SidecarThenMediaProgressYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.stages: queue.Queue[str] = queue.Queue()
+        self.release = threading.Event()
+
+    def continue_download(self) -> None:
+        self.release.set()
+
+    def prepare_download(self, url, options, cookies_path=None):
+        return SimpleNamespace(
+            is_selectable=True,
+            width=1920,
+            height=1080,
+            actual_format="mp4 · avc1 + mp4a",
+            filesize=1_000_000,
+        )
+
+    def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
+        progress_hook(
+            {
+                "status": "finished",
+                "downloaded_bytes": 2_000,
+                "total_bytes": 2_000,
+                "filename": "video.en.vtt",
+            }
+        )
+        self.stages.put("sidecar_finished")
+        self.release.wait(timeout=5)
+        self.release.clear()
+        progress_hook(
+            {
+                "status": "downloading",
+                "downloaded_bytes": 100_000,
+                "total_bytes": 998_000,
+                "tmpfilename": "video.mp4.part",
+                "speed": 50_000,
+                "eta": 18,
+                "info_dict": {"format_id": "137", "filesize": 998_000},
+            }
+        )
+        self.stages.put("media_started")
+        self.release.wait(timeout=5)
+        self.release.clear()
+        progress_hook(
+            {
+                "status": "finished",
+                "downloaded_bytes": 998_000,
+                "total_bytes": 998_000,
+                "filename": "video.mp4",
+                "info_dict": {"format_id": "137", "filesize": 998_000},
+            }
+        )
+        if download_dir is not None:
+            final_file = Path(download_dir) / "video.mp4"
+            final_file.parent.mkdir(parents=True, exist_ok=True)
+            final_file.write_text("video", encoding="utf-8")
+
+
 class SplitStreamProgressYtDlpService(FakeYtDlpService):
     def __init__(self):
         super().__init__()

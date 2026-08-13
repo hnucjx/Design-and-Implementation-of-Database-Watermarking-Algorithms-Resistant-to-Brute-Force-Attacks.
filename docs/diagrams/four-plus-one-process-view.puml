@@ -24,16 +24,14 @@ fork again
   :UI refreshes /api/jobs;
 end fork
 
-if (queued job exists?) then (yes)
-  :Worker picks job respecting concurrency;
-  repeat
-    :Mark JobItem running;
-    :Prepare planned format, size, resolution;
-    :Run yt-dlp download with retries/profiles;
-    :Aggregate raw stream progress;
-    :Persist progress and events;
-  repeat while (more items?) is (yes)
-  :Project final job status;
+if (queued item exists?) then (yes)
+  :Worker picks JobItem respecting video concurrency;
+  :Mark JobItem running;
+  :Prepare planned format, size, resolution;
+  :Run yt-dlp download with retries/profiles;
+  :Aggregate raw stream progress;
+  :Persist progress and events;
+  :Finish job only when no queued/running items remain;
 else (no)
   :Remain idle;
 endif

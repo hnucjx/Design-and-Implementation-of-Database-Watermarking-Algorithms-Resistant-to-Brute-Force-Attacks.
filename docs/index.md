@@ -43,7 +43,7 @@ UML 源码位于 [diagrams](diagrams/)，渲染后的 SVG 位于 [assets/diagram
 | [4+1 场景视图](diagrams/four-plus-one-scenario-view.puml) | 关键用户用例与架构视图的串联。 |
 | [下载生命周期](diagrams/download-lifecycle.puml) | 任务和子视频的状态流转。 |
 | [单视频时序](diagrams/single-video-sequence.puml) | 单视频解析、入队、下载和进度返回流程。 |
-| [Playlist 时序](diagrams/playlist-sequence.puml) | Playlist 选择条目、逐项下载和聚合状态。 |
+| [Playlist 时序](diagrams/playlist-sequence.puml) | Playlist 选择条目、按并发并行下载子视频和聚合状态。 |
 | [Cookies 流程](diagrams/cookies-flow.puml) | 手动上传、浏览器导入、Edge 锁库和 CDP fallback。 |
 | [数据模型](diagrams/data-model.puml) | SQLite 表和 API 读模型之间的关系。 |
 

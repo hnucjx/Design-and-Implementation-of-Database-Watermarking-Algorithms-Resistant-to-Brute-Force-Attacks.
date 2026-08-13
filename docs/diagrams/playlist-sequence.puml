@@ -24,9 +24,9 @@ API -> DB : insert one Job
 loop selected entries
   API -> DB : insert JobItem(index, title, source_url)
 end
-API -> Manager : enqueue(job_id)
+API -> Manager : enqueue queued JobItem ids
 
-loop queued JobItems ordered by index
+loop workers dequeue JobItems up to concurrency
   Manager -> Service : prepare_download(item)
   Manager -> Service : download(item)
   Service --> Manager : progress/finished/error

@@ -43,9 +43,9 @@ class JobManager:
         self._deleted: set[str] = set()
         self._deleted_items: set[str] = set()
         self._runtime_restart_items: set[str] = set()
-        self._runtime_restarting_jobs: set[str] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._cookie_import_lock = threading.Lock()
+        self._item_claim_lock = threading.Lock()
 
     async def start(self) -> None:
         if self._queue is not None:
@@ -119,7 +119,8 @@ class JobManager:
     async def enqueue(self, job_id: str) -> None:
         await self.start()
         assert self._queue is not None
-        await self._queue.put(job_id)
+        for item_id in self._queued_item_ids(job_id):
+            await self._queue.put(item_id)
         await self._publish({"type": "job_queued", "job_id": job_id})
 
     async def cancel(self, job_id: str) -> None:
@@ -205,7 +206,8 @@ class JobManager:
         await self.start()
         await self._publish({"type": "job_restarted", "job_id": job_id})
         assert self._queue is not None
-        self._queue.put_nowait(job_id)
+        for item_id in self._queued_item_ids(job_id):
+            self._queue.put_nowait(item_id)
 
     async def restart_item(self, job_id: str, item_id: str, resolution: str | None = None) -> bool:
         self._paused.discard(job_id)
@@ -253,7 +255,7 @@ class JobManager:
         await self.start()
         await self._publish({"type": "item_restarted", "job_id": job_id, "item_id": item_id})
         assert self._queue is not None
-        self._queue.put_nowait(job_id)
+        self._queue.put_nowait(item_id)
         return True
 
     async def delete_items(
@@ -377,64 +379,101 @@ class JobManager:
     async def _worker(self, worker_index: int) -> None:
         assert self._queue is not None
         while True:
-            job_id = await self._queue.get()
+            item_id = await self._queue.get()
             try:
-                if job_id is None:
+                if item_id is None:
                     return
-                await asyncio.to_thread(self._run_job_sync, job_id)
+                await asyncio.to_thread(self._run_item_work, item_id)
             finally:
                 self._queue.task_done()
 
-    def _run_job_sync(self, job_id: str) -> None:
+    def _queued_item_ids(self, job_id: str) -> list[str]:
         with Session(self.engine) as session:
-            job = session.get(Job, job_id)
+            items = session.exec(
+                select(JobItem)
+                .where(JobItem.job_id == job_id, JobItem.status == JobStatus.queued.value)
+                .order_by(JobItem.index)
+            ).all()
+            return [item.id for item in items]
+
+    def _run_item_work(self, item_id: str) -> None:
+        with Session(self.engine) as session:
+            item = session.get(JobItem, item_id)
+            if not item:
+                return
+            job = session.get(Job, item.job_id)
             if not job:
                 return
-            if job_id in self._deleted:
+            if item.id in self._deleted_items or job.id in self._deleted:
                 return
-            if job_id in self._paused:
-                self._mark_job_paused(session, job)
-                return
-            if job_id in self._cancelled:
-                self._mark_job_cancelled(session, job)
-                return
-            now = utc_now()
-            job.status = JobStatus.running.value
-            job.started_at = job.started_at or now
-            job.finished_at = None
-            job.updated_at = now
-            session.add(job)
-            session.commit()
-            self._publish_threadsafe({"type": "job_started", "job_id": job_id})
-
-            items = session.exec(select(JobItem).where(JobItem.job_id == job_id).order_by(JobItem.index)).all()
-            options = DownloadOptions.model_validate(json.loads(job.options_json))
-            download_dir = Path(job.download_dir) if job.download_dir else self.settings.download_dir
-            for item in items:
+            with self._item_claim_lock:
+                session.refresh(item)
                 if item.status != JobStatus.queued.value:
-                    continue
-                if item.id in self._deleted_items:
-                    continue
-                if job_id in self._deleted:
                     return
-                if job_id in self._paused:
+                if job.id in self._paused:
                     item.status = JobStatus.paused.value
                     item.updated_at = utc_now()
                     session.add(item)
                     session.commit()
-                    break
-                if job_id in self._cancelled:
+                    self._maybe_finish_job(session, job)
+                    return
+                if job.id in self._cancelled:
                     item.status = JobStatus.cancelled.value
                     item.updated_at = utc_now()
                     session.add(item)
                     session.commit()
-                    break
-                self._run_item(session, job, item, self._item_options(item, options), download_dir)
-                if job.id in self._runtime_restarting_jobs:
-                    self._runtime_restarting_jobs.discard(job.id)
+                    self._maybe_finish_job(session, job)
                     return
+                item.status = JobStatus.running.value
+                item.updated_at = utc_now()
+                session.add(item)
+                session.commit()
 
-            self._finish_job(session, job)
+            self._mark_job_running(session, job)
+            options = DownloadOptions.model_validate(json.loads(job.options_json))
+            download_dir = Path(job.download_dir) if job.download_dir else self.settings.download_dir
+            self._run_item(session, job, item, self._item_options(item, options), download_dir)
+            session.refresh(job)
+            if job.id in self._deleted:
+                return
+            self._maybe_finish_job(session, job)
+
+    def _mark_job_running(self, session: Session, job: Job) -> None:
+        now = utc_now()
+        already_running = job.status == JobStatus.running.value
+        job.status = JobStatus.running.value
+        job.started_at = job.started_at or now
+        job.finished_at = None
+        job.updated_at = now
+        session.add(job)
+        session.commit()
+        if not already_running:
+            self._publish_threadsafe({"type": "job_started", "job_id": job.id})
+
+    def _maybe_finish_job(self, session: Session, job: Job) -> None:
+        if job.id in self._deleted:
+            return
+        items = session.exec(select(JobItem).where(JobItem.job_id == job.id)).all()
+        if not items:
+            return
+        running_items = [item for item in items if item.status == JobStatus.running.value]
+        queued_items = [item for item in items if item.status == JobStatus.queued.value]
+        if running_items:
+            job.status = JobStatus.running.value
+            job.current_item_title = running_items[0].title
+            job.finished_at = None
+            job.updated_at = utc_now()
+            session.add(job)
+            session.commit()
+            return
+        if queued_items and job.id not in self._paused and job.id not in self._cancelled:
+            job.status = JobStatus.running.value
+            job.finished_at = None
+            job.updated_at = utc_now()
+            session.add(job)
+            session.commit()
+            return
+        self._finish_job(session, job)
 
     def _run_item(
         self,
@@ -536,7 +575,6 @@ class JobManager:
         except DownloadCancelled:
             if item.id in self._runtime_restart_items:
                 self._runtime_restart_items.discard(item.id)
-                self._runtime_restarting_jobs.add(job.id)
                 runtime_restart_requested = True
                 item.status = JobStatus.queued.value
                 item.progress = 0.0
@@ -545,12 +583,6 @@ class JobManager:
                 item.error = None
                 item.started_at = None
                 item.finished_at = None
-                job.status = JobStatus.queued.value
-                job.current_item_title = None
-                job.speed = None
-                job.eta = None
-                job.error = None
-                job.finished_at = None
             elif job.id in self._paused:
                 item.status = JobStatus.paused.value
                 item.error = None
@@ -606,7 +638,7 @@ class JobManager:
                         "reason": "runtime_download_options_changed",
                     }
                 )
-                self._enqueue_threadsafe(job.id)
+                self._enqueue_threadsafe(item.id)
                 return
             item.finished_at = utc_now() if item.status != JobStatus.paused.value else None
             if item.status in {JobStatus.succeeded.value, JobStatus.failed.value, JobStatus.cancelled.value}:
@@ -1048,9 +1080,9 @@ class JobManager:
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(asyncio.create_task, self.broker.publish(payload))
 
-    def _enqueue_threadsafe(self, job_id: str) -> None:
+    def _enqueue_threadsafe(self, item_id: str) -> None:
         if self._loop and self._loop.is_running() and self._queue is not None:
-            self._loop.call_soon_threadsafe(self._queue.put_nowait, job_id)
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, item_id)
 
 
 def new_id() -> str:

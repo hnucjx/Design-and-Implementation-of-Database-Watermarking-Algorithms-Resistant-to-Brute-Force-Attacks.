@@ -46,7 +46,7 @@ python scripts\docs.py check
 
 | 文件 | 重点 |
 | --- | --- |
-| [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置和诊断。 |
+| [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置、诊断，以及合集子视频按并发并行下载。 |
 | [test_ytdlp_service.py](../backend/tests/test_ytdlp_service.py) | yt-dlp 参数、profile、PO token、aria2c、格式选择和错误识别。 |
 | [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合：字幕/chunk 不锁死在 99.9%，分离音视频不把已下载字节重置为 0。 |
 | [test_transfer_stats.py](../backend/tests/test_transfer_stats.py) | 平均速度计算。 |
@@ -93,6 +93,7 @@ python scripts\docs.py check
 ## 高风险回归点
 
 - YouTube 页面或媒体流变化导致 `yt-dlp` 解析或下载参数失效。
+- 并发只按任务占用 worker，导致合集子视频无法并行下载。
 - 字幕、HTTP chunk 或分离音视频流把运行中进度锁在 99.9%，或把已下载字节重置为 0。
 - 媒体流 403/连接重置被错误地自动降清晰度重下。
 - 720p 自动降级底线失效。

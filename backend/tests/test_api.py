@@ -224,6 +224,65 @@ def test_updating_concurrency_starts_additional_worker_without_restart(tmp_path:
         service.release.set()
 
 
+def test_playlist_items_download_in_parallel_up_to_concurrency(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    settings.default_concurrency = 2
+    service = BlockingYtDlpService()
+
+    with TestClient(create_app(settings=settings, ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtube.com/playlist?list=abc",
+                "options": {
+                    "mode": "video_subtitles",
+                    "resolution": "720p",
+                    "playlist_items": [1, 2],
+                },
+            },
+        )
+        assert response.status_code == 201
+
+        started = {service.started.get(timeout=2), service.started.get(timeout=2)}
+        service.release.set()
+
+    assert started == {"https://youtu.be/one", "https://youtu.be/two"}
+
+
+def test_concurrency_counts_videos_across_single_and_playlist_jobs(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    settings.default_concurrency = 3
+    service = BlockingYtDlpService()
+
+    with TestClient(create_app(settings=settings, ytdlp_service=service)) as client:
+        single = client.post(
+            "/api/jobs",
+            json={"url": "https://youtu.be/single", "options": {"mode": "video_subtitles", "resolution": "720p"}},
+        )
+        playlist = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtube.com/playlist?list=abc",
+                "options": {
+                    "mode": "video_subtitles",
+                    "resolution": "720p",
+                    "playlist_items": [1, 2],
+                },
+            },
+        )
+        assert single.status_code == 201
+        assert playlist.status_code == 201
+
+        started = {
+            service.started.get(timeout=2),
+            service.started.get(timeout=2),
+            service.started.get(timeout=2),
+        }
+        service.release.set()
+
+    assert started == {"https://youtu.be/single", "https://youtu.be/one", "https://youtu.be/two"}
+
+
 def test_settings_return_and_persist_runtime_download_defaults(tmp_path: Path) -> None:
     with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=FakeYtDlpService())) as client:
         defaults = client.get("/api/settings").json()

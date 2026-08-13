@@ -47,11 +47,11 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 
 [YtDlpService](../backend/app/ytdlp_service.py#L84) 是 yt-dlp 的边界层。它负责：
 
-- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L163)。
-- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L200)。
-- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L235)。
-- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L316)。
-- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L112)。
+- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L161)。
+- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L198)。
+- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L233)。
+- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L312)。
+- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L110)。
 - 错误分类：cookies、403、连接重置和格式不可用。
 
 `YtDlpService` 不把任意 yt-dlp 参数暴露给 API，只接受项目定义的 `DownloadOptions`。

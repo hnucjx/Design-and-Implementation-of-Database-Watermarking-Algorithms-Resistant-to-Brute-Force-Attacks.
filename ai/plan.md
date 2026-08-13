@@ -1345,7 +1345,7 @@ git push origin main
 
 Why: `JobManager` already spaces videos via item-level concurrency. yt-dlp `sleep_interval` still fires between video, audio, subtitle, and thumbnail files of a **single** `noplaylist` download, adding 2–5 seconds of idle time per sidecar.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Replace `test_download_options_apply_conservative_youtube_request_pacing` assertions in `backend/tests/test_ytdlp_service.py`:
 
@@ -1365,13 +1365,13 @@ def test_download_options_pace_player_requests_but_not_intra_item_files(tmp_path
 
 Keep `test_extract_metadata_maps_playlist_entries_formats_and_subtitles` asserting `captured_opts["sleep_interval_requests"] == 1.0`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest backend\tests\test_ytdlp_service.py::test_download_options_pace_player_requests_but_not_intra_item_files -v`
 
 Expected: FAIL because `sleep_interval` is `2.0`.
 
-- [ ] **Step 3: Remove playlist sleep from download options**
+- [x] **Step 3: Remove playlist sleep from download options**
 
 In `build_download_options`, delete:
 
@@ -1382,19 +1382,19 @@ In `build_download_options`, delete:
 
 Keep `sleep_interval_requests`. Leave `YTDLP_DOWNLOAD_SLEEP_SECONDS` and `YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS` unused only if nothing else references them — then delete the unused constants to avoid dead code.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python -m pytest backend\tests\test_ytdlp_service.py -q`
 
 Expected: PASS
 
-- [ ] **Step 5: Sync docs**
+- [x] **Step 5: Sync docs**
 
 `docs/technical.md` 稳定下载策略: document that worker concurrency is the video-level throttle; yt-dlp no longer sleeps 2–5s between files of one item; player-API `sleep_interval_requests` remains 1s.
 
 `docs/user-manual.md` 下载选项 / 进度: note that a single video's audio merge should start without a multi-second pause after the video stream finishes; if YouTube starts returning 403 more often, lower concurrency to 1 rather than re-adding intra-item sleep.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```powershell
 git add backend/app/ytdlp_service.py backend/tests/test_ytdlp_service.py docs/technical.md docs/user-manual.md

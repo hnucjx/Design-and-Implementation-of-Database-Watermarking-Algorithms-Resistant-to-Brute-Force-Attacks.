@@ -39,8 +39,6 @@ from .ytdlp_formats import (
 
 
 YTDLP_REQUEST_SLEEP_SECONDS = 1.0
-YTDLP_DOWNLOAD_SLEEP_SECONDS = 2.0
-YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS = 5.0
 YTDLP_SOCKET_TIMEOUT_SECONDS = 30
 YTDLP_FRAGMENT_RETRIES = 20
 YTDLP_FILE_ACCESS_RETRIES = 5
@@ -259,8 +257,6 @@ class YtDlpService:
             "outtmpl": str(target_dir / "%(title).200B [%(id)s].%(ext)s"),
             "color": "no_color",
             "sleep_interval_requests": YTDLP_REQUEST_SLEEP_SECONDS,
-            "sleep_interval": YTDLP_DOWNLOAD_SLEEP_SECONDS,
-            "max_sleep_interval": YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS,
         }
         youtube_profile = self._normalize_youtube_profile(youtube_profile)
         ydl_opts.update(self._javascript_runtime_options())

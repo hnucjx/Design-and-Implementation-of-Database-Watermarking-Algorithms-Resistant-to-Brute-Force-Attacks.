@@ -772,7 +772,7 @@ def test_download_options_ignore_user_ytdlp_config(tmp_path: Path) -> None:
     assert opts["ignoreconfig"] is True
 
 
-def test_download_options_apply_conservative_youtube_request_pacing(tmp_path: Path) -> None:
+def test_download_options_pace_player_requests_but_not_intra_item_files(tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
 
     opts = service.build_download_options(
@@ -781,8 +781,8 @@ def test_download_options_apply_conservative_youtube_request_pacing(tmp_path: Pa
     )
 
     assert opts["sleep_interval_requests"] == 1.0
-    assert opts["sleep_interval"] == 2.0
-    assert opts["max_sleep_interval"] == 5.0
+    assert "sleep_interval" not in opts
+    assert "max_sleep_interval" not in opts
 
 
 def test_cookie_required_error_detection_handles_youtube_bot_challenge(tmp_path: Path) -> None:

@@ -968,7 +968,7 @@ Rules:
 - Allow when `abs(progress - last_progress) >= 0.5`.
 - Otherwise skip SQLite commit and SSE. Do not skip aggregator or transfer stats.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `backend/tests/test_progress_persist.py`:
 
@@ -992,13 +992,13 @@ def test_progress_persist_gate_allows_interval_or_progress_jump() -> None:
     assert gate.allow(status="downloading", progress=11.0, now=0.40) is True
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python -m pytest backend\tests\test_progress_persist.py -v`
 
 Expected: FAIL with `ModuleNotFoundError: app.progress_persist`
 
-- [ ] **Step 3: Implement the gate**
+- [x] **Step 3: Implement the gate**
 
 Create `backend/app/progress_persist.py`:
 
@@ -1034,7 +1034,7 @@ class ProgressPersistGate:
         self._last_allowed_at = now
 ```
 
-- [ ] **Step 4: Wire the gate into `job_manager.py`**
+- [x] **Step 4: Wire the gate into `job_manager.py`**
 
 Add imports:
 
@@ -1068,7 +1068,7 @@ def progress_hook(payload: dict[str, Any]) -> None:
 
 Move `status = payload.get("status")` before the session (it is currently inside the session). Keep the rest of the hook body.
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [x] **Step 5: Run tests to verify they pass**
 
 Run:
 
@@ -1078,7 +1078,7 @@ python -m pytest backend\tests\test_progress_persist.py backend\tests\test_downl
 
 Expected: PASS. Intermediate UI polls in `test_api.py` still work because the first downloading snapshot and every `finished` payload persist.
 
-- [ ] **Step 6: Sync docs**
+- [x] **Step 6: Sync docs**
 
 `docs/implementation.md` progress section: aggregator still updates every payload; SQLite/SSE persist at most about 4 Hz unless progress jumps ≥ 0.5% or the payload is `finished`/`error`.
 
@@ -1088,7 +1088,7 @@ Expected: PASS. Intermediate UI polls in `test_api.py` still work because the fi
 
 `docs/diagrams/single-video-sequence.puml`: `Manager -> DB : throttled progress persist`.
 
-- [ ] **Step 7: Commit and push**
+- [x] **Step 7: Commit and push**
 
 ```powershell
 git add backend/app/progress_persist.py backend/app/job_manager.py backend/tests/test_progress_persist.py docs/implementation.md docs/testing.md docs/diagrams/four-plus-one-development-view.puml docs/diagrams/single-video-sequence.puml

@@ -50,6 +50,7 @@ python scripts\docs.py check
 | [test_db.py](../backend/tests/test_db.py) | SQLite WAL、`busy_timeout` 和 `synchronous=NORMAL`。 |
 | [test_ytdlp_service.py](../backend/tests/test_ytdlp_service.py) | yt-dlp 参数、profile、PO token、aria2c、格式选择和错误识别。 |
 | [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合：字幕/chunk 不锁死在 99.9%，分离音视频不把已下载字节重置为 0。 |
+| [test_progress_persist.py](../backend/tests/test_progress_persist.py) | 进度 SQLite/SSE 写入节流：首次、终态、时间间隔和进度跳变。 |
 | [test_transfer_stats.py](../backend/tests/test_transfer_stats.py) | 平均速度计算。 |
 | [test_paths.py](../backend/tests/test_paths.py) | 安全路径名。 |
 | [test_log_safety.py](../backend/tests/test_log_safety.py) | 日志敏感信息清洗。 |

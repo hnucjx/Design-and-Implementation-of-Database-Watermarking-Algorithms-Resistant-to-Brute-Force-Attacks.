@@ -34,7 +34,7 @@ Manager -> Service : download()
 Service -> YTDLP : download with progress hook
 YTDLP -> YouTube : media stream
 YTDLP --> Manager : progress payloads
-Manager -> DB : update progress
+Manager -> DB : throttled progress persist
 UI -> API : GET /api/jobs
 API -> DB : read projection
 API --> UI : JobRead

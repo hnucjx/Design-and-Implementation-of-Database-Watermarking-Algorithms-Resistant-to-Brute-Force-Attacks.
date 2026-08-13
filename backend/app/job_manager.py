@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from sqlmodel import Session, select
 from .config import AppSettings
 from .download_progress import DownloadProgressAggregator
 from .events import EventBroker
+from .progress_persist import ProgressPersistGate
 from .fallback_policy import (
     MEDIA_STREAM_BLOCKED,
     REQUESTED_RESOLUTION_MISSING,
@@ -505,20 +507,24 @@ class JobManager:
         self._publish_threadsafe({"type": "item_started", "job_id": job.id, "item_id": item.id, "title": item.title})
         transfer_stats = TransferStats()
         progress_aggregator = DownloadProgressAggregator()
+        persist_gate = ProgressPersistGate()
         runtime_restart_requested = False
 
         def progress_hook(payload: dict[str, Any]) -> None:
             if job.id in self._deleted:
+                return
+            status = payload.get("status")
+            progress = progress_aggregator.update(payload)
+            if progress.downloaded_bytes is not None:
+                transfer_stats.record(progress.downloaded_bytes)
+            if not persist_gate.allow(status=status, progress=progress.progress, now=time.monotonic()):
                 return
             with Session(self.engine) as hook_session:
                 hook_item = hook_session.get(JobItem, item.id)
                 hook_job = hook_session.get(Job, job.id)
                 if not hook_item or not hook_job:
                     return
-                status = payload.get("status")
-                progress = progress_aggregator.update(payload)
                 if progress.downloaded_bytes is not None:
-                    transfer_stats.record(progress.downloaded_bytes)
                     hook_item.downloaded_bytes = progress.downloaded_bytes
                 if progress.total_bytes is not None:
                     hook_item.total_bytes = max(hook_item.total_bytes or 0, progress.total_bytes)

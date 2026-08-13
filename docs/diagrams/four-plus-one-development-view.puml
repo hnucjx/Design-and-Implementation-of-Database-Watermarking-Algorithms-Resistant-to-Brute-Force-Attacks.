@@ -23,6 +23,7 @@ package "backend/app" {
   [ytdlp_formats.py] as FormatHelpers
   [fallback_policy.py] as Fallback
   [download_progress.py] as Progress
+  [progress_persist.py] as PersistGate
   [transfer_stats.py] as TransferStats
   [browser_cookies.py] as BrowserCookies
   [output_paths.py] as OutputPaths
@@ -50,6 +51,7 @@ Manager --> Models
 Manager --> Service
 Manager --> Fallback
 Manager --> Progress
+Manager --> PersistGate
 Manager --> TransferStats
 Manager --> OutputPaths
 Manager --> SystemOpen

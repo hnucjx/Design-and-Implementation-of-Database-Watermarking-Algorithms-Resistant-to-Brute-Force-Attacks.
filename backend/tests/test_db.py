@@ -1,9 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
+import sqlite3
 
 from sqlalchemy import text
 
 from app.config import AppSettings
-from app.db import create_app_engine, init_db
+from app.db import _configure_sqlite_connection, create_app_engine, init_db
 from app.models import Job  # noqa: F401 — register SQLModel metadata
 
 
@@ -24,3 +26,20 @@ def test_sqlite_engine_enables_wal_and_busy_timeout(tmp_path: Path) -> None:
     assert str(journal_mode).lower() == "wal"
     assert int(busy_timeout) == 5000
     assert int(synchronous) == 1
+
+
+class _LockedWalCursor:
+    def execute(self, sql: str) -> None:
+        if "journal_mode=WAL" in sql:
+            raise sqlite3.OperationalError("database is locked")
+
+    def fetchall(self) -> list:
+        return []
+
+    def close(self) -> None:
+        return None
+
+
+def test_wal_pragma_does_not_raise_when_database_is_locked() -> None:
+    connection = SimpleNamespace(cursor=lambda: _LockedWalCursor())
+    _configure_sqlite_connection(connection, None)

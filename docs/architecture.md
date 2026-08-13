@@ -18,7 +18,7 @@ PlantUML 源文件：[system-context.puml](diagrams/system-context.puml)。
 | --- | --- | --- |
 | React/Vite 前端 | 解析表单、下载选项、任务中心、cookies 操作和设置面板。 | [App.tsx](../frontend/src/App.tsx)、[api.ts](../frontend/src/api.ts#L23) |
 | FastAPI 后端 | HTTP API、SSE、任务调度、SQLite 持久化、调用 yt-dlp。 | [create_app](../backend/app/main.py#L41) |
-| SQLite | 存储任务、子任务、设置和事件。 | [models.py](../backend/app/models.py#L27)、[db.py](../backend/app/db.py#L18) |
+| SQLite | 存储任务、子任务、设置和事件。 | [models.py](../backend/app/models.py#L27)、[db.py](../backend/app/db.py#L27) |
 | yt-dlp 服务 | 元数据解析、下载参数构建、profile 重试、格式选择和依赖诊断。 | [YtDlpService](../backend/app/ytdlp_service.py#L84) |
 | 浏览器 cookies 导入器 | 从本机浏览器导入 YouTube/Google cookies，并处理 Edge 锁库和 CDP fallback。 | [BrowserCookieImporter](../backend/app/browser_cookies.py#L55) |
 
@@ -70,7 +70,7 @@ PlantUML 源文件：[download-lifecycle.puml](diagrams/download-lifecycle.puml)
 
 PlantUML 源文件：[data-model.puml](diagrams/data-model.puml)。
 
-核心表是 `Job`、`JobItem`、`JobEvent` 和 `Setting`。旧数据库兼容列通过 `_ensure_columns()` 自动补齐，见 [db.py](../backend/app/db.py#L31)。
+核心表是 `Job`、`JobItem`、`JobEvent` 和 `Setting`。旧数据库兼容列通过 `_ensure_columns()` 自动补齐，见 [db.py](../backend/app/db.py#L43)。
 
 ## 文档工具链
 

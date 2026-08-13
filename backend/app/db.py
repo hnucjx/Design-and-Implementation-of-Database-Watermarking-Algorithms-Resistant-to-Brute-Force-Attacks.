@@ -1,4 +1,6 @@
 from collections.abc import Generator
+import logging
+import sqlite3
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
@@ -6,19 +8,29 @@ from sqlmodel import Session, SQLModel, create_engine
 
 from .config import AppSettings
 
+logger = logging.getLogger(__name__)
+
 
 def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
     cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.execute("PRAGMA busy_timeout=5000")
-    cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.close()
+    try:
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.fetchall()
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    except sqlite3.OperationalError:
+        logger.warning("SQLite WAL pragma skipped because the database is locked")
+    finally:
+        cursor.close()
 
 
 def create_app_engine(settings: AppSettings) -> Engine:
     settings.ensure_directories()
     sqlite_url = f"sqlite:///{settings.database_path.as_posix()}"
-    engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+    engine = create_engine(
+        sqlite_url,
+        connect_args={"check_same_thread": False, "timeout": 5},
+    )
     event.listen(engine, "connect", _configure_sqlite_connection)
     return engine
 

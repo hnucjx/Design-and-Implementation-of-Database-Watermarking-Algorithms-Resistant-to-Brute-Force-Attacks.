@@ -25,7 +25,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 | `JobItem` | 保存 playlist 子视频或单视频的实际进度、输出文件、分辨率、格式、错误和降级原因。 |
 | `JobEvent` | 保存任务事件，配合 SSE 推送。 |
 
-数据库初始化调用 [init_db](../backend/app/db.py#L26)。为了兼容旧数据库，[_ensure_columns](../backend/app/db.py#L31) 会补齐新增列。[create_app_engine](../backend/app/db.py#L18) 在每条 SQLite 连接上启用 WAL、`busy_timeout=5000` 和 `synchronous=NORMAL`，让多个下载 worker 的进度写入互相等待而不是立刻报 `database is locked`。
+数据库初始化调用 [init_db](../backend/app/db.py#L38)。为了兼容旧数据库，[_ensure_columns](../backend/app/db.py#L43) 会补齐新增列。[create_app_engine](../backend/app/db.py#L27) 在每条 SQLite 连接上先设置 `busy_timeout=5000`，再启用 WAL 和 `synchronous=NORMAL`，让多个下载 worker 的进度写入互相等待而不是立刻报 `database is locked`。如果数据库已被其他进程锁住（例如本机已有 uvicorn），WAL pragma 会跳过而不是让应用启动失败。
 
 ## 任务调度
 

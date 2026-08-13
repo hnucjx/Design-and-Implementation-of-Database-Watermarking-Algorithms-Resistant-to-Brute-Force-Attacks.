@@ -777,3 +777,654 @@ README 快速启动当前混用了单端口托管和 Vite 开发模式，导致�
 - `python scripts\docs.py check`
 - `python -m compileall backend\app scripts`
 - 后端、前端完整测试与构建，`git diff --check`。
+
+---
+
+# Download Performance and Stability Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Speed up YouTube downloads and reduce SQLite lock contention without weakening the existing anti-403 / anti-bot defaults (single fragment connection, conservative aria2c, cookie/profile fallback).
+
+**Architecture:** Keep yt-dlp as the download engine. Remove redundant YouTube extracts and intra-item `sleep_interval` stalls on the happy path; throttle progress SQLite/SSE writes so five parallel videos do not commit on every yt-dlp callback; enable SQLite WAL so those remaining writes do not serialize the workers.
+
+**Tech Stack:** FastAPI, SQLModel/SQLAlchemy, SQLite, yt-dlp, pytest.
+
+## Global Constraints
+
+- Stay on `main`; one logical change per commit; `git push origin main` after each task.
+- Do not enable `concurrent_fragment_downloads > 1`, multi-connection aria2c, or raise default worker concurrency.
+- Keep `continuedl=True`, `http_chunk_size=16MiB`, `fragment_retries=20`, and the 403 profile chain.
+- `sleep_interval_requests=1.0` stays on extract and download player-API requests (bot pacing).
+- Resolution fallback reasons (`requested_resolution_missing`, `source_below_720_only`, `requested_resolution_unselectable`) must keep current user-visible meaning.
+- TDD: failing test first; docs in the same task as the behavior change.
+- Do not kill IncrediBuild; local uvicorn may use port 8001 if 8000 is taken.
+
+## File Structure
+
+- `backend/app/db.py` — SQLite engine; enable WAL + busy timeout on connect.
+- `backend/app/progress_persist.py` — decide whether a progress snapshot should hit SQLite/SSE.
+- `backend/app/job_manager.py` — use the persist gate; skip extra `extract_metadata` when `prepare_download` already succeeds; merge missing-resolution fallback into `_prepare_download`.
+- `backend/app/ytdlp_service.py` — stop applying playlist `sleep_interval` to single-URL downloads (`noplaylist=True`).
+- `backend/tests/test_db.py` — WAL / busy_timeout.
+- `backend/tests/test_progress_persist.py` — persist gate unit tests.
+- `backend/tests/test_ytdlp_service.py` — sleep option assertions.
+- `backend/tests/test_api.py` + `backend/tests/fakes.py` — happy-path extract count and fallback fakes.
+- Docs: `docs/technical.md`, `docs/implementation.md`, `docs/development.md`, `docs/testing.md`, `docs/user-manual.md`, `docs/safety-review.md`, `docs/4-plus-1-view.md`, `docs/diagrams/four-plus-one-process-view.puml`, `docs/diagrams/four-plus-one-development-view.puml`, `docs/diagrams/single-video-sequence.puml`.
+
+## Out of scope
+
+- Raising `YTDLP_CONCURRENT_FRAGMENT_DOWNLOADS` (YouTube 403 risk).
+- Default-on aria2c or `-x` > 1.
+- Caching yt-dlp `info_dict` from `prepare_download` into `download()` (yt-dlp still extracts on download; invasive).
+- Changing default `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` (already 5, item-level).
+
+## Current bottlenecks (why these tasks)
+
+1. `_run_item` always calls `_options_for_available_resolution` → `extract_metadata`, then `prepare_download` → another `extract_info`. Happy-path videos pay two YouTube extracts before the first media byte, plus the job-create extract.
+2. `sleep_interval=2` / `max_sleep_interval=5` apply even with `noplaylist=True`, so video+audio+subtitle files of one item sleep 2–5s between each file.
+3. Every yt-dlp progress callback opens a SQLModel session, commits, and publishes SSE. Five workers × dense hooks contend on SQLite DELETE journal mode.
+4. Safety review already flagged WAL as the fix for concurrent progress writes.
+
+---
+
+### Task 1: SQLite WAL and busy timeout
+
+**Files:**
+- Modify: `backend/app/db.py`
+- Create: `backend/tests/test_db.py`
+- Modify: `docs/implementation.md`, `docs/development.md`, `docs/safety-review.md`, `docs/4-plus-1-view.md`, `docs/diagrams/four-plus-one-process-view.puml`
+
+**Interfaces:**
+- Consumes: `create_app_engine(settings: AppSettings) -> Engine`
+- Produces: every SQLite connection runs `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=5000`, `PRAGMA synchronous=NORMAL`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `backend/tests/test_db.py`:
+
+```python
+from pathlib import Path
+
+from sqlalchemy import text
+from sqlmodel import Session
+
+from app.config import AppSettings
+from app.db import create_app_engine, init_db
+
+
+def test_sqlite_engine_enables_wal_and_busy_timeout(tmp_path: Path) -> None:
+    settings = AppSettings(
+        data_dir=tmp_path / "data",
+        download_dir=tmp_path / "downloads",
+        database_path=tmp_path / "data" / "app.sqlite3",
+    )
+    engine = create_app_engine(settings)
+    init_db(engine)
+
+    with Session(engine) as session:
+        journal_mode = session.exec(text("PRAGMA journal_mode")).one()
+        busy_timeout = session.exec(text("PRAGMA busy_timeout")).one()
+        synchronous = session.exec(text("PRAGMA synchronous")).one()
+
+    assert str(journal_mode[0]).lower() == "wal"
+    assert int(busy_timeout[0]) == 5000
+    assert int(synchronous[0]) == 1
+```
+
+SQLite `synchronous=NORMAL` is integer `1`. `journal_mode` returns `wal`.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -m pytest backend\tests\test_db.py::test_sqlite_engine_enables_wal_and_busy_timeout -v`
+
+Expected: FAIL because `journal_mode` is `delete` (or not `wal`).
+
+- [ ] **Step 3: Write minimal implementation**
+
+In `backend/app/db.py` add SQLAlchemy connect hook:
+
+```python
+from collections.abc import Generator
+
+from sqlalchemy import event, text
+from sqlalchemy.engine import Engine
+from sqlmodel import Session, SQLModel, create_engine
+
+from .config import AppSettings
+
+
+def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+
+def create_app_engine(settings: AppSettings) -> Engine:
+    settings.ensure_directories()
+    sqlite_url = f"sqlite:///{settings.database_path.as_posix()}"
+    engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+    event.listen(engine, "connect", _configure_sqlite_connection)
+    return engine
+```
+
+Keep `init_db` and `session_dependency` unchanged.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `python -m pytest backend\tests\test_db.py::test_sqlite_engine_enables_wal_and_busy_timeout -v`
+
+Expected: PASS
+
+- [ ] **Step 5: Sync docs**
+
+In `docs/implementation.md` persistence section, state that `create_app_engine` enables WAL, `busy_timeout=5000`, and `synchronous=NORMAL` so concurrent progress writes wait instead of raising `database is locked`.
+
+In `docs/development.md` SQLite / env section, note WAL sidecar files `app.sqlite3-wal` and `app.sqlite3-shm` live next to `YTDL_DATABASE_PATH` and must stay gitignored.
+
+In `docs/safety-review.md` item 5, mark WAL as implemented via `create_app_engine` connect pragma.
+
+In `docs/diagrams/four-plus-one-process-view.puml`, change persist step to mention WAL SQLite.
+
+In `docs/4-plus-1-view.md` process view paragraph, mention WAL.
+
+- [ ] **Step 6: Commit and push**
+
+```powershell
+python -m pytest backend\tests\test_db.py -q
+git add backend/app/db.py backend/tests/test_db.py docs/implementation.md docs/development.md docs/safety-review.md docs/4-plus-1-view.md docs/diagrams/four-plus-one-process-view.puml
+git commit -m "feat: enable SQLite WAL for concurrent download writes"
+git push origin main
+```
+
+---
+
+### Task 2: Throttle progress SQLite and SSE writes
+
+**Files:**
+- Create: `backend/app/progress_persist.py`
+- Create: `backend/tests/test_progress_persist.py`
+- Modify: `backend/app/job_manager.py` (`_run_item` progress_hook)
+- Modify: `docs/implementation.md`, `docs/testing.md`, `docs/diagrams/four-plus-one-development-view.puml`, `docs/diagrams/single-video-sequence.puml`
+
+**Interfaces:**
+- Consumes: `DownloadProgressAggregator.update` still runs on every payload; `TransferStats.record` still runs on every byte update.
+- Produces: `ProgressPersistGate.allow(status: str | None, progress: float, now: float) -> bool`
+
+Constants:
+
+```python
+PROGRESS_PERSIST_MIN_INTERVAL_SECONDS = 0.25
+PROGRESS_PERSIST_MIN_DELTA = 0.5
+```
+
+Rules:
+
+- Always allow the first snapshot.
+- Always allow `status in {"finished", "error"}`.
+- Allow when `now - last_allowed >= 0.25`.
+- Allow when `abs(progress - last_progress) >= 0.5`.
+- Otherwise skip SQLite commit and SSE. Do not skip aggregator or transfer stats.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `backend/tests/test_progress_persist.py`:
+
+```python
+from app.progress_persist import ProgressPersistGate
+
+
+def test_progress_persist_gate_allows_first_and_finished() -> None:
+    gate = ProgressPersistGate(min_interval_seconds=1.0, min_progress_delta=50.0)
+    assert gate.allow(status="downloading", progress=1.0, now=0.0) is True
+    assert gate.allow(status="downloading", progress=1.1, now=0.01) is False
+    assert gate.allow(status="finished", progress=1.1, now=0.02) is True
+
+
+def test_progress_persist_gate_allows_interval_or_progress_jump() -> None:
+    gate = ProgressPersistGate(min_interval_seconds=0.25, min_progress_delta=0.5)
+    assert gate.allow(status="downloading", progress=10.0, now=0.0) is True
+    assert gate.allow(status="downloading", progress=10.2, now=0.05) is False
+    assert gate.allow(status="downloading", progress=10.8, now=0.06) is True
+    assert gate.allow(status="downloading", progress=10.9, now=0.10) is False
+    assert gate.allow(status="downloading", progress=11.0, now=0.40) is True
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `python -m pytest backend\tests\test_progress_persist.py -v`
+
+Expected: FAIL with `ModuleNotFoundError: app.progress_persist`
+
+- [ ] **Step 3: Implement the gate**
+
+Create `backend/app/progress_persist.py`:
+
+```python
+PROGRESS_PERSIST_MIN_INTERVAL_SECONDS = 0.25
+PROGRESS_PERSIST_MIN_DELTA = 0.5
+
+
+class ProgressPersistGate:
+    def __init__(
+        self,
+        min_interval_seconds: float = PROGRESS_PERSIST_MIN_INTERVAL_SECONDS,
+        min_progress_delta: float = PROGRESS_PERSIST_MIN_DELTA,
+    ) -> None:
+        self.min_interval_seconds = min_interval_seconds
+        self.min_progress_delta = min_progress_delta
+        self._last_allowed_at: float | None = None
+        self._last_progress: float | None = None
+
+    def allow(self, *, status: str | None, progress: float, now: float) -> bool:
+        if status in {"finished", "error"} or self._last_allowed_at is None:
+            self._remember(progress, now)
+            return True
+        elapsed = now - self._last_allowed_at
+        delta = abs(progress - (self._last_progress or 0.0))
+        if elapsed >= self.min_interval_seconds or delta >= self.min_progress_delta:
+            self._remember(progress, now)
+            return True
+        return False
+
+    def _remember(self, progress: float, now: float) -> None:
+        self._last_progress = progress
+        self._last_allowed_at = now
+```
+
+- [ ] **Step 4: Wire the gate into `job_manager.py`**
+
+Add imports:
+
+```python
+import time
+
+from .progress_persist import ProgressPersistGate
+```
+
+Inside `_run_item`, next to `progress_aggregator = DownloadProgressAggregator()`:
+
+```python
+persist_gate = ProgressPersistGate()
+```
+
+At the start of `progress_hook`, after computing `progress = progress_aggregator.update(payload)` and recording transfer stats, return early when the gate rejects:
+
+```python
+def progress_hook(payload: dict[str, Any]) -> None:
+    if job.id in self._deleted:
+        return
+    status = payload.get("status")
+    progress = progress_aggregator.update(payload)
+    if progress.downloaded_bytes is not None:
+        transfer_stats.record(progress.downloaded_bytes)
+    if not persist_gate.allow(status=status, progress=progress.progress, now=time.monotonic()):
+        return
+    with Session(self.engine) as hook_session:
+        # existing persist + SSE body unchanged
+```
+
+Move `status = payload.get("status")` before the session (it is currently inside the session). Keep the rest of the hook body.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run:
+
+```powershell
+python -m pytest backend\tests\test_progress_persist.py backend\tests\test_download_progress.py backend\tests\test_api.py -q
+```
+
+Expected: PASS. Intermediate UI polls in `test_api.py` still work because the first downloading snapshot and every `finished` payload persist.
+
+- [ ] **Step 6: Sync docs**
+
+`docs/implementation.md` progress section: aggregator still updates every payload; SQLite/SSE persist at most about 4 Hz unless progress jumps ≥ 0.5% or the payload is `finished`/`error`.
+
+`docs/testing.md` table: add `test_progress_persist.py` and `test_db.py`.
+
+`docs/diagrams/four-plus-one-development-view.puml`: add `[progress_persist.py]` and `Manager --> PersistGate`.
+
+`docs/diagrams/single-video-sequence.puml`: `Manager -> DB : throttled progress persist`.
+
+- [ ] **Step 7: Commit and push**
+
+```powershell
+git add backend/app/progress_persist.py backend/app/job_manager.py backend/tests/test_progress_persist.py docs/implementation.md docs/testing.md docs/diagrams/four-plus-one-development-view.puml docs/diagrams/single-video-sequence.puml
+git commit -m "perf: throttle download progress database writes"
+git push origin main
+```
+
+---
+
+### Task 3: Skip redundant extract_metadata on the happy path
+
+**Files:**
+- Modify: `backend/app/job_manager.py` (`_run_item`, `_prepare_download`; delete `_options_for_available_resolution`)
+- Modify: `backend/tests/fakes.py`
+- Modify: `backend/tests/test_api.py`
+- Modify: `docs/implementation.md`, `docs/technical.md`, `docs/diagrams/playlist-sequence.puml`
+
+**Interfaces:**
+- Consumes: `YtDlpService.prepare_download(...)` and `extract_metadata(...)` (unchanged signatures)
+- Produces: `_prepare_download` is the only download-time resolution gate. Happy path calls `prepare_download` only. Missing/unselectable paths call `extract_metadata` once, then `prepare_download` with fallback options.
+
+- [ ] **Step 1: Write the failing test and update fallback fakes so prepare reflects selectable formats**
+
+In `backend/tests/fakes.py`, add `item_extract_urls` counting to `FakeYtDlpService` subclasses used for fallback, and add a happy-path counter service.
+
+Add to `SingleAutoFallbackYtDlpService` and `AutoFallbackYtDlpService`:
+
+```python
+def prepare_download(self, url, options, cookies_path=None):
+    if options.resolution in {"1080p", "1440p", "2160p"}:
+        if getattr(self, "_url_missing_1080", lambda u: False)(url):
+            return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+        if "two" in url:
+            return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+        if url.endswith("unsupported") or "low-source" in url:
+            return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+    if options.resolution == "720p":
+        return SimpleNamespace(is_selectable=True, width=1280, height=720, actual_format="mp4 · avc1 + mp4a")
+    if options.resolution == "360p":
+        return SimpleNamespace(is_selectable=True, width=640, height=360, actual_format="mp4 · avc1 + mp4a")
+    return SimpleNamespace(is_selectable=True, width=None, height=None, actual_format=None)
+```
+
+Use explicit per-class methods instead of one shared helper:
+
+`SingleAutoFallbackYtDlpService.prepare_download`:
+
+```python
+def prepare_download(self, url, options, cookies_path=None):
+    if options.resolution == "720p":
+        return SimpleNamespace(is_selectable=True, width=1280, height=720, actual_format="mp4 · avc1 + mp4a")
+    return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+```
+
+`AutoFallbackYtDlpService.prepare_download`:
+
+```python
+def prepare_download(self, url, options, cookies_path=None):
+    if "two" in url and options.resolution == "1080p":
+        return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+    height = 720 if options.resolution == "720p" else 1080
+    return SimpleNamespace(
+        is_selectable=True,
+        width=int(height * 16 / 9),
+        height=height,
+        actual_format="mp4 · avc1 + mp4a",
+    )
+```
+
+Add `HappyPathExtractCountingYtDlpService(FakeYtDlpService)`:
+
+```python
+class HappyPathExtractCountingYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.extract_urls: list[str] = []
+        self.prepare_urls: list[str] = []
+
+    def extract_metadata(self, url, cookies_path=None):
+        self.extract_urls.append(url)
+        return AnalyzeResponse(
+            url=url,
+            title="Counted",
+            is_playlist=False,
+            entries=[],
+            formats=[
+                FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4"),
+                FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+            ],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def prepare_download(self, url, options, cookies_path=None):
+        self.prepare_urls.append(url)
+        return SimpleNamespace(
+            is_selectable=True,
+            width=1920,
+            height=1080,
+            actual_format="mp4 · avc1 + mp4a",
+            filesize=1_000_000,
+        )
+```
+
+In `backend/tests/test_api.py` import the new fake and add:
+
+```python
+def test_happy_path_download_does_not_extract_metadata_again(tmp_path: Path) -> None:
+    service = HappyPathExtractCountingYtDlpService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/counted",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        wait_for_job_status(client, response.json()["id"], "succeeded")
+
+    assert service.extract_urls == ["https://youtu.be/counted"]
+    assert service.prepare_urls == ["https://youtu.be/counted"]
+```
+
+Today this fails because `_options_for_available_resolution` appends a second extract.
+
+- [ ] **Step 2: Run the new test to verify it fails**
+
+Run: `python -m pytest backend\tests\test_api.py::test_happy_path_download_does_not_extract_metadata_again -v`
+
+Expected: FAIL `assert ['https://youtu.be/counted', 'https://youtu.be/counted'] == ['https://youtu.be/counted']`
+
+- [ ] **Step 3: Merge resolution fallback into `_prepare_download` and stop calling `_options_for_available_resolution`**
+
+In `_run_item`, delete:
+
+```python
+options = self._options_for_available_resolution(session, item, options)
+```
+
+Keep:
+
+```python
+options = self._prepare_download(session, item, options)
+```
+
+Replace `_prepare_download` with:
+
+```python
+def _prepare_download(self, session: Session, item: JobItem, options: DownloadOptions) -> DownloadOptions:
+    preparation = self.service.prepare_download(item.source_url, options, cookies_path=self._cookies_path())
+    if preparation.is_selectable:
+        self._apply_download_preparation(session, item, preparation)
+        return options
+    if options.format_id or YtDlpService._resolution_height(options.resolution) is None:
+        return options
+
+    try:
+        analysis = self.service.extract_metadata(item.source_url, cookies_path=self._cookies_path())
+    except Exception:
+        analysis = None
+
+    requested_height = YtDlpService._resolution_height(options.resolution)
+    available_heights = {
+        int(format.height)
+        for format in (analysis.formats if analysis is not None else [])
+        if format.height is not None
+    }
+    height_missing = analysis is None or requested_height not in available_heights
+    allow_below_min = height_missing
+    fallback = None
+    if analysis is not None:
+        fallback = YtDlpService.suggest_lower_resolution(
+            options.resolution,
+            analysis.formats,
+            allow_below_min_if_source_below_min=allow_below_min,
+        )
+    if not fallback:
+        if height_missing:
+            raise RuntimeError(self._no_supported_fallback_message(options.resolution))
+        raise RuntimeError(self._unselectable_resolution_message(options.resolution))
+
+    if height_missing:
+        reason = (
+            SOURCE_BELOW_720_ONLY
+            if analysis is not None and not YtDlpService.has_resolution_at_or_above(analysis.formats)
+            else REQUESTED_RESOLUTION_MISSING
+        )
+    else:
+        reason = REQUESTED_RESOLUTION_UNSELECTABLE
+
+    fallback_options = self._options_with_resolution(options, fallback)
+    fallback_preparation = self.service.prepare_download(
+        item.source_url,
+        fallback_options,
+        cookies_path=self._cookies_path(),
+    )
+    if not fallback_preparation.is_selectable:
+        raise RuntimeError(self._unselectable_resolution_message(options.resolution))
+
+    self._set_resolution_fallback(item, options.resolution, fallback, reason)
+    item.error = None
+    item.updated_at = utc_now()
+    session.add(item)
+    session.commit()
+    self._apply_download_preparation(session, item, fallback_preparation)
+    return fallback_options
+```
+
+Delete `_options_for_available_resolution` entirely. Keep `_fallback_resolution_for_item` for media-stream / post-error annotation.
+
+If `analysis is None` (extract failed) and prepare already failed, raise the unselectable/no-fallback message rather than downloading a guessed height.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run:
+
+```powershell
+python -m pytest backend\tests\test_api.py -q
+```
+
+Expected: PASS, including existing fallback tests (`requested_resolution_missing`, `source_below_720_only`, `requested_resolution_unselectable`).
+
+- [ ] **Step 5: Sync docs**
+
+`docs/implementation.md` 清晰度与降级: remove `_options_for_available_resolution`. Document that download-time `extract_metadata` runs only after `prepare_download` reports not selectable.
+
+`docs/technical.md` 下载前预检测: same order — `prepare_download` first; extract only for fallback classification.
+
+`docs/diagrams/playlist-sequence.puml`: worker loop is `prepare_download` then `download`; extract only on fallback.
+
+- [ ] **Step 6: Commit and push**
+
+```powershell
+git add backend/app/job_manager.py backend/tests/fakes.py backend/tests/test_api.py docs/implementation.md docs/technical.md docs/diagrams/playlist-sequence.puml
+git commit -m "perf: skip extra YouTube extract when format is selectable"
+git push origin main
+```
+
+---
+
+### Task 4: Do not sleep 2–5s between files of one video
+
+**Files:**
+- Modify: `backend/app/ytdlp_service.py` (`build_download_options`)
+- Modify: `backend/tests/test_ytdlp_service.py`
+- Modify: `docs/technical.md`, `docs/user-manual.md`
+
+**Interfaces:**
+- Consumes: `build_download_options(...)` existing signature
+- Produces: download opts keep `sleep_interval_requests=1.0`; they do **not** set `sleep_interval` or `max_sleep_interval`. Extract metadata opts are unchanged.
+
+Why: `JobManager` already spaces videos via item-level concurrency. yt-dlp `sleep_interval` still fires between video, audio, subtitle, and thumbnail files of a **single** `noplaylist` download, adding 2–5 seconds of idle time per sidecar.
+
+- [ ] **Step 1: Write the failing test**
+
+Replace `test_download_options_apply_conservative_youtube_request_pacing` assertions in `backend/tests/test_ytdlp_service.py`:
+
+```python
+def test_download_options_pace_player_requests_but_not_intra_item_files(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="best"),
+        cookies_path=None,
+    )
+
+    assert opts["sleep_interval_requests"] == 1.0
+    assert "sleep_interval" not in opts
+    assert "max_sleep_interval" not in opts
+```
+
+Keep `test_extract_metadata_maps_playlist_entries_formats_and_subtitles` asserting `captured_opts["sleep_interval_requests"] == 1.0`.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -m pytest backend\tests\test_ytdlp_service.py::test_download_options_pace_player_requests_but_not_intra_item_files -v`
+
+Expected: FAIL because `sleep_interval` is `2.0`.
+
+- [ ] **Step 3: Remove playlist sleep from download options**
+
+In `build_download_options`, delete:
+
+```python
+"sleep_interval": YTDLP_DOWNLOAD_SLEEP_SECONDS,
+"max_sleep_interval": YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS,
+```
+
+Keep `sleep_interval_requests`. Leave `YTDLP_DOWNLOAD_SLEEP_SECONDS` and `YTDLP_MAX_DOWNLOAD_SLEEP_SECONDS` unused only if nothing else references them — then delete the unused constants to avoid dead code.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python -m pytest backend\tests\test_ytdlp_service.py -q`
+
+Expected: PASS
+
+- [ ] **Step 5: Sync docs**
+
+`docs/technical.md` 稳定下载策略: document that worker concurrency is the video-level throttle; yt-dlp no longer sleeps 2–5s between files of one item; player-API `sleep_interval_requests` remains 1s.
+
+`docs/user-manual.md` 下载选项 / 进度: note that a single video's audio merge should start without a multi-second pause after the video stream finishes; if YouTube starts returning 403 more often, lower concurrency to 1 rather than re-adding intra-item sleep.
+
+- [ ] **Step 6: Commit and push**
+
+```powershell
+git add backend/app/ytdlp_service.py backend/tests/test_ytdlp_service.py docs/technical.md docs/user-manual.md
+git commit -m "perf: remove intra-item yt-dlp sleep between media files"
+git push origin main
+```
+
+---
+
+### Task 5: Full verification
+
+- [ ] **Step 1: Run the full backend suite**
+
+```powershell
+python -m compileall backend\app
+python -m pytest backend\tests -q
+git diff --check
+```
+
+Expected: compile OK, all tests PASS, no whitespace errors.
+
+- [ ] **Step 2: If any doc/UML sources changed in earlier tasks, leave SVG stale when Graphviz `dot` is missing**; do not block on `python scripts\docs.py render`.
+
+- [ ] **Step 3: No extra commit unless verification found a gap.** If a test or doc gap appears, fix it in a dedicated commit and push.
+
+---
+
+## Self-review
+
+1. Spec coverage: WAL → Task 1; progress lock contention → Task 2; duplicate extract → Task 3; intra-item sleep → Task 4; fragment/aria2c defaults explicitly out of scope.
+2. Placeholder scan: no TBD/TODO; tests and implementation code are inlined.
+3. Type consistency: `ProgressPersistGate.allow(status=, progress=, now=)` is the only persist API; `_prepare_download` remains the method later tasks and docs name.
+

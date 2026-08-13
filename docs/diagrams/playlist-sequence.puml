@@ -28,6 +28,10 @@ API -> Manager : enqueue queued JobItem ids
 
 loop workers dequeue JobItems up to concurrency
   Manager -> Service : prepare_download(item)
+  opt planned format not selectable
+    Manager -> Service : extract_metadata(item) for fallback
+    Manager -> Service : prepare_download(fallback options)
+  end
   Manager -> Service : download(item)
   Service --> Manager : progress/finished/error
   Manager -> DB : update item and aggregate job

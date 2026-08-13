@@ -561,7 +561,6 @@ class JobManager:
                 )
 
         try:
-            options = self._options_for_available_resolution(session, item, options)
             options = self._prepare_download(session, item, options)
             progress_aggregator.set_expected_total_bytes(item.total_bytes)
             should_cancel = (
@@ -847,47 +846,6 @@ class JobManager:
             return job_options
         return DownloadOptions.model_validate(json.loads(item.options_json))
 
-    def _options_for_available_resolution(
-        self,
-        session: Session,
-        item: JobItem,
-        options: DownloadOptions,
-    ) -> DownloadOptions:
-        if options.mode == "subtitles_only" or options.format_id:
-            return options
-        if YtDlpService._resolution_height(options.resolution) is None:
-            return options
-
-        analysis = self.service.extract_metadata(item.source_url, cookies_path=self._cookies_path())
-        requested_height = YtDlpService._resolution_height(options.resolution)
-        available_heights = {
-            int(format.height)
-            for format in analysis.formats
-            if format.height is not None
-        }
-        if requested_height in available_heights:
-            return options
-
-        fallback = YtDlpService.suggest_lower_resolution(
-            options.resolution,
-            analysis.formats,
-            allow_below_min_if_source_below_min=True,
-        )
-        if not fallback:
-            raise RuntimeError(self._no_supported_fallback_message(options.resolution))
-
-        reason = (
-            SOURCE_BELOW_720_ONLY
-            if not YtDlpService.has_resolution_at_or_above(analysis.formats)
-            else REQUESTED_RESOLUTION_MISSING
-        )
-        self._set_resolution_fallback(item, options.resolution, fallback, reason)
-        item.error = None
-        item.updated_at = utc_now()
-        session.add(item)
-        session.commit()
-        return self._options_with_resolution(options, fallback)
-
     def _prepare_download(self, session: Session, item: JobItem, options: DownloadOptions) -> DownloadOptions:
         preparation = self.service.prepare_download(item.source_url, options, cookies_path=self._cookies_path())
         if preparation.is_selectable:
@@ -896,13 +854,38 @@ class JobManager:
         if options.format_id or YtDlpService._resolution_height(options.resolution) is None:
             return options
 
-        fallback = self._fallback_resolution_for_item(
-            item,
-            options,
-            allow_below_min_if_source_below_min=False,
-        )
+        try:
+            analysis = self.service.extract_metadata(item.source_url, cookies_path=self._cookies_path())
+        except Exception:
+            analysis = None
+
+        requested_height = YtDlpService._resolution_height(options.resolution)
+        available_heights = {
+            int(format.height)
+            for format in (analysis.formats if analysis is not None else [])
+            if format.height is not None
+        }
+        height_missing = analysis is None or requested_height not in available_heights
+        fallback = None
+        if analysis is not None:
+            fallback = YtDlpService.suggest_lower_resolution(
+                options.resolution,
+                analysis.formats,
+                allow_below_min_if_source_below_min=height_missing,
+            )
         if not fallback:
+            if height_missing:
+                raise RuntimeError(self._no_supported_fallback_message(options.resolution))
             raise RuntimeError(self._unselectable_resolution_message(options.resolution))
+
+        if height_missing:
+            reason = (
+                SOURCE_BELOW_720_ONLY
+                if analysis is not None and not YtDlpService.has_resolution_at_or_above(analysis.formats)
+                else REQUESTED_RESOLUTION_MISSING
+            )
+        else:
+            reason = REQUESTED_RESOLUTION_UNSELECTABLE
 
         fallback_options = self._options_with_resolution(options, fallback)
         fallback_preparation = self.service.prepare_download(
@@ -913,7 +896,7 @@ class JobManager:
         if not fallback_preparation.is_selectable:
             raise RuntimeError(self._unselectable_resolution_message(options.resolution))
 
-        self._set_resolution_fallback(item, options.resolution, fallback, REQUESTED_RESOLUTION_UNSELECTABLE)
+        self._set_resolution_fallback(item, options.resolution, fallback, reason)
         item.error = None
         item.updated_at = utc_now()
         session.add(item)

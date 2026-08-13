@@ -81,6 +81,39 @@ class FakeYtDlpService:
         return None
 
 
+class HappyPathExtractCountingYtDlpService(FakeYtDlpService):
+    def __init__(self):
+        super().__init__()
+        self.extract_urls: list[str] = []
+        self.prepare_urls: list[str] = []
+
+    def extract_metadata(self, url, cookies_path=None):
+        self.extract_urls.append(url)
+        return AnalyzeResponse(
+            url=url,
+            title="Counted",
+            is_playlist=False,
+            entries=[],
+            formats=[
+                FormatOption(format_id="137", label="1080p mp4", height=1080, ext="mp4"),
+                FormatOption(format_id="22", label="720p mp4", height=720, ext="mp4"),
+            ],
+            subtitles=[],
+            automatic_subtitles=[],
+            ffmpeg={"ffmpeg": True, "ffprobe": True},
+        )
+
+    def prepare_download(self, url, options, cookies_path=None):
+        self.prepare_urls.append(url)
+        return SimpleNamespace(
+            is_selectable=True,
+            width=1920,
+            height=1080,
+            actual_format="mp4 · avc1 + mp4a",
+            filesize=1_000_000,
+        )
+
+
 class AverageSpeedYtDlpService(FakeYtDlpService):
     def download(self, url, options, progress_hook, should_cancel, cookies_path=None, download_dir=None):
         progress_hook({"status": "downloading", "downloaded_bytes": 0, "total_bytes": 8192, "speed": 4096})
@@ -319,6 +352,11 @@ class SingleAutoFallbackYtDlpService(FakeYtDlpService):
     def actual_format_from_progress_payload(self, payload):
         return "mp4 · avc1 + mp4a"
 
+    def prepare_download(self, url, options, cookies_path=None):
+        if options.resolution == "720p":
+            return SimpleNamespace(is_selectable=True, width=1280, height=720, actual_format="mp4 · avc1 + mp4a")
+        return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+
 
 class AutoFallbackYtDlpService(FakeYtDlpService):
     def __init__(self):
@@ -401,6 +439,17 @@ class AutoFallbackYtDlpService(FakeYtDlpService):
 
     def actual_format_from_progress_payload(self, payload):
         return "mp4 · avc1 + mp4a"
+
+    def prepare_download(self, url, options, cookies_path=None):
+        if "two" in url and options.resolution == "1080p":
+            return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+        height = 720 if options.resolution == "720p" else 1080
+        return SimpleNamespace(
+            is_selectable=True,
+            width=int(height * 16 / 9),
+            height=height,
+            actual_format="mp4 · avc1 + mp4a",
+        )
 
     def detect_file_resolution(self, file_path):
         return None

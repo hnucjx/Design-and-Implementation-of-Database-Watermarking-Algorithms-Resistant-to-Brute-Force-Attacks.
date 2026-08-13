@@ -1110,7 +1110,7 @@ git push origin main
 - Consumes: `YtDlpService.prepare_download(...)` and `extract_metadata(...)` (unchanged signatures)
 - Produces: `_prepare_download` is the only download-time resolution gate. Happy path calls `prepare_download` only. Missing/unselectable paths call `extract_metadata` once, then `prepare_download` with fallback options.
 
-- [ ] **Step 1: Write the failing test and update fallback fakes so prepare reflects selectable formats**
+- [x] **Step 1: Write the failing test and update fallback fakes so prepare reflects selectable formats**
 
 In `backend/tests/fakes.py`, add `item_extract_urls` counting to `FakeYtDlpService` subclasses used for fallback, and add a happy-path counter service.
 
@@ -1217,13 +1217,13 @@ def test_happy_path_download_does_not_extract_metadata_again(tmp_path: Path) -> 
 
 Today this fails because `_options_for_available_resolution` appends a second extract.
 
-- [ ] **Step 2: Run the new test to verify it fails**
+- [x] **Step 2: Run the new test to verify it fails**
 
 Run: `python -m pytest backend\tests\test_api.py::test_happy_path_download_does_not_extract_metadata_again -v`
 
 Expected: FAIL `assert ['https://youtu.be/counted', 'https://youtu.be/counted'] == ['https://youtu.be/counted']`
 
-- [ ] **Step 3: Merge resolution fallback into `_prepare_download` and stop calling `_options_for_available_resolution`**
+- [x] **Step 3: Merge resolution fallback into `_prepare_download` and stop calling `_options_for_available_resolution`**
 
 In `_run_item`, delete:
 
@@ -1304,7 +1304,7 @@ Delete `_options_for_available_resolution` entirely. Keep `_fallback_resolution_
 
 If `analysis is None` (extract failed) and prepare already failed, raise the unselectable/no-fallback message rather than downloading a guessed height.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run:
 
@@ -1314,7 +1314,7 @@ python -m pytest backend\tests\test_api.py -q
 
 Expected: PASS, including existing fallback tests (`requested_resolution_missing`, `source_below_720_only`, `requested_resolution_unselectable`).
 
-- [ ] **Step 5: Sync docs**
+- [x] **Step 5: Sync docs**
 
 `docs/implementation.md` 清晰度与降级: remove `_options_for_available_resolution`. Document that download-time `extract_metadata` runs only after `prepare_download` reports not selectable.
 
@@ -1322,7 +1322,7 @@ Expected: PASS, including existing fallback tests (`requested_resolution_missing
 
 `docs/diagrams/playlist-sequence.puml`: worker loop is `prepare_download` then `download`; extract only on fallback.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```powershell
 git add backend/app/job_manager.py backend/tests/fakes.py backend/tests/test_api.py docs/implementation.md docs/technical.md docs/diagrams/playlist-sequence.puml

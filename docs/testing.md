@@ -46,7 +46,7 @@ python scripts\docs.py check
 
 | 文件 | 重点 |
 | --- | --- |
-| [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置、诊断，以及合集子视频按并发并行下载。 |
+| [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置、诊断，合集子视频按并发并行下载，以及 happy-path 不再二次 extract_metadata。 |
 | [test_db.py](../backend/tests/test_db.py) | SQLite WAL、`busy_timeout` 和 `synchronous=NORMAL`。 |
 | [test_ytdlp_service.py](../backend/tests/test_ytdlp_service.py) | yt-dlp 参数、profile、PO token、aria2c、格式选择和错误识别。 |
 | [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合：字幕/chunk 不锁死在 99.9%，分离音视频不把已下载字节重置为 0。 |

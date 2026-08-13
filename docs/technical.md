@@ -18,7 +18,7 @@
 
 ## 下载前预检测
 
-在实际下载前，`JobManager` 会调用 [prepare_download](../backend/app/ytdlp_service.py#L200) 让 yt-dlp 按当前 selector 选择计划下载格式。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L924) 写入：
+在实际下载前，`JobManager` 先调用 [prepare_download](../backend/app/ytdlp_service.py#L200) 让 yt-dlp 按当前 selector 选择计划下载格式。源视频清晰度匹配时不再额外 `extract_metadata`。只有计划格式不可选时，才会再解析元数据并按降级原因分类。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L907) 写入：
 
 - `actual_width`
 - `actual_height`
@@ -70,7 +70,7 @@ YouTube 媒体流 403 或连接中断时，`YtDlpService.download()` 会在同�
 
 ## Cookies 与登录态
 
-Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/main.py#L93)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L667)。
+Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/main.py#L93)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L666)。
 
 浏览器导入器只保存 YouTube/Google 相关 cookies，过滤规则见 [YOUTUBE_COOKIE_DOMAIN_SUFFIXES](../backend/app/browser_cookies.py#L20)。Edge 锁库和 DPAPI fallback 处理见 [browser_cookies.py](../backend/app/browser_cookies.py#L117)。
 

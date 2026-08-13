@@ -27,6 +27,7 @@ from fakes import (
     DownloadHttp403ThenAnti403SuccessService,
     EmptyAssertionFromHttp403Service,
     FakeYtDlpService,
+    HappyPathExtractCountingYtDlpService,
     LockedEdgeBrowserImportService,
     LowOnlyFallbackYtDlpService,
     MediaStreamBlockedUntilLowerResolutionService,
@@ -409,6 +410,24 @@ def test_analyze_returns_video_metadata(tmp_path: Path) -> None:
     assert payload["title"] == "Single"
     assert payload["formats"][0]["format_id"] == "22"
     assert payload["ffmpeg"] == {"ffmpeg": True, "ffprobe": True}
+
+
+def test_happy_path_download_does_not_extract_metadata_again(tmp_path: Path) -> None:
+    service = HappyPathExtractCountingYtDlpService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/counted",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        wait_for_job_status(client, response.json()["id"], "succeeded")
+
+    assert service.extract_urls == ["https://youtu.be/counted"]
+    assert service.prepare_urls == ["https://youtu.be/counted"]
 
 
 def test_create_playlist_job_filters_selected_entries(tmp_path: Path) -> None:

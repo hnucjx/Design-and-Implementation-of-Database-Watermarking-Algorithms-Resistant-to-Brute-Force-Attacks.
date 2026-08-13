@@ -97,7 +97,7 @@ npm run dev -- --port 5173
 | --- | --- | --- |
 | `YTDL_DATA_DIR` | `data/` | 数据库和 cookies 目录。 |
 | `YTDL_DOWNLOAD_DIR` | `downloads/` | 下载产物目录。 |
-| `YTDL_DATABASE_PATH` | `data/app.sqlite3` | SQLite 文件路径。 |
+| `YTDL_DATABASE_PATH` | `data/app.sqlite3` | SQLite 文件路径。WAL 模式下同目录还会出现 `*.sqlite3-wal` 和 `*.sqlite3-shm`，已由 `.gitignore` 忽略。 |
 | `YTDL_DEFAULT_CONCURRENCY` | 来自 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` 或 `5` | 同时下载的视频数（跨任务和合集子项）。 |
 | `YTDL_DEFAULT_RESOLUTION` | `1440p` | 默认清晰度。 |
 | `YTDL_YOUTUBE_PO_TOKEN` | 空 | 高级排障用 YouTube PO token。 |

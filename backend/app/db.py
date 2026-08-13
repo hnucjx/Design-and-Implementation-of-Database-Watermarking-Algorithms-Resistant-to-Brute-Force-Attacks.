@@ -1,16 +1,26 @@
 from collections.abc import Generator
 
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
-from sqlalchemy import text
 from sqlmodel import Session, SQLModel, create_engine
 
 from .config import AppSettings
 
 
+def _configure_sqlite_connection(dbapi_connection, _connection_record) -> None:
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+
 def create_app_engine(settings: AppSettings) -> Engine:
     settings.ensure_directories()
     sqlite_url = f"sqlite:///{settings.database_path.as_posix()}"
-    return create_engine(sqlite_url, connect_args={"check_same_thread": False})
+    engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+    event.listen(engine, "connect", _configure_sqlite_connection)
+    return engine
 
 
 def init_db(engine: Engine) -> None:

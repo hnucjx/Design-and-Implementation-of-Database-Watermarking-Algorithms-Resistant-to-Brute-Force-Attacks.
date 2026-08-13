@@ -839,7 +839,7 @@ README 快速启动当前混用了单端口托管和 Vite 开发模式，导致�
 - Consumes: `create_app_engine(settings: AppSettings) -> Engine`
 - Produces: every SQLite connection runs `PRAGMA journal_mode=WAL`, `PRAGMA busy_timeout=5000`, `PRAGMA synchronous=NORMAL`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `backend/tests/test_db.py`:
 
@@ -874,13 +874,13 @@ def test_sqlite_engine_enables_wal_and_busy_timeout(tmp_path: Path) -> None:
 
 SQLite `synchronous=NORMAL` is integer `1`. `journal_mode` returns `wal`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest backend\tests\test_db.py::test_sqlite_engine_enables_wal_and_busy_timeout -v`
 
 Expected: FAIL because `journal_mode` is `delete` (or not `wal`).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `backend/app/db.py` add SQLAlchemy connect hook:
 
@@ -912,13 +912,13 @@ def create_app_engine(settings: AppSettings) -> Engine:
 
 Keep `init_db` and `session_dependency` unchanged.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest backend\tests\test_db.py::test_sqlite_engine_enables_wal_and_busy_timeout -v`
 
 Expected: PASS
 
-- [ ] **Step 5: Sync docs**
+- [x] **Step 5: Sync docs**
 
 In `docs/implementation.md` persistence section, state that `create_app_engine` enables WAL, `busy_timeout=5000`, and `synchronous=NORMAL` so concurrent progress writes wait instead of raising `database is locked`.
 
@@ -930,7 +930,7 @@ In `docs/diagrams/four-plus-one-process-view.puml`, change persist step to menti
 
 In `docs/4-plus-1-view.md` process view paragraph, mention WAL.
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```powershell
 python -m pytest backend\tests\test_db.py -q

@@ -30,7 +30,7 @@ if (queued item exists?) then (yes)
   :Prepare planned format, size, resolution;
   :Run yt-dlp download with retries/profiles;
   :Aggregate raw stream progress;
-  :Persist progress and events;
+  :Persist progress to WAL SQLite and events;
   :Finish job only when no queued/running items remain;
 else (no)
   :Remain idle;

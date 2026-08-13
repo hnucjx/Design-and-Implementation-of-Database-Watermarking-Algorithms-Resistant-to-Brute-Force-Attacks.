@@ -216,4 +216,4 @@
 2. **（低优先级）Content-Security-Policy**：为前端 HTML 添加 CSP 头增强纵深防御。对本地单用户工具的边际效益有限。
 3. **（常规维护）依赖更新**：定期更新 `yt-dlp` 和 `yt-dlp-getpot-wpc`，关注安全公告。
 4. **（常规维护）版本固定**：`pyproject.toml` 中的依赖使用下限约束（`>=`），可考虑使用 `poetry.lock` 或 `pip freeze` 冻结精确版本以增强可复现性。
-5. **（信息性）SQLite WAL 模式**：考虑启用 SQLite WAL 模式以在高并发写入场景下减少锁竞争。
+5. **（已实现）SQLite WAL 模式**：`create_app_engine` 在连接时启用 WAL、`busy_timeout=5000` 和 `synchronous=NORMAL`，减少多 worker 进度写入时的锁竞争。

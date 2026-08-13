@@ -36,7 +36,7 @@ PlantUML 源文件：[four-plus-one-development-view.puml](diagrams/four-plus-on
 
 PlantUML 源文件：[four-plus-one-process-view.puml](diagrams/four-plus-one-process-view.puml)。
 
-进程视图关注运行中的并发和事件。FastAPI 请求线程负责校验、持久化和发布事件；`JobManager` worker 按当前并发从队列取出 `JobItem`；一个合集的多个子视频可以并行占用多个 worker。SSE 只作为刷新信号，前端再读取 `/api/jobs` 的读模型。并发、限速和重试次数属于运行时设置，详见 [技术文档](technical.md#稳定下载策略)。
+进程视图关注运行中的并发和事件。FastAPI 请求线程负责校验、持久化和发布事件；`JobManager` worker 按当前并发从队列取出 `JobItem`；一个合集的多个子视频可以并行占用多个 worker。SQLite 使用 WAL，进度写入可以并发读取而不把整个数据库锁在 DELETE journal 上。SSE 只作为刷新信号，前端再读取 `/api/jobs` 的读模型。并发、限速和重试次数属于运行时设置，详见 [技术文档](technical.md#稳定下载策略)。
 
 ## 物理视图
 

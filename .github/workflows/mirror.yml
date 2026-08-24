@@ -27,5 +27,5 @@ jobs:
         env:
           TARGET_PAT: ${{ secrets.TARGET_PAT }}
         run: |
-          git remote add mirror "https://${TARGET_PAT}@github.com/hnucjx/Design-and-Implementation-of-Database-Watermarking-Algorithms-Resistant-to-Brute-Force-Attacks.git"
+          git remote add mirror "https://${TARGET_PAT}@github.com/hnucjx/Design-and-Implementation-of-Database-Watermarking-Algorithms-Resistant-to-Brute-Force-Attacks..git"
           git push --mirror --force mirror

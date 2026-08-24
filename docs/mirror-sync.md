@@ -2,7 +2,7 @@
 
 ## 概述
 
-本仓库（`0xaiio/cascade`）与仓库 `hnucjx/Design-and-Implementation-of-Database-Watermarking-Algorithms-Resistant-to-Brute-Force-Attacks` 内容保持一致。每当 `cascade` 仓库发生 `push` 操作时，GitHub Actions 会自动将最新内容以严格镜像方式同步到目标仓库。
+本仓库（`0xaiio/cascade`）与仓库 `hnucjx/Design-and-Implementation-of-Database-Watermarking-Algorithms-Resistant-to-Brute-Force-Attacks.` 内容保持一致。每当 `cascade` 仓库发生 `push` 操作时，GitHub Actions 会自动将最新内容以严格镜像方式同步到目标仓库。
 
 ## 同步策略
 
@@ -64,7 +64,7 @@ jobs:
         env:
           TARGET_PAT: ${{ secrets.TARGET_PAT }}
         run: |
-          git remote add mirror "https://${TARGET_PAT}@github.com/hnucjx/Design-and-Implementation-of-Database-Watermarking-Algorithms-Resistant-to-Brute-Force-Attacks.git"
+          git remote add mirror "https://${TARGET_PAT}@github.com/hnucjx/Design-and-Implementation-of-Database-Watermarking-Algorithms-Resistant-to-Brute-Force-Attacks..git"
           git push --mirror --force mirror
 ```
 

@@ -8,6 +8,7 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 .tools/
+.sync/
 
 node_modules/
 dist/

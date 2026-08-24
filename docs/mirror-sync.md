@@ -8,7 +8,7 @@
 
 - **同步方向**：`0xaiio/cascade` → `hnucjx/...`（单向）
 - **同步范围**：全部分支、全部标签、完整提交历史
-- **冲突处理**：使用 `--mirror --force` 强制覆盖目标仓库
+- **冲突处理**：使用 `--force` 强制覆盖目标仓库的分支和标签
 - **目标仓库角色**：严格只读镜像，不直接在目标仓库提交
 
 ## 运行方式
@@ -51,7 +51,9 @@ TARGET_PAT=ghp_xxx ./scripts/mirror.sh
 2. 在本地 `~/.cache/cascade-mirror` 维护 `cascade` 仓库的 `--mirror` 克隆。
 3. 每次运行时先 `git fetch --all` 拉取最新内容。
 4. 将目标仓库添加为 remote `mirror`。
-5. 执行 `git push --mirror --force mirror`。
+5. 分别执行分支和标签的强制推送，避免同步 GitHub PR 隐藏引用导致失败：
+   - `git push --force mirror 'refs/heads/*:refs/heads/*'`
+   - `git push --force mirror 'refs/tags/*:refs/tags/*'`
 
 ## 认证方式
 
@@ -65,7 +67,7 @@ TARGET_PAT=ghp_xxx ./scripts/mirror.sh
 
 ## 注意事项与风险
 
-- `--mirror --force` 会覆盖目标仓库的全部内容，包括分支、标签和提交历史。
+- 强制推送会覆盖目标仓库的分支和标签。
 - 目标仓库独有的分支或标签会在同步后被删除。
 - 所有代码修改请在 `cascade` 仓库进行，目标仓库仅作为只读镜像使用。
 - 请勿在目标仓库配置反向同步，否则可能产生冲突。

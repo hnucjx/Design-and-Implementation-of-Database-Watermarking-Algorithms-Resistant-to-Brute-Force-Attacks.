@@ -36,7 +36,8 @@ else
   git remote add mirror "${TARGET_URL}"
 fi
 
-echo "Pushing mirror to target repository..."
-git push --mirror --force mirror
+echo "Pushing branches and tags to target repository..."
+git push --force mirror 'refs/heads/*:refs/heads/*'
+git push --force mirror 'refs/tags/*:refs/tags/*'
 
 echo "Mirror sync completed."

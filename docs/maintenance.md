@@ -10,7 +10,7 @@
 
 | 变更类型 | 必查文档 |
 | --- | --- |
-| 新增或修改 API endpoint/schema | [API 文档](api.md)、[架构设计](architecture.md)、相关 UML 图 |
+| 新增或修改 API endpoint/schema | [API 文档](api.md)、[openapi.yaml](openapi.yaml)、[架构设计](architecture.md)、相关 UML 图 |
 | 修改下载策略、清晰度、格式、cookies、PO token、aria2c、停滞看门狗或节流守卫 | [技术文档](technical.md)、[用户手册](user-manual.md)、[测试文档](testing.md)、[PLAN.md](../PLAN.md)（若属于性能修复范围） |
 | 修改任务状态、进度、速度或错误显示 | [API 文档](api.md)、[实现文档](implementation.md)、[用户手册](user-manual.md) |
 | 修改本地播放、打开文件夹或本地文件错误提示 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |
@@ -64,5 +64,6 @@
 - 图是否反映当前架构，而不是历史结构。
 - [设计文档](design.md) 的模块职责矩阵、依赖分层规则与已知限制列表是否仍与代码一致。
 - [4+1 架构视图](4-plus-1-view.md) 是否仍覆盖逻辑、开发、进程、物理和场景五类关注点。
+- [openapi.yaml](openapi.yaml) 的路径、状态码与模型字段是否仍与 `main.py`、`schemas.py` 一致（改动接口后必须显式核对，规范不会自动跟随代码）。
 - 是否已运行 `python scripts\docs.py check`，确认本地链接和 UML 产物一致。
 - 是否遗漏 `ai/` 下的任务或审查记录。

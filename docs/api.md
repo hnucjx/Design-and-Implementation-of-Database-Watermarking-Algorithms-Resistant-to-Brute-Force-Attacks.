@@ -2,6 +2,24 @@
 
 适用读者：前端开发者、后端维护者和需要调试接口的测试者。所有 schema 定义以 [backend/app/schemas.py](../backend/app/schemas.py) 为准，前端类型以 [frontend/src/types.ts](../frontend/src/types.ts) 为准。
 
+## 机器可读规范
+
+[openapi.yaml](openapi.yaml) 是本 API 的 OpenAPI 3.1.0 描述，覆盖全部 25 个操作、24 个 schema、复用的路径参数/错误响应组件与逐接口请求/响应示例。它由人工从 [main.py](../backend/app/main.py)（路由与状态码）与 [schemas.py](../backend/app/schemas.py)（字段与必填性）编写；**这两个文件仍是唯一事实来源**，规范只做投影。
+
+可直接用于：
+
+- Swagger Editor / Redoc / Postman 导入，生成交互式文档或客户端。
+- 代码生成前的一致性比对——把生成的模型与 `schemas.py` 做字段级 diff。
+
+校验方式（`openapi-spec-validator` 是文档工具，不进 `requirements.txt`）：
+
+```bash
+.venv/Scripts/python.exe -m pip install openapi-spec-validator
+.venv/Scripts/python.exe -c "from openapi_spec_validator import validate; from openapi_spec_validator.readers import read_from_filename; validate(read_from_filename('docs/openapi.yaml')[0])"
+```
+
+改动路由或 schema 后必须同步 `openapi.yaml`；这一步已写进 [维护文档的变更 checklist](maintenance.md#变更-checklist)。
+
 ## 基本约定
 
 - 后端应用由 [create_app](../backend/app/main.py#L41) 创建；API 默认绑定 `127.0.0.1:8000`，单端口模式下同时托管 `frontend/dist`。

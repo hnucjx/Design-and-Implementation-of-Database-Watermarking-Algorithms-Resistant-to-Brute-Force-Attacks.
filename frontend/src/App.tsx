@@ -1034,7 +1034,7 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
         </div>
       </label>
       <label className="field settings-number-field">
-        <span>并发（若追求稳定，可设为 1）</span>
+        <span>并发（同时下载的视频数；单个视频无效）</span>
         <input
           type="number"
           min={1}

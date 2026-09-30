@@ -328,7 +328,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByLabelText("下载目录")).toBeInTheDocument();
-    const concurrency = screen.getByLabelText("并发（若追求稳定，可设为 1）");
+    const concurrency = screen.getByLabelText("并发（同时下载的视频数；单个视频无效）");
     expect(concurrency).toBeInTheDocument();
     await waitFor(() => expect(concurrency).toHaveValue(2));
     expect(screen.queryByText("默认跟随 CPU core 数量，可按需覆盖。")).not.toBeInTheDocument();
@@ -674,6 +674,18 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "打开视频文件夹 Running video" }));
 
     expect(fetch).toHaveBeenCalledWith("/api/jobs/job-running/open-folder", expect.objectContaining({ method: "POST" }));
+  });
+
+  test("explains that concurrency does not speed up single-video tasks", async () => {
+    currentJobsPayload = [jobPayload, playlistJobPayload];
+    render(<App />);
+
+    expect(await screen.findByText("Running video")).toBeInTheDocument();
+    const singleCard = screen.getByText("Running video").closest(".job-card") as HTMLElement;
+    expect(within(singleCard).getByText(/单视频任务不受并发设置影响/)).toBeInTheDocument();
+
+    const playlistCard = screen.getByText("Playlist batch").closest(".job-card") as HTMLElement;
+    expect(within(playlistCard).queryByText(/单视频任务不受并发设置影响/)).not.toBeInTheDocument();
   });
 
   test("shows local file action failures beside the affected task", async () => {

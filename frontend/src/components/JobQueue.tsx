@@ -167,7 +167,11 @@ export function JobQueue({
               />
               <div className="job-main">
                 <h3>{title}</h3>
-                <p>{job.status} · {job.completed_items}/{job.total_items} 完成{job.error ? ` · ${job.error}` : ""}</p>
+                <p>
+                  {job.status} · {job.completed_items}/{job.total_items} 完成
+                  {!isPlaylist && ["queued", "running"].includes(job.status) ? " · 单视频任务不受并发设置影响" : ""}
+                  {job.error ? ` · ${job.error}` : ""}
+                </p>
               </div>
               <div className="job-actions">
                 {isPlaylist && (

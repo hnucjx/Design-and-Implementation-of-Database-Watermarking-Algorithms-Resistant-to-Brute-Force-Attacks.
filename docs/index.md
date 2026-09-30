@@ -9,7 +9,7 @@
 | 普通用户 | 从 [用户手册](user-manual.md) 开始，再按需要查看 [技术文档](technical.md) 的排障说明。 |
 | 后端开发者 | 先读 [架构设计](architecture.md)，再读 [API 文档](api.md) 和 [实现文档](implementation.md)。 |
 | 前端开发者 | 先读 [用户手册](user-manual.md) 理解工作流，再读 [API 文档](api.md) 和 [开发文档](development.md)。 |
-| 架构评审者 | 先读 [4+1 架构视图](4-plus-1-view.md)，再进入 [架构设计](architecture.md) 和 [实现文档](implementation.md)。 |
+| 架构评审者 | 先读 [4+1 架构视图](4-plus-1-view.md)，再进入 [架构设计](architecture.md) 和 [设计文档](design.md)。 |
 | 安全评审者 | 直接读 [安全审计报告](safety-review.md)，再对照 [需求分析](requirements.md#约束与边界) 的范围边界。 |
 | 文档维护者 | 先初始化 [文档写作与生成环境](documentation-workflow.md)，再按 [维护文档](maintenance.md) 更新文档和图。 |
 | 维护者 | 先读 [维护文档](maintenance.md)，再根据变更类型更新相关文档、4+1 视图和图。 |
@@ -20,6 +20,7 @@
 - [用户手册](user-manual.md)：面向最终使用者，说明启动入口、下载、cookies、任务中心和排障入口。
 - [需求分析](requirements.md)：描述项目要解决的问题、功能需求、非功能需求和明确不支持的边界。
 - [架构设计](architecture.md)：说明系统组成、模块边界、数据流和关键架构图。
+- [设计文档](design.md)：模块职责矩阵、依赖方向与分层规则、运行时并发模型、关键数据流、状态机与持久化设计取舍、扩展点与已知限制。
 - [4+1 架构视图](4-plus-1-view.md)：按逻辑、开发、进程、物理和场景视图组织架构审查入口。
 - [开发文档](development.md)：说明本地开发环境、依赖、命令、目录、第三方工具和配置项。
 - [文档写作与生成环境](documentation-workflow.md)：说明仓库内文档工具的初始化、UML 渲染、一致性检查和推荐写作流程。
@@ -38,6 +39,9 @@ UML 源码位于 [diagrams](diagrams/)，渲染后的 SVG 位于 [assets/diagram
 | --- | --- |
 | [系统上下文](diagrams/system-context.puml) | 项目与用户、浏览器、YouTube、yt-dlp、ffmpeg、SQLite 的关系。 |
 | [组件关系](diagrams/component-overview.puml) | 前端和后端内部主要模块边界。 |
+| [模块依赖](diagrams/module-dependencies.puml) | 后端分层、依赖方向与分层规则。 |
+| [下载数据流](diagrams/download-data-flow.puml) | 请求 → 队列 → yt-dlp → 进度聚合 → 落库 → SSE → 读模型。 |
+| [运行时并发](diagrams/runtime-concurrency.puml) | 事件循环、worker 任务、下载线程、锁与 SQLite session 的关系。 |
 | [4+1 逻辑视图](diagrams/four-plus-one-logical-view.puml) | 领域对象、服务职责和核心策略关系。 |
 | [4+1 开发视图](diagrams/four-plus-one-development-view.puml) | 源码模块、包结构和测试边界。 |
 | [4+1 进程视图](diagrams/four-plus-one-process-view.puml) | 运行时并发、队列、事件和设置变更流程。 |

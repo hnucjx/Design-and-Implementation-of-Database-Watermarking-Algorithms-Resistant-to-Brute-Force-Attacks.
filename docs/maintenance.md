@@ -18,8 +18,8 @@
 | 修改配置或依赖 | [开发文档](development.md)、[技术文档](technical.md)、README 快速启动 |
 | 修改数据库模型或补列 | [实现文档](implementation.md)、[架构设计](architecture.md)、[data-model.puml](diagrams/data-model.puml) |
 | 修改测试命令或测试策略 | [测试文档](testing.md)、README 测试摘要入口 |
-| 重构模块边界或调整依赖方向 | [架构设计](architecture.md)、[4+1 架构视图](4-plus-1-view.md)、[实现文档](implementation.md)、组件图、4+1 逻辑视图和开发视图 |
-| 修改任务队列、SSE、运行时设置、进度、暂停/重启/删除流程 | [4+1 架构视图](4-plus-1-view.md)、[技术文档](technical.md)、[实现文档](implementation.md)、4+1 进程视图 |
+| 重构模块边界或调整依赖方向 | [设计文档](design.md)、[架构设计](architecture.md)、[4+1 架构视图](4-plus-1-view.md)、[实现文档](implementation.md)、组件图、模块依赖图、4+1 逻辑视图和开发视图 |
+| 修改任务队列、SSE、运行时设置、进度、暂停/重启/删除流程 | [设计文档](design.md#运行时并发模型)、[4+1 架构视图](4-plus-1-view.md)、[技术文档](technical.md)、[实现文档](implementation.md)、4+1 进程视图、运行时并发图、下载数据流图 |
 | 修改端口、部署模式、外部工具、文件位置或本机打开方式 | [4+1 架构视图](4-plus-1-view.md)、[开发文档](development.md)、4+1 物理视图 |
 | 新增或删除用户关键操作 | [用户手册](user-manual.md)、[需求分析](requirements.md)、[4+1 架构视图](4-plus-1-view.md)、4+1 场景视图 |
 | 修改安全相关的文件操作、CORS、日志清洗或依赖 | [安全审计报告](safety-review.md)（更新基线 commit 与审查日期） |
@@ -40,7 +40,11 @@
 1. 修改对应 `.puml` 源文件。
 2. 运行 `python scripts\docs.py render` 渲染 SVG 到 `docs/assets/diagrams/`。
 3. 确认相关 Markdown 已嵌入 SVG，并链接 `.puml` 源文件。
-4. 如果变更影响逻辑、开发、进程、物理或场景视图之一，同步更新 [4+1 架构视图](4-plus-1-view.md) 和对应 `four-plus-one-*.puml`。
+4. 按变更类型同步受影响的视图：
+   - 模块边界或依赖方向 → [module-dependencies.puml](diagrams/module-dependencies.puml)、组件图、4+1 逻辑视图与开发视图。
+   - 下载链路、进度聚合或事件流 → [download-data-flow.puml](diagrams/download-data-flow.puml)、单视频/Playlist 时序图。
+   - 队列、worker、锁、线程或 SQLite 会话 → [runtime-concurrency.puml](diagrams/runtime-concurrency.puml)、4+1 进程视图。
+   - 逻辑/开发/进程/物理/场景视图任一变化 → 同步更新 [4+1 架构视图](4-plus-1-view.md) 和对应 `four-plus-one-*.puml`。
 5. 运行 `python scripts\docs.py check` 和 `git diff --check`。
 
 首次使用、系统依赖和工具缓存策略见 [文档写作与生成环境](documentation-workflow.md)。
@@ -58,6 +62,7 @@
 - README 是否仍是入口页。
 - 新增环境变量、API 字段、任务状态、错误原因是否都有文档记录。
 - 图是否反映当前架构，而不是历史结构。
+- [设计文档](design.md) 的模块职责矩阵、依赖分层规则与已知限制列表是否仍与代码一致。
 - [4+1 架构视图](4-plus-1-view.md) 是否仍覆盖逻辑、开发、进程、物理和场景五类关注点。
 - 是否已运行 `python scripts\docs.py check`，确认本地链接和 UML 产物一致。
 - 是否遗漏 `ai/` 下的任务或审查记录。

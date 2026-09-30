@@ -34,6 +34,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | [用户手册](docs/user-manual.md) | 启动入口、下载操作、cookies 和常见排障入口。 |
 | [需求分析](docs/requirements.md) | 项目目标、功能需求、非功能需求和边界。 |
 | [架构设计](docs/architecture.md) | 前后端、SQLite、yt-dlp、ffmpeg、SSE 和外部依赖关系。 |
+| [设计文档](docs/design.md) | 模块职责与依赖分层、运行时并发模型、关键数据流、扩展点和已知限制。 |
 | [4+1 架构视图](docs/4-plus-1-view.md) | 逻辑、开发、进程、物理和场景视图，用于架构审查。 |
 | [开发文档](docs/development.md) | 环境准备、依赖安装、配置项、目录结构和运行命令。 |
 | [文档写作环境](docs/documentation-workflow.md) | 初始化文档工具、渲染 UML、检查本地链接和生成产物。 |
@@ -42,6 +43,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | [实现文档](docs/implementation.md) | 核心模块职责、任务调度、进度聚合、读模型和数据库补列。 |
 | [测试文档](docs/testing.md) | 自动测试、手动验收和回归重点。 |
 | [维护文档](docs/maintenance.md) | 文档同步规则、变更 checklist 和排障流程。 |
+| [安全审计报告](docs/safety-review.md) | 安全审查结论、检查清单与待复核项。 |
 
 ## 测试摘要
 

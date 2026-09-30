@@ -1,0 +1,79 @@
+@startuml
+title Backend Module Dependencies
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam linetype ortho
+
+package "L0 entry" {
+  [main.py\nFastAPI routes + lifespan] as Main
+}
+
+package "L1 contracts" {
+  [config.py\nAppSettings] as Config
+  [schemas.py\nwire models] as Schemas
+  [models.py\nSQLModel tables] as Models
+}
+
+package "L2 orchestration" {
+  [job_manager.py\nqueue, workers, state machine] as Manager
+  [job_read_model.py\nAPI projection] as ReadModel
+  [events.py\nEventBroker] as Broker
+}
+
+package "L3 domain and policy" {
+  [ytdlp_service.py\nyt-dlp boundary] as Service
+  [ytdlp_formats.py\nselectors, fallback math] as Formats
+  [stall_guard.py\nstall watchdog] as Stall
+  [fallback_policy.py\nreason and message] as Fallback
+  [browser_cookies.py\ncookie import] as Cookies
+  [download_progress.py\nsubstream aggregation] as Progress
+  [progress_persist.py\npersist gate] as Gate
+  [transfer_stats.py\naverage speed] as Stats
+  [output_paths.py\npath discovery] as Outputs
+  [system_open.py\nplayer and folder] as Opener
+}
+
+package "L4 infrastructure" {
+  [db.py\nengine, pragmas, migrations] as DB
+}
+
+package "L5 pure helpers" {
+  [paths.py\nsafe path names] as Paths
+  [log_safety.py\nlog scrubbing] as LogSafe
+}
+
+Main --> Config
+Main --> Schemas
+Main --> Manager
+Main --> ReadModel
+Main --> Service
+Main --> DB
+Manager --> Models
+Manager --> Service
+Manager --> Progress
+Manager --> Gate
+Manager --> Stats
+Manager --> Stall
+Manager --> Fallback
+Manager --> Outputs
+Manager --> Broker
+Manager --> Paths
+Manager --> LogSafe
+ReadModel --> Models
+ReadModel --> Fallback
+ReadModel --> Outputs
+Service --> Formats
+Service --> Cookies
+Service --> Stall
+Service --> LogSafe
+DB --> Models
+Broker --> Schemas : JSON payloads
+
+note bottom
+Dependency rule: arrows only point downwards.
+L5 has no project imports; L3 never imports L2 or L0;
+infrastructure (L4) knows tables but not job logic.
+Violations to watch: importing job_manager from
+ytdlp_service, or importing yt-dlp types into schemas.
+end note
+@enduml

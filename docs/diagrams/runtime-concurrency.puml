@@ -1,0 +1,57 @@
+@startuml
+title Runtime Concurrency Model
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+node "Uvicorn process (one OS process)" as Proc {
+  node "asyncio event loop (main thread)" as Loop {
+    component "FastAPI handlers\nanalyze / jobs / settings / cookies" as Handlers
+    component "EventBroker\nSSE listener queues" as Broker
+    component "JobManager worker task 1..N\nN = configured concurrency" as Workers
+    component "asyncio.Queue\nJobItem ids" as Queue
+  }
+
+  node "asyncio default ThreadPoolExecutor" as Pool {
+    component "download thread\n_run_item_work (item A)" as ThreadA
+    component "download thread\n_run_item_work (item B)" as ThreadB
+  }
+
+  database "SQLite (WAL)\ndata/app.sqlite3" as DB
+}
+
+component "yt-dlp Python API\nruns inside the download thread" as YTDLP
+component "aria2c\noptional external process" as Aria2
+component "ffmpeg\nexternal process" as FFmpeg
+
+Handlers --> Queue : put item ids / enqueue
+Handlers --> DB : request-scoped Session
+Queue --> Workers : dequeue
+Workers ..> ThreadA : asyncio.to_thread
+Workers ..> ThreadB : asyncio.to_thread
+ThreadA --> YTDLP
+ThreadB --> YTDLP
+YTDLP --> Aria2 : external_downloader\n(only when enabled)
+YTDLP --> FFmpeg : merge video + audio
+ThreadA --> DB : own Session, own commit
+ThreadB --> DB : own Session, own commit
+ThreadA ..> Broker : call_soon_threadsafe
+ThreadB ..> Broker : call_soon_threadsafe
+Broker --> Handlers : data: <json>\\n\\n
+
+note right of Pool
+One thread per in-flight video. The event loop
+stays free for API and SSE: a worker never awaits
+inside yt-dlp, it hands the whole call to a thread.
+end note
+
+note bottom of Loop
+Locks and the loop hand-off:
+* _item_claim_lock guards "refresh -> check queued
+  -> set running -> commit" only, never the download.
+* _cookie_import_lock is held briefly while a 403
+  triggers a browser cookie re-import.
+* Progress hooks run on the download thread, so they
+  write through their own Session and publish with
+  loop.call_soon_threadsafe.
+end note
+@enduml

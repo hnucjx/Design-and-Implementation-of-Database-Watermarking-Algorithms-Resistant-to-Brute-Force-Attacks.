@@ -1,0 +1,55 @@
+@startuml
+title Download Data Flow
+skinparam shadowing false
+
+start
+group HTTP layer
+  :POST /api/jobs with url + DownloadOptions;
+  :extract_metadata (with cookies when present);
+  :insert Job and one JobItem per selected entry;
+  :enqueue queued JobItem ids;
+end group
+
+group JobManager
+  :worker dequeues an item id;
+  :claim lock: check status, set running, commit;
+  :offload to a thread via asyncio.to_thread;
+  :prepare_download resolves the planned format and size;
+end group
+
+group yt-dlp
+  :build_download_options for the profile chain;
+  :extract and download, emit progress payloads;
+  if (media stream failure?) then (yes)
+    :try the next profile;\nDownloadStalled and Cancel skip the chain;
+  else (no)
+  endif
+end group
+
+group progress pipeline
+  :DownloadProgressAggregator merges substreams;
+  :TransferStats records bytes and elapsed time;
+  :StallGuard checks whether the byte peak advanced;
+  if (peak stale for the timeout?) then (yes)
+    :raise DownloadStalled, item fails visibly;
+    stop
+  else (no)
+  endif
+  :ProgressPersistGate decides write vs skip;
+end group
+
+group persistence and UI
+  :update JobItem, then aggregate the Job row;
+  :append a JobEvent row and publish on EventBroker;
+  :SSE message reaches the browser;
+  :GET /api/jobs reads the job_read_model projection;
+  :React task center renders the new state;
+end group
+stop
+
+note right
+The gate throttles writes (>=250ms, or >=0.5% progress,
+or a terminal status), so five parallel workers do not
+turn every chunk callback into a commit.
+end note
+@enduml

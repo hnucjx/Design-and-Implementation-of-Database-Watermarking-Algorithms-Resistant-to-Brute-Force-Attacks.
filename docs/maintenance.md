@@ -11,17 +11,18 @@
 | 变更类型 | 必查文档 |
 | --- | --- |
 | 新增或修改 API endpoint/schema | [API 文档](api.md)、[架构设计](architecture.md)、相关 UML 图 |
-| 修改下载策略、清晰度、格式、cookies、PO token、aria2c | [技术文档](technical.md)、[用户手册](user-manual.md)、[测试文档](testing.md) |
+| 修改下载策略、清晰度、格式、cookies、PO token、aria2c、停滞看门狗或节流守卫 | [技术文档](technical.md)、[用户手册](user-manual.md)、[测试文档](testing.md)、[PLAN.md](../PLAN.md)（若属于性能修复范围） |
 | 修改任务状态、进度、速度或错误显示 | [API 文档](api.md)、[实现文档](implementation.md)、[用户手册](user-manual.md) |
 | 修改本地播放、打开文件夹或本地文件错误提示 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |
 | 修改任务删除或文件清理行为 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |
 | 修改配置或依赖 | [开发文档](development.md)、[技术文档](technical.md)、README 快速启动 |
 | 修改数据库模型或补列 | [实现文档](implementation.md)、[架构设计](architecture.md)、[data-model.puml](diagrams/data-model.puml) |
 | 修改测试命令或测试策略 | [测试文档](testing.md)、README 测试摘要入口 |
-| 重构模块边界 | [架构设计](architecture.md)、[4+1 架构视图](4-plus-1-view.md)、[实现文档](implementation.md)、组件图、4+1 逻辑视图和开发视图 |
+| 重构模块边界或调整依赖方向 | [架构设计](architecture.md)、[4+1 架构视图](4-plus-1-view.md)、[实现文档](implementation.md)、组件图、4+1 逻辑视图和开发视图 |
 | 修改任务队列、SSE、运行时设置、进度、暂停/重启/删除流程 | [4+1 架构视图](4-plus-1-view.md)、[技术文档](technical.md)、[实现文档](implementation.md)、4+1 进程视图 |
 | 修改端口、部署模式、外部工具、文件位置或本机打开方式 | [4+1 架构视图](4-plus-1-view.md)、[开发文档](development.md)、4+1 物理视图 |
 | 新增或删除用户关键操作 | [用户手册](user-manual.md)、[需求分析](requirements.md)、[4+1 架构视图](4-plus-1-view.md)、4+1 场景视图 |
+| 修改安全相关的文件操作、CORS、日志清洗或依赖 | [安全审计报告](safety-review.md)（更新基线 commit 与审查日期） |
 
 ## 排障流程
 

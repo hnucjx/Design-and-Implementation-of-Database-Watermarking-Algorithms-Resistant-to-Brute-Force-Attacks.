@@ -20,7 +20,7 @@
 
 PlantUML 源文件：[four-plus-one-logical-view.puml](diagrams/four-plus-one-logical-view.puml)。
 
-逻辑视图把系统分为 UI 领域、应用服务、领域策略和持久化模型。任务创建、下载、进度聚合、分辨率降级、cookies 导入和设置持久化都通过后端应用服务协调；下载策略和 fallback 文案由独立策略模块承载，避免散落在 API 路由或前端展示组件中。
+逻辑视图把系统分为 UI 领域、应用服务、领域策略和持久化模型。任务创建、下载、进度聚合、分辨率降级、cookies 导入和设置持久化都通过后端应用服务协调；下载策略和 fallback 文案由独立策略模块承载，避免散落在 API 路由或前端展示组件中。停滞看门狗同样作为独立策略模块挂在下载服务上，而不是混进任务管理器的状态机。
 
 ## 开发视图
 
@@ -28,7 +28,7 @@ PlantUML 源文件：[four-plus-one-logical-view.puml](diagrams/four-plus-one-lo
 
 PlantUML 源文件：[four-plus-one-development-view.puml](diagrams/four-plus-one-development-view.puml)。
 
-开发视图展示源码层依赖。前端由 [App.tsx](../frontend/src/App.tsx) 编排状态，展示组件集中在 [JobQueue.tsx](../frontend/src/components/JobQueue.tsx)，HTTP 边界集中在 [api.ts](../frontend/src/api.ts)。后端由 [main.py](../backend/app/main.py) 暴露 HTTP API，[job_manager.py](../backend/app/job_manager.py) 处理队列和 worker，[ytdlp_service.py](../backend/app/ytdlp_service.py) 隔离 yt-dlp 细节。
+开发视图展示源码层依赖。前端由 [App.tsx](../frontend/src/App.tsx) 编排状态，展示组件集中在 [JobQueue.tsx](../frontend/src/components/JobQueue.tsx)，HTTP 边界集中在 [api.ts](../frontend/src/api.ts)。后端由 [main.py](../backend/app/main.py) 暴露 HTTP API，[job_manager.py](../backend/app/job_manager.py) 处理队列和 worker，[ytdlp_service.py](../backend/app/ytdlp_service.py) 隔离 yt-dlp 细节；进度聚合、落库节流、平均速度、停滞检测和输出路径解析各自独立成模块，依赖方向保持「入口 → 编排 → 下载 → 纯工具」，细节见 [组件关系](architecture.md#组件关系)。
 
 ## 进程视图
 
@@ -36,7 +36,7 @@ PlantUML 源文件：[four-plus-one-development-view.puml](diagrams/four-plus-on
 
 PlantUML 源文件：[four-plus-one-process-view.puml](diagrams/four-plus-one-process-view.puml)。
 
-进程视图关注运行中的并发和事件。FastAPI 请求线程负责校验、持久化和发布事件；`JobManager` worker 按当前并发从队列取出 `JobItem`；一个合集的多个子视频可以并行占用多个 worker。SQLite 使用 WAL，进度写入可以并发读取而不把整个数据库锁在 DELETE journal 上。SSE 只作为刷新信号，前端再读取 `/api/jobs` 的读模型。并发、限速和重试次数属于运行时设置，详见 [技术文档](technical.md#稳定下载策略)。
+进程视图关注运行中的并发和事件。FastAPI 请求线程负责校验、持久化和发布事件；`JobManager` worker 按当前并发从队列取出 `JobItem`；一个合集的多个子视频可以并行占用多个 worker，而**单视频任务只有一个 `JobItem`，因此不受并发设置影响**。每个子项的 yt-dlp 调用通过 `asyncio.to_thread` 落到工作线程，其进度 hook 使用自己的 SQLite session；[StallGuard](../backend/app/stall_guard.py) 在同一条 hook 链上观测字节峰值，超时即把该子项判为失败。SQLite 使用 WAL，应用启动与停止时各做一次 `wal_checkpoint(TRUNCATE)`，避免 `-wal` 侧车文件无界增长。SSE 只作为刷新信号，前端再读取 `/api/jobs` 的读模型。并发、限速和重试次数属于运行时设置，详见 [技术文档](technical.md#稳定下载策略)。
 
 ## 物理视图
 
@@ -44,7 +44,7 @@ PlantUML 源文件：[four-plus-one-process-view.puml](diagrams/four-plus-one-pr
 
 PlantUML 源文件：[four-plus-one-physical-view.puml](diagrams/four-plus-one-physical-view.puml)。
 
-物理视图明确本项目是本机单用户应用：浏览器访问 `127.0.0.1:8000`，FastAPI 托管前端并提供 API，SQLite、cookies、下载文件和系统播放器/文件管理器都在同一台用户机器上。文档生成环境也作为工程交付物存在于开发机：仓库内脚本管理 PlantUML jar 缓存，并调用 Java 与 Graphviz 生成 SVG。项目不面向公网多用户部署，边界见 [需求分析](requirements.md#范围边界)。
+物理视图明确本项目是本机单用户应用：浏览器访问 `127.0.0.1:8000`，FastAPI 托管前端并提供 API，SQLite、cookies、下载文件和系统播放器/文件管理器都在同一台用户机器上。外部工具依赖为 `ffmpeg`（必需，缺失时高清晰度直接报错）和 `aria2c`（可选，默认关闭，同时需要 `YTDL_ARIA2C_ENABLED=true`）。文档生成环境也作为工程交付物存在于开发机：仓库内脚本管理 PlantUML jar 缓存，并调用 Java 与 Graphviz 生成 SVG。项目不面向公网多用户部署，边界见 [需求分析](requirements.md#约束与边界)。
 
 ## 场景视图
 

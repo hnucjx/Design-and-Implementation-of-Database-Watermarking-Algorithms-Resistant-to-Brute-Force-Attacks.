@@ -3,15 +3,15 @@ title Core Data Model
 skinparam shadowing false
 
 class Setting {
-  +key: str
+  +key: str <<PK>>
   +value: str
 }
 
 class Job {
-  +id: str
+  +id: str <<PK>>
   +url: str
   +title: str
-  +status: str
+  +status: str <<indexed>>
   +options_json: str
   +progress: float
   +speed: float?
@@ -19,35 +19,49 @@ class Job {
   +total_items: int
   +completed_items: int
   +failed_items: int
-  +download_dir: str?
+  +current_item_title: str?
   +error: str?
+  +download_dir: str?
+  +created_at: datetime
+  +updated_at: datetime
+  +started_at: datetime?
+  +finished_at: datetime?
 }
 
 class JobItem {
-  +id: str
-  +job_id: str
+  +id: str <<PK>>
+  +job_id: str <<indexed>>
   +source_url: str
   +title: str
   +index: int
-  +status: str
+  +status: str <<indexed>>
   +progress: float
   +downloaded_bytes: int?
   +total_bytes: int?
+  +speed: float?
+  +eta: int?
+  +output_path: str?
   +actual_width: int?
   +actual_height: int?
   +actual_format: str?
+  +options_json: str?
   +requested_resolution: str?
   +fallback_resolution: str?
   +fallback_reason: str?
   +error: str?
+  +created_at: datetime
+  +updated_at: datetime
+  +started_at: datetime?
+  +finished_at: datetime?
 }
 
 class JobEvent {
-  +id: int?
-  +job_id: str
-  +item_id: str?
+  +id: int <<PK>>
+  +job_id: str <<indexed>>
+  +item_id: str? <<indexed>>
   +event_type: str
   +payload_json: str
+  +created_at: datetime
 }
 
 class JobRead {
@@ -55,6 +69,7 @@ class JobRead {
   +actual_resolution: str?
   +actual_format: str?
   +resolution_fallback: ResolutionFallback?
+  +elapsed_seconds: int
 }
 
 Job "1" --> "*" JobItem : contains
@@ -62,4 +77,5 @@ Job "1" --> "*" JobEvent : emits
 JobItem "0..1" --> "*" JobEvent : item events
 Job --> JobRead : projected by job_read_model
 JobItem --> JobRead : projected by job_read_model
+Setting ..> Job : download_dir / defaults\napplied on startup
 @enduml

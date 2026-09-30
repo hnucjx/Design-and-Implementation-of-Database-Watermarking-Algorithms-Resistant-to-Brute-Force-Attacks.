@@ -5,13 +5,15 @@ skinparam shadowing false
 [*] --> queued : create job/item
 queued --> running : worker picks item
 running --> succeeded : download completes
-running --> failed : unrecoverable error
+running --> failed : unrecoverable error,\ncancel-free failure, or DownloadStalled
 running --> paused : user pauses
 queued --> paused : user pauses before worker
 queued --> cancelled : user cancels
 running --> cancelled : cancel requested
+queued --> queued : runtime option change requeues
+running --> queued : runtime option change requeues
 paused --> queued : restart
-failed --> queued : restart
+failed --> queued : restart (optional resolution)
 succeeded --> queued : restart
 cancelled --> queued : restart
 queued --> [*] : delete
@@ -23,6 +25,14 @@ cancelled --> [*] : delete
 
 note right of running
 Progress is aggregated across yt-dlp
-sub-stream payloads and remains monotonic.
+sub-stream payloads and stays monotonic
+until a new substream raises the total.
+end note
+
+note bottom of failed
+DownloadStalled is raised by the watchdog
+and is not retried on the next yt-dlp
+profile, so a silent loop becomes a
+visible failure instead of staying running.
 end note
 @enduml

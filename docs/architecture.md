@@ -2,7 +2,7 @@
 
 适用读者：需要理解系统组成、模块边界和数据流的开发者与维护者。
 
-如果需要按软件工程架构规范进行系统性审查，请先阅读 [4+1 架构视图](4-plus-1-view.md)。本页继续保留系统上下文、组件、数据流和状态生命周期的详细说明。
+如果需要按软件工程架构规范进行系统性审查，请先阅读 [4+1 架构视图](4-plus-1-view.md)。本页继续保留系统上下文、组件、数据流和状态生命周期的详细说明；模块级的职责划分、依赖方向与运行时并发模型见 [实现文档](implementation.md)。
 
 ## 系统上下文
 
@@ -16,11 +16,14 @@ PlantUML 源文件：[system-context.puml](diagrams/system-context.puml)。
 
 | 容器 | 职责 | 主要入口 |
 | --- | --- | --- |
-| React/Vite 前端 | 解析表单、下载选项、任务中心、cookies 操作和设置面板。 | [App.tsx](../frontend/src/App.tsx)、[api.ts](../frontend/src/api.ts#L23) |
+| React/Vite 前端 | 解析表单、下载选项、任务中心、cookies 操作和设置面板。 | [App.tsx](../frontend/src/App.tsx)、[api.ts](../frontend/src/api.ts#L24) |
 | FastAPI 后端 | HTTP API、SSE、任务调度、SQLite 持久化、调用 yt-dlp。 | [create_app](../backend/app/main.py#L41) |
+| 任务调度与执行 | 队列、worker、暂停/重启/删除、进度聚合、错误分类与终态收敛。 | [JobManager](../backend/app/job_manager.py#L35) |
 | SQLite | 存储任务、子任务、设置和事件。 | [models.py](../backend/app/models.py#L27)、[db.py](../backend/app/db.py#L27) |
-| yt-dlp 服务 | 元数据解析、下载参数构建、profile 重试、格式选择和依赖诊断。 | [YtDlpService](../backend/app/ytdlp_service.py#L84) |
+| yt-dlp 服务 | 元数据解析、下载参数构建、profile 重试、格式选择和依赖诊断。 | [YtDlpService](../backend/app/ytdlp_service.py#L88) |
+| 停滞看门狗 | 观测 progress 回调，把静默卡死转为可见失败。 | [StallGuard](../backend/app/stall_guard.py#L32) |
 | 浏览器 cookies 导入器 | 从本机浏览器导入 YouTube/Google cookies，并处理 Edge 锁库和 CDP fallback。 | [BrowserCookieImporter](../backend/app/browser_cookies.py#L55) |
+| 本机打开器 | 选择可解码播放器打开视频、打开输出目录。 | [system_open.py](../backend/app/system_open.py#L23) |
 
 ## 组件关系
 
@@ -38,7 +41,7 @@ PlantUML 源文件：[component-overview.puml](diagrams/component-overview.puml)
 
 PlantUML 源文件：[single-video-sequence.puml](diagrams/single-video-sequence.puml)。
 
-用户先调用 `POST /api/analyze` 获取元数据，再通过 `POST /api/jobs` 创建任务。`JobManager` 将任务入队，worker 调用 `YtDlpService.prepare_download()` 预检测，再调用 `download()` 下载。进度通过数据库、SSE 和 `/api/jobs` 回到前端。
+用户先调用 `POST /api/analyze` 获取元数据，再通过 `POST /api/jobs` 创建任务。`JobManager` 将任务入队，worker 调用 `YtDlpService.prepare_download()` 预检测，再调用 `download()` 下载。进度通过数据库、SSE 和 `/api/jobs` 回到前端。下载过程中 [StallGuard](../backend/app/stall_guard.py) 观测 progress 回调；如果在配置的窗口内没有新的字节峰值，任务会以可读原因失败，而不是停留在 `running`。完整实现说明见 [实现文档](implementation.md#停滞看门狗)。
 
 ### Playlist
 
@@ -81,4 +84,5 @@ PlantUML 源文件：[data-model.puml](diagrams/data-model.puml)。
 - 下载能力集中封装在 `YtDlpService`，避免 API 层暴露任意 yt-dlp 参数。
 - 任务执行与 API 读模型分离，API 只读取投影，任务管理器负责状态转换。
 - 分辨率降级只在下载前可判断的场景自动发生；媒体流 403/连接重置不会中途自动降级重下，详见 [技术文档](technical.md#分辨率降级原因)。
-- 稳定优先运行方式：可将并发设为 1，并配合小 chunk、低速重取 URL、断点续传和同清晰度 profile 重试。
+- 稳定性默认值来自 [PLAN.md](../PLAN.md) 的修复基线：节流守卫默认关闭（`YTDL_THROTTLED_RATE_KBPS=0`），改用 90 秒停滞看门狗兜底；aria2c 多连接默认关闭，仅在显式启用且需要给单视频提速时使用。稳定优先的运行方式是把并发设为 1。
+- 单端口部署：FastAPI 在 `frontend/dist` 存在时挂载静态资源并提供首页，见 [main.py](../backend/app/main.py#L399)；否则只提供 API，页面走 Vite dev server。

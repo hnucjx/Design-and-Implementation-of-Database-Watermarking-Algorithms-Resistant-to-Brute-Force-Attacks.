@@ -80,6 +80,26 @@ python scripts\docs.py check
 
 该命令不会修改已提交 SVG；发现 UML 产物过期时，先运行 `render`，再检查差异。
 
+## 渲染器版本敏感性
+
+`check` 的一致性判定是**逐字节比较**：它把 `docs/diagrams/*.puml` 复制到临时目录，用当前机器的 Java、Graphviz 和固定版本 PlantUML 现场渲染，再与 `docs/assets/diagrams/*.svg` 逐文件比对。
+
+由此产生一个必须显式接受的约束：
+
+- PlantUML jar 版本由脚本固定并校验 SHA-256，因此不构成变量。
+- **Graphviz 版本是变量**。不同 Graphviz 版本的布局算法调整会改变 `dot` 输出的坐标，从而改变 SVG 字节；内容语义不变，但 `check` 会报告「UML SVG 需要重新渲染」。
+- 换机器、升级 Graphviz、或首次在未渲染过的环境执行 `check` 时，正确做法是运行 `python scripts\docs.py render`，确认 SVG 差异仅来自布局，然后连同 `.puml` 一起提交。
+
+本仓库最近一次渲染基线：
+
+| 项 | 值 |
+| --- | --- |
+| PlantUML | `1.2026.5`（`plantuml-mit`） |
+| Java | Oracle JDK 25（`java 25.0.3`） |
+| Graphviz | 15.1.1 |
+
+该表只用于解释差异来源，不是硬性要求；升级时更新此表并重新渲染即可。
+
 ## 推荐写作流程
 
 1. 阅读 [文档中心](index.md) 与 [维护 checklist](maintenance.md#变更-checklist)，确认需要同步更新的文档。

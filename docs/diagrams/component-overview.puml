@@ -4,45 +4,79 @@ skinparam componentStyle rectangle
 skinparam shadowing false
 
 package "Frontend" {
-  [App.tsx] as App
-  [JobQueue.tsx] as Queue
-  [api.ts] as ApiClient
+  [App.tsx\nstate + SSE + panels] as App
+  [JobQueue.tsx\ntask center] as Queue
+  [api.ts\nHTTP boundary] as ApiClient
   [types.ts] as Types
   [quality.ts] as Quality
   [formatting.ts] as Formatting
 }
 
-package "Backend" {
-  [main.py\nFastAPI routes] as Main
-  [job_manager.py\nqueue/workers] as Manager
+package "Backend / entry" {
+  [main.py\nFastAPI routes + lifespan] as Main
+  [schemas.py\nrequest/response models] as Schemas
+  [config.py\nAppSettings] as Config
+}
+
+package "Backend / orchestration" {
+  [job_manager.py\nqueue + workers] as Manager
   [job_read_model.py\nAPI projection] as ReadModel
+  [events.py\nEventBroker (SSE)] as Broker
+}
+
+package "Backend / download" {
   [ytdlp_service.py\nyt-dlp boundary] as Service
-  [browser_cookies.py\ncookie import] as Cookies
   [ytdlp_formats.py\nselectors] as Formats
-  [fallback_policy.py\nmessages] as Fallback
+  [stall_guard.py\nstall watchdog] as StallGuard
+  [browser_cookies.py\ncookie import] as Cookies
+  [system_open.py\nplayer / folder opener] as SystemOpen
+  [output_paths.py\noutput discovery] as OutputPaths
+}
+
+package "Backend / progress" {
   [download_progress.py\nstream aggregation] as Progress
+  [progress_persist.py\npersist gate] as PersistGate
   [transfer_stats.py\naverage speed] as Stats
-  [db.py + models.py\nSQLite] as Data
+}
+
+package "Backend / support" {
+  [models.py\nSQLModel tables] as Models
+  [db.py\nengine + pragmas] as DB
+  [fallback_policy.py\ndowngrade messages] as Fallback
+  [paths.py\nsafe names] as Paths
+  [log_safety.py\nlog scrubbing] as LogSafety
 }
 
 App --> Queue
 App --> ApiClient
 App --> Quality
+App --> Formatting
 Queue --> Formatting
 ApiClient --> Types
-ApiClient --> Main : HTTP
+ApiClient --> Main : HTTP + SSE
+Main --> Config
+Main --> Schemas
 Main --> Manager
 Main --> ReadModel
 Main --> Service
-Main --> Data
+Main --> DB
+Main --> SystemOpen
 Manager --> Service
 Manager --> Progress
+Manager --> PersistGate
 Manager --> Stats
 Manager --> Fallback
-Manager --> Data
+Manager --> OutputPaths
+Manager --> Paths
+Manager --> LogSafety
+Manager --> Broker
+Manager --> Models
 ReadModel --> Fallback
-ReadModel --> Data
+ReadModel --> OutputPaths
+ReadModel --> Models
 Service --> Formats
 Service --> Cookies
-Service --> Data : dependency status only
+Service --> StallGuard
+DB --> Models
+Broker --> Main : event stream
 @enduml

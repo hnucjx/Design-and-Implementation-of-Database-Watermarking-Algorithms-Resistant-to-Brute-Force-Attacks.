@@ -13,11 +13,11 @@
 
 ## 环境要求
 
-- Python 3.12 或更高版本。
-- Node.js 20+ 推荐。
+- Python 3.12 或更高版本（`backend/pyproject.toml` 的 `requires-python`）。
+- Node.js 20+ 推荐；yt-dlp 的 JS 运行时检测要求 Node 主版本 ≥ 20，或存在 `deno`。
 - Java 和 Graphviz 用于渲染 PlantUML 图；PlantUML jar 由仓库内文档工具自动下载和校验。
-- `ffmpeg` 推荐安装；如果 PATH 中没有系统 `ffmpeg`，后端会尝试使用 `imageio-ffmpeg` 后备执行文件。
-- `aria2c` 可选，仅当启用 `YTDL_ARIA2C_ENABLED=true` 时作为下载 fallback。
+- `ffmpeg` 推荐安装；如果 PATH 中没有系统 `ffmpeg`，后端会尝试使用 `imageio-ffmpeg` 后备执行文件。缺少 ffmpeg 时，需要合并音视频的清晰度会直接报错而不是静默降级。
+- `aria2c` 可选，仅当同时满足 `YTDL_ARIA2C_ENABLED=true` 且能找到可执行文件时才插入 `default_aria2c` profile。它也是单视频任务唯一真实的提速手段，默认关闭。
 
 Windows 可用：
 
@@ -27,6 +27,7 @@ winget install OpenJS.NodeJS.LTS
 winget install Microsoft.OpenJDK.21
 winget install Gyan.FFmpeg
 winget install Graphviz.Graphviz
+winget install aria2.aria2      # 可选：仅在启用 aria2c fallback 时需要
 ```
 
 ## 安装依赖
@@ -85,30 +86,38 @@ npm run dev -- --port 5173
 | `data` | 本地 SQLite、cookies，已被 Git 忽略。 |
 | `downloads` | 默认下载产物目录，已被 Git 忽略。 |
 | `docs` | 工程文档、PlantUML 源和渲染图。 |
-| `scripts` | 可复现的工程辅助脚本，包括文档工具入口。 |
+| `scripts` | 可复现的工程辅助脚本：文档工具入口 [docs.py](../scripts/docs.py)，离线基准 [bench_concurrency.py](../scripts/bench_concurrency.py)、[bench_throttle_guard.py](../scripts/bench_throttle_guard.py)。 |
 | `.tools` | 文档工具自动下载的本机缓存，已被 Git 忽略。 |
 | `ai` | 任务计划、重构日志和文档生成 prompt。 |
+| `PLAN.md` | 下载性能与稳定性修复计划：根因分析、修复项、验证与回滚，是引用性能结论时的权威来源。 |
 
 ## 环境变量
 
-配置类定义见 [AppSettings](../backend/app/config.py#L19)，前缀为 `YTDL_`。
+配置类定义见 [AppSettings](../backend/app/config.py#L19)，前缀为 `YTDL_`，并会读取仓库根目录的 `.env`（`env_file=".env"`，`.env` 已被 Git 忽略）。下表列出全部字段及其当前默认值。
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `YTDL_DATA_DIR` | `data/` | 数据库和 cookies 目录。 |
 | `YTDL_DOWNLOAD_DIR` | `downloads/` | 下载产物目录。 |
 | `YTDL_DATABASE_PATH` | `data/app.sqlite3` | SQLite 文件路径。WAL 模式下同目录还会出现 `*.sqlite3-wal` 和 `*.sqlite3-shm`，已由 `.gitignore` 忽略。 |
-| `YTDL_DEFAULT_CONCURRENCY` | 来自 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` 或 `5` | 同时下载的视频数（跨任务和合集子项）。 |
+| `YTDL_COOKIES_FILENAME` | `cookies.txt` | cookies 文件名，实际路径为 `YTDL_DATA_DIR / YTDL_COOKIES_FILENAME`。 |
+| `YTDL_DEFAULT_CONCURRENCY` | 同 `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` | 同时下载的视频数（跨任务和合集子项）。 |
 | `YTDL_DEFAULT_RESOLUTION` | `1440p` | 默认清晰度。 |
+| `YTDL_DEFAULT_SUBTITLE_LANGUAGES` | `["en"]` | 默认字幕语言；列表类型，作为环境变量时用 JSON 语法提供。 |
+| `YTDL_DEFAULT_SPEED_LIMIT_KBPS` | 空 | 全局默认限速，空值表示不限速。 |
+| `YTDL_DEFAULT_RETRIES` | `10` | 默认下载重试次数，环境变量层面取值范围 `0..20`。 |
 | `YTDL_YOUTUBE_PO_TOKEN` | 空 | 高级排障用 YouTube PO token。 |
 | `YTDL_YOUTUBE_VISITOR_DATA` | 空 | 与 PO token 配套的 visitor data。 |
 | `YTDL_YOUTUBE_PO_BROWSER_PATH` | 空 | PO-token provider 使用的浏览器路径。 |
 | `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` | `5` | YouTube 同时下载的视频数；若追求稳定，可设为 `1`。 |
-| `YTDL_ANTI403_HTTP_CHUNK_SIZE_MB` | `16` | HTTP chunk 大小。 |
-| `YTDL_THROTTLED_RATE_KBPS` | `64` | 低速重取 media URL 阈值，`0` 表示禁用。 |
+| `YTDL_ANTI403_HTTP_CHUNK_SIZE_MB` | `16` | HTTP chunk 大小，按块重开请求以降低 403 概率。 |
+| `YTDL_THROTTLED_RATE_KBPS` | `0`（关闭） | 单条流低速重取阈值。`> 0` 时会写入 yt-dlp 的 `throttledratelimit`，见 [技术文档](technical.md#稳定下载策略)。 |
+| `YTDL_STALL_TIMEOUT_SECONDS` | `90.0` | 停滞看门狗阈值；该秒数内没有任何新增字节就让任务失败。`0` 表示关闭。 |
 | `YTDL_ARIA2C_ENABLED` | `false` | 是否启用 aria2c fallback。 |
-| `YTDL_ARIA2C_PATH` | 空 | aria2c 可执行文件路径或命令名。 |
-| `YTDL_ARIA2C_CONNECTIONS` | `1` | aria2c 连接数，建议保持 1。 |
+| `YTDL_ARIA2C_PATH` | 空 | aria2c 可执行文件路径或命令名；为空时按 PATH 查找。 |
+| `YTDL_ARIA2C_CONNECTIONS` | `2` | aria2c 每文件连接数，取值范围 `1..4`。连接越多，403/限速风险越高。 |
+
+运行时可在设置面板修改的字段（下载目录、并发、默认清晰度、字幕语言、限速、重试次数、aria2c 连接数）会写入 `Setting` 表并在下次启动时覆盖环境变量，见 [_apply_stored_settings](../backend/app/main.py#L576)。
 
 ## PlantUML 图更新
 
@@ -131,6 +140,8 @@ python scripts\docs.py check
 ```
 
 PlantUML jar 会下载到被 Git 忽略的 `.tools/docs/`，无需全局安装 `plantuml` CLI，也不要提交该缓存目录。
+
+`check` 会把每个已提交 SVG 与「用当前 Java + Graphviz + 固定版本 PlantUML 现场渲染」的结果逐字节比较。Graphviz 版本不同会改变布局字节，因此换机器或升级 Graphviz 后 `check` 期望你先重新 `render` 并提交 SVG，详见 [文档写作与生成环境](documentation-workflow.md#渲染器版本敏感性)。
 
 ## 开发检查
 

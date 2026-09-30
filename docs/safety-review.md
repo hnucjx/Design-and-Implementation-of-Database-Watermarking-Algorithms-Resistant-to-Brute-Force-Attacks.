@@ -1,12 +1,14 @@
 # 安全审计报告
 
-适用读者：维护者、架构审查者。本文档记录对当前代码基线（`main` 分支 f2e3fe6 及之前）的全面安全审查结果。
+适用读者：维护者、架构审查者。本文档记录对代码基线（`main` 分支 `f2e3fe6` 及之前）的全面安全审查结果。
+
+> 行号锚点已于 2026-10-01 按 `d367de0` 及之后的代码重新校准。审查结论本身仍是 `f2e3fe6` 基线的结论；`f2e3fe6` 之后新增的代码不在本次审查范围内，已在第 17 节列出并标记为待复核。
 
 ## 审查范围
 
 - 后端：`backend/app/` 下全部 Python 源码（FastAPI、SQLModel、yt-dlp 封装、cookies 导入、文件操作、日志清洗、系统调用）
 - 前端：`frontend/src/` 下全部 TypeScript/React 源码
-- 审查日期：2026-05-31
+- 审查日期：2026-05-31（行号锚点刷新：2026-10-01）
 
 ## 审查结论摘要
 
@@ -22,9 +24,9 @@
 
 详情：
 
-- `subprocess.run(["ffmpeg", ...])` 使用固定参数列表（`system_open.py`、`ytdlp_service.py`）
-- `subprocess.run(["taskkill", ...])` 使用已知固定命令（`browser_cookies.py`）
-- `subprocess.Popen([edge, "--remote-debugging-port=...", ...])` 参数由常量或系统路径构成，非用户可控（`browser_cookies.py`）
+- `subprocess.run([ffmpeg, ...])` 使用固定参数列表（[system_open.py](../backend/app/system_open.py#L67)、[ytdlp_service.py](../backend/app/ytdlp_service.py#L421)）
+- `subprocess.run([taskkill, ...])` 使用已知固定命令（[browser_cookies.py](../backend/app/browser_cookies.py#L141)）
+- `subprocess.Popen([edge, --remote-debugging-port=..., ...])` 参数由常量或系统路径构成，非用户可控（[browser_cookies.py](../backend/app/browser_cookies.py#L157)）
 - yt-dlp 通过 Python SDK（`yt_dlp.YoutubeDL`）调用，非 shell 或 subprocess
 
 ## 2. 路径遍历（Path Traversal）
@@ -35,10 +37,10 @@
 
 详情：
 
-- 文件删除在 `_delete_output_files()`（`job_manager.py:338`）中执行，所有候选路径通过 `_is_under_allowed_root()` 验证，仅允许在下载根目录或任务下载子目录下操作
-- 本地播放/打开文件夹接口（`main.py:246-271`）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
-- `safe_path_name()`（`paths.py:7`）为 playlist 目录名移除 `<>:"/\|?*` 等不安全字符，并限制长度为 120 字符
-- `discover_output_file_candidates()`（`output_paths.py:30`）仅在给定的 `job_download_dir` 内按 YouTube video ID 匹配文件，不遍历上级目录
+- 文件删除在 [_delete_output_files](../backend/app/job_manager.py#L342) 中执行，所有候选路径通过 [_is_under_allowed_root](../backend/app/job_manager.py#L364) 验证，仅允许在下载根目录或任务下载子目录下操作
+- 本地播放/打开文件夹接口（[main.py](../backend/app/main.py#L249) 起）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
+- [safe_path_name](../backend/app/paths.py#L7) 为 playlist 目录名移除 `<>:"/\|?*` 等不安全字符，并限制长度为 120 字符
+- [discover_output_file_candidates](../backend/app/output_paths.py#L30) 仅在给定的 `job_download_dir` 内按 YouTube video ID 匹配文件，不遍历上级目录
 
 ## 3. SQL 注入（SQL Injection）
 
@@ -49,7 +51,8 @@
 详情：
 
 - 所有查询通过 `session.exec(select(...))` 执行，使用 SQLModel 的声明式查询
-- `_ensure_columns()`（`db.py:21`）使用 f-string 构建 `ALTER TABLE` 语句，但表名和列名来自硬编码字典，非用户输入
+- [_ensure_columns](../backend/app/db.py#L43) 使用 f-string 构建 `ALTER TABLE` 语句，但表名和列名来自硬编码字典，非用户输入
+- [checkpoint_wal](../backend/app/db.py#L72) 的 `PRAGMA wal_checkpoint(...)` 同样由常量与函数默认参数构成
 - 无原始 SQL 拼接
 
 ## 4. 跨站脚本攻击（XSS）
@@ -90,10 +93,10 @@
 
 详情：
 
-- `GET /api/diagnostics`（`main.py:112`）仅返回 PO token / visitor data 的"是否已配置"布尔值，不返回原文（`ytdlp_service.py:131-132`）
-- `sanitize_log_message()`（`log_safety.py:11`）在写入日志前通过正则替换移除 URL query string（包含 cookie、token、authorization 等参数）
+- [GET /api/diagnostics](../backend/app/main.py#L115) 仅返回 PO token / visitor data 的"是否已配置"布尔值，不返回原文（[get_dependency_status](../backend/app/ytdlp_service.py#L133)）
+- [sanitize_log_message](../backend/app/log_safety.py#L11) 在写入日志前通过正则替换移除 URL query string（包含 cookie、token、authorization 等参数）
 - cookies 文件（`data/cookies.txt`）和 `.env` 文件均在 `.gitignore` 中排除，不会进入 Git
-- 浏览器 cookie 导入只提取 YouTube/Google 域名（`YOUTUBE_COOKIE_DOMAIN_SUFFIXES`，`browser_cookies.py:20`）
+- 浏览器 cookie 导入只提取 YouTube/Google 域名（`YOUTUBE_COOKIE_DOMAIN_SUFFIXES`，[browser_cookies.py](../backend/app/browser_cookies.py#L20)）
 
 ## 8. Cookie 安全
 
@@ -103,11 +106,11 @@
 
 详情：
 
-- 浏览器 cookie 导入使用 `BrowserCookieImporter`（`browser_cookies.py:55`），支持 Edge/Chrome/Firefox/Brave/Chromium 等
+- 浏览器 cookie 导入使用 [BrowserCookieImporter](../backend/app/browser_cookies.py#L55)，支持 Edge/Chrome/Firefox/Brave/Chromium 等
 - 导入的 cookies 过滤为仅 youtube.com 和 google.com 域名
 - Edge cookies 数据库被锁时，提供提示并支持关闭浏览器重试
-- CDP fallback（`_extract_edge_cookies_via_cdp`，`browser_cookies.py:157`）使用临时 headless Edge 实例，完成后立即终止进程
-- Cookie 导入由 `threading.Lock`（`job_manager.py:48`）保护，防止并发导入导致的资源竞争
+- CDP fallback（[_extract_edge_cookies_via_cdp](../backend/app/browser_cookies.py#L157)）使用临时 headless Edge 实例，完成后立即终止进程
+- Cookie 导入由 `threading.Lock`（[job_manager.py](../backend/app/job_manager.py#L49)）保护，防止并发导入导致的资源竞争
 
 **注意**：CDP fallback 启动 Edge 时使用了 `--remote-allow-origins=*`。虽然使用了随机空闲端口且进程在获取 cookies 后立即终止（超时 15 秒 + 10 秒），且仅绑定 `127.0.0.1`，但在 Headless Edge 短暂运行期间，同机的其他本地进程理论上可以连接到调试端口。攻击面极小（需要本机已存在恶意进程），且 YouTube cookies 在 Edge 中通常已在登录态下。
 
@@ -119,10 +122,10 @@
 
 详情：
 
-- 文件删除通过 `_is_under_allowed_root()`（`job_manager.py:360`）验证目标路径位于下载根目录或任务子目录内
-- 删除 playlist 子文件夹前检查文件夹确实在下载根目录下（`job_manager.py:357`）
-- 本地文件打开（`system_open.py:23`）不涉及路径操作安全风险——仅打开已存在的文件
-- 输出路径解析（`output_paths.py`）仅在给定下载目录内进行，不访问外围文件系统
+- 文件删除通过 [_is_under_allowed_root](../backend/app/job_manager.py#L364) 验证目标路径位于下载根目录或任务子目录内
+- 删除 playlist 子文件夹前检查文件夹确实在下载根目录下（[job_manager.py](../backend/app/job_manager.py#L361)）
+- 本地文件打开（[system_open.py](../backend/app/system_open.py#L23)）不涉及路径操作安全风险——仅打开已存在的文件
+- 输出路径解析（[output_paths.py](../backend/app/output_paths.py#L30)）仅在给定下载目录内进行，不访问外围文件系统
 
 ## 10. 依赖安全
 
@@ -151,7 +154,7 @@
 - `AnalyzeRequest.url` 和 `CreateJobRequest.url` 仅验证 `min_length=1`，不验证 URL 格式。实际 URL 处理由 yt-dlp 完成，无效 URL 会返回错误而非造成安全问题
 - `DownloadOptions.speed_limit_kbps` 约束 `ge=1`
 - `DownloadOptions.retries` 约束 `ge=0, le=20`
-- `SettingsUpdate` 中的并发、重试等数值均有 Pydantic 验证约束
+- `SettingsUpdate` 中的并发、重试、aria2c 连接数等数值均有 Pydantic 验证约束
 - 批量操作 `job_ids` 和 `item_ids` 要求 `min_length=1`，在后端通过数据库查询验证存在性
 
 ## 12. 并发与资源耗尽
@@ -175,7 +178,7 @@
 
 详情：
 
-- Cookie 导入有 `threading.Lock` 保护（`job_manager.py:48`）
+- Cookie 导入有 `threading.Lock` 保护（[job_manager.py](../backend/app/job_manager.py#L49)）
 - 任务状态由 `_cancelled`、`_paused`、`_deleted`、`_runtime_restart_items` 等内存集合协调 worker 行为
 - `should_cancel` 回调在下载过程中定期检查，响应暂停/取消/删除请求
 - 数据库写入使用 SQLAlchemy session + commit，提供事务保护
@@ -217,3 +220,17 @@
 3. **（常规维护）依赖更新**：定期更新 `yt-dlp` 和 `yt-dlp-getpot-wpc`，关注安全公告。
 4. **（常规维护）版本固定**：`pyproject.toml` 中的依赖使用下限约束（`>=`），可考虑使用 `poetry.lock` 或 `pip freeze` 冻结精确版本以增强可复现性。
 5. **（已实现）SQLite WAL 模式**：`create_app_engine` 在连接时启用 WAL、`busy_timeout=5000` 和 `synchronous=NORMAL`，减少多 worker 进度写入时的锁竞争。
+
+## 17. 基线变更后的待复核项（2026-10-01）
+
+以下代码在 `f2e3fe6` 之后引入，**尚未经过同等强度的安全审查**。列出它们是为了避免"报告覆盖范围"被误读为"覆盖了全部现有代码"：
+
+| 变更 | 位置 | 初步判断 | 需要复核的点 |
+| --- | --- | --- | --- |
+| 停滞看门狗 | [stall_guard.py](../backend/app/stall_guard.py) | 新增模块只读 progress payload 并在超时后抛异常，不接触文件系统、网络或数据库；无用户输入。 | 超时抛错是否会与取消/暂停语义冲突，导致任务状态异常。 |
+| WAL checkpoint | [db.py](../backend/app/db.py#L72) | `PRAGMA wal_checkpoint(TRUNCATE)` 由常量构成，失败只记日志。 | 与并发写入的交互、被强杀时的数据完整性。 |
+| 进度落库节流 | [progress_persist.py](../backend/app/progress_persist.py) | 纯内存节流，无 I/O。 | 节流是否会导致终态进度丢失。 |
+| 上传的 `.env` / 配置注入面 | [config.py](../backend/app/config.py#L19) | 新增 `YTDL_ARIA2C_PATH` 作为外部下载器可执行路径，会被交给 yt-dlp 作为 `external_downloader` 执行。**本机配置文件可控，非远端输入**，因此按本项目的威胁模型仍是低风险。 | 是否需要在文档中明确"该变量只应由本机使用者设置"；是否存在从 UI 可达的写入路径。 |
+| SQLite 补列 | [db.py](../backend/app/db.py#L43) | 仍是硬编码列名字典 + f-string，未引入外部输入。 | 无新增风险。 |
+
+复核方式：按第 1–15 节的分类逐项走查上述模块，通过后把结论并入对应章节，并把本文档顶部的基线改为复核时点的 commit。

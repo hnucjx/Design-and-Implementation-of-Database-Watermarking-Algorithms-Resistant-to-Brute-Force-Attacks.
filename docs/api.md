@@ -4,9 +4,9 @@
 
 ## 基本约定
 
-- 后端应用由 [create_app](../backend/app/main.py#L41) 创建。
-- API 返回 JSON；`DELETE /api/jobs/{id}` 成功时返回 `204`。
-- 前端统一请求封装在 [request](../frontend/src/api.ts#L23)，非 2xx 响应会抛出 `ApiError`。
+- 后端应用由 [create_app](../backend/app/main.py#L41) 创建；API 默认绑定 `127.0.0.1:8000`，单端口模式下同时托管 `frontend/dist`。
+- API 返回 JSON；`DELETE /api/jobs/{id}` 与四个本地打开接口成功时返回 `204`。
+- 前端统一请求封装在 [request](../frontend/src/api.ts#L24)，非 2xx 响应会抛出 `ApiError`，并保留结构化 `detail`。
 - Cookies 导入锁库错误使用结构化 `detail`，字段见 [BrowserCookieImportError.to_detail](../backend/app/browser_cookies.py#L46)。
 
 ## Endpoint
@@ -14,7 +14,7 @@
 | 方法 | 路径 | 用途 | 主要模型 |
 | --- | --- | --- | --- |
 | `GET` | `/health` | 健康检查。 | `dict[str, bool]` |
-| `GET` | `/api/diagnostics` | 依赖和运行状态诊断。 | [`DiagnosticsRead`](../backend/app/schemas.py#L197) |
+| `GET` | `/api/diagnostics` | 依赖和运行状态诊断。 | [`DiagnosticsRead`](../backend/app/schemas.py#L199) |
 | `POST` | `/api/analyze` | 解析单视频或 playlist。 | [`AnalyzeRequest`](../backend/app/schemas.py#L14)、[`AnalyzeResponse`](../backend/app/schemas.py#L43) |
 | `POST` | `/api/jobs` | 创建下载任务并入队。 | [`CreateJobRequest`](../backend/app/schemas.py#L72)、[`JobRead`](../backend/app/schemas.py#L128) |
 | `GET` | `/api/jobs` | 获取任务列表。 | `list[JobRead]` |
@@ -34,11 +34,11 @@
 | `GET` | `/api/settings` | 获取设置。 | [`SettingsRead`](../backend/app/schemas.py#L164) |
 | `PUT` | `/api/settings` | 更新设置。 | [`SettingsUpdate`](../backend/app/schemas.py#L175) |
 | `POST` | `/api/settings/download-dir/select` | 打开本机目录选择对话框。 | `SettingsRead` |
-| `POST` | `/api/cookies` | 上传 cookies 文件。 | [`CookieStatus`](../backend/app/schemas.py#L184) |
-| `POST` | `/api/cookies/from-browser` | 从浏览器导入 cookies。 | [`BrowserCookieImportRequest`](../backend/app/schemas.py#L192) |
+| `POST` | `/api/cookies` | 上传 cookies 文件。 | [`CookieStatus`](../backend/app/schemas.py#L186) |
+| `POST` | `/api/cookies/from-browser` | 从浏览器导入 cookies。 | [`BrowserCookieImportRequest`](../backend/app/schemas.py#L194) |
 | `DELETE` | `/api/cookies` | 清除本地 cookies。 | `CookieStatus` |
 
-路由实现集中在 [main.py](../backend/app/main.py#L108)。
+路由实现集中在 [main.py](../backend/app/main.py#L111)。`POST /api/jobs` 成功时返回 `201`，其余返回模型或 `204`。
 
 ## 关键请求模型
 
@@ -54,13 +54,17 @@
 | --- | --- |
 | `mode` | `video_subtitles`、`video_only`、`subtitles_only`。 |
 | `resolution` | 目标清晰度，例如 `1440p`、`1080p` 或 `best`；默认 `1440p`。 |
-| `format_id` | 兼容旧请求保留，新 UI 不提供具体格式选择入口。 |
-| `subtitle_languages` | 字幕语言列表。 |
+| `format_id` | 兼容旧请求保留，新 UI 不提供具体格式选择入口；有值时后端会强制该格式并要求 ffmpeg。 |
+| `subtitle_languages` | 字幕语言列表；为空时按 `all` 处理。 |
 | `subtitle_source` | `human`、`auto`、`both`；默认 `both`。前端会在已解析元数据缺少某类字幕时提交可用来源作为 fallback。 |
-| `subtitle_format` | `best`、`srt`、`vtt`；默认 `best`。 |
+| `subtitle_format` | `best`、`srt`、`vtt`；默认 `best`；`best` 不写入 `subtitlesformat`。 |
 | `playlist_items` | playlist 中选择的条目索引；单视频为 `null`。 |
-| `speed_limit_kbps` | 空值表示不限速；有值时启用 yt-dlp `ratelimit`。 |
-| `retries` | 下载重试次数，默认 10。 |
+| `write_metadata` | 是否写出 description 与 info.json。 |
+| `write_thumbnail` | 是否写出缩略图。 |
+| `skip_existing` | 默认 `true`，对应 yt-dlp `overwrites=False`；关闭后允许覆盖同名文件。 |
+| `speed_limit_kbps` | 空值表示不限速；有值时启用 yt-dlp `ratelimit`（`kbps × 1024` 字节/秒）。 |
+| `retries` | 下载重试次数，默认 10，范围 `0..20`。 |
+| `notify_on_complete` | 请求模型接受该字段，但当前下载链路不消费它；不要据此期望系统通知。 |
 
 ### SettingsRead / SettingsUpdate
 
@@ -72,7 +76,15 @@
 | `default_retries` | 全局默认下载重试次数，范围 `0..20`。 |
 | `aria2c_connections` | aria2c 每文件的连接数，范围 `1..4`，默认 `2`。仅当 `YTDL_ARIA2C_ENABLED=true` 且 aria2c 可用时才会真正用于下载。 |
 
-`PUT /api/settings` 可更新上述字段，其中 `aria2c_connections` 只更新设置与 service，不会打断正在下载的任务。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。
+`PUT /api/settings` 采用局部更新语义：只有显式提交的字段才会被改写。`default_speed_limit_kbps` 通过 `model_fields_set` 判断，因此显式提交 `null` 表示取消限速；`aria2c_connections` 只更新设置与 `YtDlpService`，不会打断正在下载的任务。
+
+更新并发会即时调整后台 worker 数量。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。保存后的值写入 `Setting` 表并在下次启动时恢复，见 [_apply_stored_settings](../backend/app/main.py#L576)。
+
+`POST /api/settings/download-dir/select` 会在服务端弹出本机目录选择对话框；无图形环境时返回 `400`（`Folder dialog is unavailable in this environment.`），此时应改用 `PUT /api/settings` 直接提交 `download_dir`。
+
+### CookieStatus
+
+`POST /api/cookies` 与 `POST /api/cookies/from-browser` 返回 [`CookieStatus`](../backend/app/schemas.py#L186)：`enabled`、`filename`、`source`（`none` / `file` / `browser`）、`browser`、`imported_count`。诊断与设置接口只返回 `cookies_enabled` 布尔值，不返回 cookies 内容。
 
 ### DeleteJobItemsRequest
 
@@ -88,11 +100,13 @@
 
 ### AnalyzeResponse
 
-包含标题、是否 playlist、条目、格式列表、字幕列表、自动字幕列表和 ffmpeg 状态。格式和字幕映射逻辑见 [extract_metadata](../backend/app/ytdlp_service.py#L161)。
+包含标题、是否 playlist、条目、格式列表、字幕列表、自动字幕列表和 ffmpeg 状态。格式和字幕映射逻辑见 [extract_metadata](../backend/app/ytdlp_service.py#L167)。
+
+`entries` 只在 playlist 场景非空；`formats` 已过滤掉纯 storyboard/图片格式，见 [_map_formats](../backend/app/ytdlp_service.py#L741)。
 
 ### JobRead 与 JobItemRead
 
-任务读模型由 [read_job](../backend/app/job_read_model.py#L12) 生成。任务级 `actual_resolution` 和 `actual_format` 是子视频聚合结果；单一值时显示具体值，playlist 不一致时显示 `混合分辨率` 或 `混合格式`，实现见 [job_read_model.py](../backend/app/job_read_model.py#L76)。
+任务读模型由 [read_job](../backend/app/job_read_model.py#L12) 生成。任务级 `actual_resolution` 和 `actual_format` 是子视频聚合结果；单一值时显示具体值，playlist 不一致时显示 `混合分辨率` 或 `混合格式`，实现见 [job_read_model.py](../backend/app/job_read_model.py#L87)。`elapsed_seconds` 由 `started_at` 与 `finished_at`（未结束时取当前时间）计算，见 [_elapsed_seconds](../backend/app/job_read_model.py#L128)。
 
 子视频级字段包括：
 
@@ -113,6 +127,19 @@
 - `requested_resolution_unselectable`
 - `media_stream_blocked`
 
+## 错误语义
+
+错误响应对齐 FastAPI 默认结构：`{"detail": ...}`。`detail` 通常是字符串，仅在浏览器 cookies 导入失败时是结构化对象（`code` / `browser` / `message` / `raw_detail`）。
+
+| 状态码 | 触发条件 | 典型 `detail` |
+| --- | --- | --- |
+| `400` | URL 解析失败、yt-dlp 抛错、目录选择对话框不可用、系统打开器调用失败。 | yt-dlp 原始错误或本地化说明。 |
+| `404` | 任务或子视频不存在；批量操作没有匹配任务；删除子视频时未命中。 | `Job not found.`、`Job item not found.`、`No matching jobs found.` |
+| `409` | 浏览器 cookies 数据库被占用；单视频专用接口被用于合集；输出文件/目录尚不可用或缺失；找不到可解码播放器。 | `Edge 正在运行，cookies 数据库被锁定。…`、`合集任务请打开具体视频。`、`视频文件尚不可用。`、`找不到可确认能解码当前视频的播放器。…` |
+| `422` | 请求体未通过 Pydantic 校验（缺字段、越界、未知枚举值）。 | FastAPI 校验错误数组。 |
+
+对应实现见 [main.py](../backend/app/main.py#L428)（锁库错误映射为 `409`）与各路由内的 `HTTPException`。
+
 ## 任务状态
 
 任务和子视频状态来自 [JobStatus](../backend/app/models.py#L12)。
@@ -128,17 +155,17 @@
 
 ## 诊断字段
 
-`GET /api/diagnostics` 将 `YtDlpService.get_dependency_status()` 与配置值合并，见 [main.py](../backend/app/main.py#L112)。常见字段：
+`GET /api/diagnostics` 返回 `{"cookies_enabled": bool, "dependencies": {...}}`，其中 `dependencies` 是 `YtDlpService.get_dependency_status()` 与配置值的合并结果，见 [main.py](../backend/app/main.py#L115)。常见字段：
 
 - `ffmpeg`、`ffprobe`
 - `yt_dlp_version`
 - `js_runtime`、`js_runtime_name`、`js_runtime_version`
 - `impersonation_available`、`impersonation_targets`
-- `po_token_provider_available`、`po_token_provider_version`
-- `youtube_po_token_configured`、`youtube_visitor_data_configured`
+- `po_token_provider_available`、`po_token_provider`、`po_token_provider_version`
+- `youtube_po_token_configured`、`youtube_visitor_data_configured`、`youtube_po_browser_path_configured`
 - `youtube_max_parallel_downloads`
 - `anti403_http_chunk_size_mb`
 - `throttled_rate_kbps`
 - `aria2c_available`、`aria2c_enabled`、`aria2c_path`、`aria2c_connections`
 
-诊断响应不返回 token 原文。
+诊断响应不返回 token 原文，只返回是否已配置的布尔值。

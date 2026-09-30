@@ -3,38 +3,52 @@ title 4+1 Process View
 skinparam shadowing false
 
 start
-:User changes URL/options or task controls;
+:uvicorn starts FastAPI;\nPRAGMA wal_checkpoint(TRUNCATE);
+:JobManager.start() creates one worker\ntask per configured concurrency;
 fork
   :React UI sends HTTP request;
-  :FastAPI validates schema;
+  :FastAPI validates schema in the event loop;
   if (settings update?) then (yes)
-    :Persist Setting;
-    :Adjust worker concurrency;
-    :Update queued/running/paused DownloadOptions;
-    if (current item uses changed runtime option?) then (yes)
-      :Signal current yt-dlp instance to cancel;
-      :Requeue item for continued download;
+    :Persist Setting row;
+    :Add/retire worker tasks to match concurrency;
+    :Rewrite DownloadOptions of queued/running/paused jobs;
+    if (item currently downloading?) then (yes)
+      :Mark item for runtime restart;
+      :Current yt-dlp instance raises DownloadCancelled;
+      :Requeue item (continuedl keeps the .part file);
     endif
   else (job action)
     :Create, pause, restart, delete, play, or open folder;
   endif
 fork again
   :EventSource stays connected;
-  :Backend publishes job events;
-  :UI refreshes /api/jobs;
+  :JobManager publishes + persists JobEvent;
+  :UI refreshes GET /api/jobs;
 end fork
 
 if (queued item exists?) then (yes)
-  :Worker picks JobItem respecting video concurrency;
-  :Mark JobItem running;
-  :Prepare planned format, size, resolution;
-  :Run yt-dlp download with retries/profiles;
-  :Aggregate raw stream progress;
-  :Persist progress to WAL SQLite and events;
+  :Worker dequeues JobItem id;
+  :Claim lock checks state, then marks running;
+  :Offload to a thread: asyncio.to_thread(_run_item_work);
+  :prepare_download() resolves planned format/size;
+  :yt-dlp downloads through the profile chain;
+  :progress hook: StallGuard observes bytes;
+  if (no new peak bytes within stall timeout?) then (yes)
+    :raise DownloadStalled;\nitem fails with a readable reason;
+  else (no)
+    :ProgressPersistGate decides whether to write;
+    :Aggregate substreams, then commit item + job totals;
+  endif
   :Finish job only when no queued/running items remain;
 else (no)
-  :Remain idle;
+  :Worker waits on asyncio.Queue;
 endif
-
+:uvicorn stops;\nPRAGMA wal_checkpoint(TRUNCATE);
 stop
+
+note right
+Each download runs in a worker thread,
+so its progress hook uses its own
+Session and commits on that thread.
+end note
 @enduml

@@ -14,25 +14,36 @@ package "frontend/src" {
 
 package "backend/app" {
   [main.py] as Main
+  [config.py] as Config
   [schemas.py] as Schemas
   [models.py] as Models
   [db.py] as DB
   [job_manager.py] as Manager
   [job_read_model.py] as ReadModel
+  [events.py] as Broker
   [ytdlp_service.py] as Service
   [ytdlp_formats.py] as FormatHelpers
+  [stall_guard.py] as StallGuard
   [fallback_policy.py] as Fallback
   [download_progress.py] as Progress
   [progress_persist.py] as PersistGate
   [transfer_stats.py] as TransferStats
   [browser_cookies.py] as BrowserCookies
   [output_paths.py] as OutputPaths
+  [paths.py] as Paths
+  [log_safety.py] as LogSafety
   [system_open.py] as SystemOpen
 }
 
 package "tests" {
   [backend/tests] as BackendTests
   [frontend/src/App.test.tsx] as FrontendTests
+}
+
+package "scripts" {
+  [docs.py] as DocsScript
+  [bench_concurrency.py] as BenchConcurrency
+  [bench_throttle_guard.py] as BenchThrottle
 }
 
 App --> JobQueue
@@ -42,6 +53,7 @@ App --> Formatting
 ApiClient --> FrontendTypes
 JobQueue --> FrontendTypes
 
+Main --> Config
 Main --> Schemas
 Main --> Manager
 Main --> ReadModel
@@ -49,16 +61,21 @@ Main --> Service
 Main --> DB
 Manager --> Models
 Manager --> Service
+Manager --> Broker
 Manager --> Fallback
 Manager --> Progress
 Manager --> PersistGate
 Manager --> TransferStats
 Manager --> OutputPaths
+Manager --> Paths
+Manager --> LogSafety
 Manager --> SystemOpen
 ReadModel --> Models
 ReadModel --> Fallback
+ReadModel --> OutputPaths
 Service --> FormatHelpers
 Service --> BrowserCookies
+Service --> StallGuard
 Service --> SystemOpen
 DB --> Models
 
@@ -66,4 +83,7 @@ BackendTests ..> Main
 BackendTests ..> Manager
 BackendTests ..> Service
 FrontendTests ..> App
+BenchConcurrency ..> Manager
+BenchThrottle ..> Service
+DocsScript ..> Main : doc checks only
 @enduml

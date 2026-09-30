@@ -12,13 +12,13 @@
 python -m compileall backend\app
 ```
 
-后端测试：
+后端测试（当前基线：**147 passed**）：
 
 ```powershell
 python -m pytest backend\tests -q
 ```
 
-前端测试和构建：
+前端测试和构建（当前基线：**52 passed** + `tsc && vite build` 通过）：
 
 ```powershell
 cd frontend
@@ -38,7 +38,19 @@ git diff --check
 python scripts\docs.py check
 ```
 
-首次执行前如尚未初始化文档工具，请先阅读 [文档写作与生成环境](documentation-workflow.md)。
+首次执行前如尚未初始化文档工具，请先阅读 [文档写作与生成环境](documentation-workflow.md)。用例数会随功能变化，本文档记录的是当前基线值；改动测试后请同步更新这里。
+
+## 离线基准
+
+下载并发与节流行为有两个可离线复现的基准脚本，不需要真实 YouTube 连通性：
+
+```powershell
+python scripts\bench_concurrency.py <临时目录>
+python scripts\bench_throttle_guard.py <临时目录> 64   # 节流守卫开启时的中断-重提取循环
+python scripts\bench_throttle_guard.py <临时目录> 0    # 关闭后的连续下载
+```
+
+判定标准与历史基线见 [PLAN.md](../PLAN.md) 第 6 节。修改下载调度、并发或节流相关参数后，应至少重跑与改动相关的基准，确认未劣化。
 
 ## 后端测试范围
 
@@ -47,7 +59,7 @@ python scripts\docs.py check
 | 文件 | 重点 |
 | --- | --- |
 | [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置、诊断，合集子视频按并发并行下载，以及 happy-path 不再二次 extract_metadata。 |
-| [test_db.py](../backend/tests/test_db.py) | SQLite WAL、`busy_timeout` 和 `synchronous=NORMAL`。 |
+| [test_db.py](../backend/tests/test_db.py) | SQLite WAL、`busy_timeout`、`synchronous=NORMAL` 与 WAL checkpoint。 |
 | [test_ytdlp_service.py](../backend/tests/test_ytdlp_service.py) | yt-dlp 参数、profile、PO token、aria2c、格式选择和错误识别。 |
 | [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合：字幕/chunk 不锁死在 99.9%，分离音视频不把已下载字节重置为 0。 |
 | [test_progress_persist.py](../backend/tests/test_progress_persist.py) | 进度 SQLite/SSE 写入节流：首次、终态、时间间隔和进度跳变。 |
@@ -92,6 +104,8 @@ python scripts\docs.py check
 12. 下载完成后点击播放按钮，确认应用选择可解码播放器打开对应文件；点击视频/合集文件夹按钮，确认文件管理器打开对应目录。Windows 下播放器或文件夹窗口应尽量弹出到前台，而不是只在任务栏闪烁；若故意移动文件或卸载可用播放器，错误应显示在对应任务行或子视频行附近，并包含当前格式和建议播放器。对旧任务或运行中任务，可手动清空 `output_path` 后确认后端仍能按文件名中的 YouTube id 发现最终视频或打开任务目录。
 13. 点击复制按钮，确认剪贴板内容为对应单视频、playlist 或子视频链接。
 14. 点击外链按钮，确认单视频、playlist 和子视频会打开对应 YouTube 页面。
+15. 清除 cookies 后在受限视频上触发媒体流失败，确认错误文案以「当前 cookies 状态：未配置」开头，并给出重试建议。
+16. 修改设置面板的 aria2c 连接数，确认保存成功且 `/api/diagnostics` 的 `aria2c_connections` 同步变化；确认未设置 `YTDL_ARIA2C_ENABLED=true` 时下载链路不会使用 aria2c。
 
 ## 高风险回归点
 
@@ -101,6 +115,9 @@ python scripts\docs.py check
 - 媒体流 403/连接重置被错误地自动降清晰度重下。
 - 720p 自动降级底线失效。
 - 单视频失败原因被任务级聚合错误覆盖。
+- `throttledratelimit` 被重新默认打开，导致「每约 5 秒中断并重新 extract」的性能回退，见 [PLAN.md](../PLAN.md) §3.1。
+- 停滞看门狗的文案被改动后误命中 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L470)，把停滞误分类成媒体流阻塞。
+- aria2c 多连接在默认配置下被启用，推高 403 率。
 - Cookies 导入暴露敏感信息或擅自关闭浏览器。
 - README 与 `docs/` 重复，导致后续维护分叉。
 
@@ -111,4 +128,5 @@ python scripts\docs.py check
 - 所有新增 Markdown 链接指向存在文件。
 - 每个 SVG 图都由同名 `.puml` 生成，并嵌入至少一份文档。
 - README 保持入口页，不重新复制 API、技术策略或排障长文。
+- `python scripts\docs.py check` 输出「文档检查通过」，即本地链接有效且 SVG 与 `.puml` 源一致。
 - `git diff --check` 无输出。

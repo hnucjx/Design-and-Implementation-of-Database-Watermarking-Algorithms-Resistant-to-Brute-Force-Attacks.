@@ -43,18 +43,33 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 
 运行时下载设置由 `PUT /api/settings` 触发：并发调用 `set_concurrency()` 立即调整 worker；限速和重试次数调用 `set_runtime_download_defaults()` 更新 queued/running/paused 任务的 `options_json`。当当前 `JobItem` 正在下载时，`should_cancel` 会让 yt-dlp 在下一个可中断点退出，该子项被重新置为 queued 并重新入队，依靠断点续传应用新的限速或重试次数。前端在下载选项面板复用设置保存状态样式，并用请求序号避免快速输入时旧响应覆盖最后一次输入。
 
+两把锁的边界：
+
+- `_item_claim_lock` 只包住「刷新状态 → 检查 queued → 置 running → commit」，不覆盖下载过程。
+- `_cookie_import_lock` 只在 403 触发的 cookies 刷新导入期间短暂持有。
+
+事件有两份记录：内存中的 `EventBroker`（SSE 推送）和持久化的 `JobEvent` 行。worker 线程通过 [_publish_threadsafe](../backend/app/job_manager.py#L1060) 写库，再用 `loop.call_soon_threadsafe` 把推送调度回事件循环；纯异步路径直接用 [_publish](../backend/app/job_manager.py#L1047)。
+
 ## yt-dlp 封装
 
-[YtDlpService](../backend/app/ytdlp_service.py#L84) 是 yt-dlp 的边界层。它负责：
+[YtDlpService](../backend/app/ytdlp_service.py#L88) 是 yt-dlp 的边界层。它负责：
 
-- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L161)。
-- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L198)。
-- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L233)。
-- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L312)。
-- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L110)。
+- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L167)。
+- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L204)。
+- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L239)。
+- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L318)。
+- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L116)。
 - 错误分类：cookies、403、连接重置和格式不可用。
 
 `YtDlpService` 不把任意 yt-dlp 参数暴露给 API，只接受项目定义的 `DownloadOptions`。
+
+profile 顺序由 [_download_profiles](../backend/app/ytdlp_service.py#L539) 决定：`default`、`default_aria2c`（仅当 aria2c 启用且可执行文件存在）、`mweb_pot_chrome`、`safari_hls`、`chrome_default`。`default` profile 如果不是媒体流阻断错误会立即抛出（不换 profile），其余错误才继续下一个 profile。`DownloadCancelled` 与 `DownloadStalled` 都会跳出重试链直接上抛，见 [download](../backend/app/ytdlp_service.py#L318)。
+
+## 停滞看门狗
+
+[StallGuard](../backend/app/stall_guard.py#L32) 在 [_download_once](../backend/app/ytdlp_service.py#L366) 的 progress hook 里被调用：每次回调先检查取消标志，再 `observe()` 一次，最后才交给任务管理器的进度 hook。
+
+判据是「历史最大已下载字节是否被刷新」（`best_bytes` + 达成时间），而不是「本轮是否增长」——这样才能区分节流振荡与正常断点续传。`status == "finished"` 会重置基线，因为合并格式在视频流与音频流之间会重新从 0 计数。超时后抛出 `DownloadStalled`，文案固定为「下载停滞：N 秒内没有新增字节」，不含 `timed out` / `reset` / `403` 等词，避免被 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L470) 误分类。`YTDL_STALL_TIMEOUT_SECONDS=0` 表示关闭。
 
 ## 清晰度与降级
 
@@ -86,7 +101,7 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 ## 前端实现
 
-前端 API 调用集中在 [api.ts](../frontend/src/api.ts#L42)。共享类型集中在 [types.ts](../frontend/src/types.ts)。任务中心展示组件是 [JobQueue](../frontend/src/components/JobQueue.tsx#L13)。
+前端 API 调用集中在 [api.ts](../frontend/src/api.ts#L24)。共享类型集中在 [types.ts](../frontend/src/types.ts)。任务中心展示组件是 [JobQueue](../frontend/src/components/JobQueue.tsx#L13)。
 
 辅助函数职责：
 

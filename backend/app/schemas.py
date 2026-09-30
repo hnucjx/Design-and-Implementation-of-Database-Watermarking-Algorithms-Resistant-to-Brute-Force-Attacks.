@@ -168,6 +168,7 @@ class SettingsRead(BaseModel):
     default_resolution: str
     default_speed_limit_kbps: int | None
     default_retries: int
+    aria2c_connections: int
     cookies_enabled: bool
     ffmpeg: dict[str, bool]
 
@@ -179,6 +180,7 @@ class SettingsUpdate(BaseModel):
     default_resolution: str | None = None
     default_speed_limit_kbps: int | None = Field(default=None, ge=1)
     default_retries: int | None = Field(default=None, ge=0, le=20)
+    aria2c_connections: int | None = Field(default=None, ge=1, le=4)
 
 
 class CookieStatus(BaseModel):

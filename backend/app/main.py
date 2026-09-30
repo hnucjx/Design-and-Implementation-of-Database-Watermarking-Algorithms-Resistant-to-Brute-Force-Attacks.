@@ -337,6 +337,10 @@ def create_app(
             app_settings.default_retries = update.default_retries
             _set_setting(session, "default_retries", str(update.default_retries))
             runtime_options_changed = True
+        if update.aria2c_connections is not None:
+            app_settings.aria2c_connections = update.aria2c_connections
+            service.aria2c_connections = update.aria2c_connections
+            _set_setting(session, "aria2c_connections", str(update.aria2c_connections))
         if runtime_options_changed:
             await manager.set_runtime_download_defaults(
                 app_settings.default_speed_limit_kbps,
@@ -584,6 +588,9 @@ def _apply_stored_settings(session: Session, settings: AppSettings, service: YtD
         settings.default_subtitle_languages = [
             lang for lang in stored["default_subtitle_languages"].split(",") if lang
         ]
+    if stored.get("aria2c_connections"):
+        settings.aria2c_connections = int(stored["aria2c_connections"])
+        service.aria2c_connections = settings.aria2c_connections
 
 
 def _settings_response(session: Session, settings: AppSettings, service: YtDlpService) -> SettingsRead:
@@ -595,6 +602,7 @@ def _settings_response(session: Session, settings: AppSettings, service: YtDlpSe
         default_resolution=settings.default_resolution,
         default_speed_limit_kbps=settings.default_speed_limit_kbps,
         default_retries=settings.default_retries,
+        aria2c_connections=settings.aria2c_connections,
         cookies_enabled=settings.cookies_path.exists(),
         ffmpeg=service.get_ffmpeg_status(),
     )

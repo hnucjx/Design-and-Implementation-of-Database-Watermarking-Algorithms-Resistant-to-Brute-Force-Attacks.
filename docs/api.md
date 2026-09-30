@@ -70,8 +70,9 @@
 | --- | --- |
 | `default_speed_limit_kbps` | 全局默认限速；`null` 表示不限速。 |
 | `default_retries` | 全局默认下载重试次数，范围 `0..20`。 |
+| `aria2c_connections` | aria2c 每文件的连接数，范围 `1..4`，默认 `2`。仅当 `YTDL_ARIA2C_ENABLED=true` 且 aria2c 可用时才会真正用于下载。 |
 
-`PUT /api/settings` 可更新上述两个字段。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。
+`PUT /api/settings` 可更新上述字段，其中 `aria2c_connections` 只更新设置与 service，不会打断正在下载的任务。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。
 
 ### DeleteJobItemsRequest
 

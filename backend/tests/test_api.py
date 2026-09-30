@@ -496,6 +496,24 @@ def test_select_download_directory_updates_root_and_playlist_subfolder(tmp_path:
     assert job_response.json()["download_dir"] == str(selected_dir / "Batch")
 
 
+def test_settings_endpoint_persists_aria2c_connections(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.put("/api/settings", json={"aria2c_connections": 3})
+
+    assert response.status_code == 200
+    assert response.json()["aria2c_connections"] == 3
+    assert client.get("/api/settings").json()["aria2c_connections"] == 3
+
+
+def test_settings_endpoint_rejects_aria2c_connections_above_four(tmp_path: Path) -> None:
+    client = make_client(tmp_path)
+
+    response = client.put("/api/settings", json={"aria2c_connections": 8})
+
+    assert response.status_code == 422
+
+
 def test_settings_and_cookies_endpoints_do_not_expose_cookie_body(tmp_path: Path) -> None:
     client = make_client(tmp_path)
 
@@ -763,7 +781,7 @@ def test_diagnostics_returns_runtime_and_cookie_status(tmp_path: Path) -> None:
     assert payload["dependencies"]["anti403_http_chunk_size_mb"] == 16
     assert payload["dependencies"]["throttled_rate_kbps"] == 0
     assert payload["dependencies"]["aria2c_enabled"] is False
-    assert payload["dependencies"]["aria2c_connections"] == 1
+    assert payload["dependencies"]["aria2c_connections"] == 2
     assert "aria2c_available" in payload["dependencies"]
 
 

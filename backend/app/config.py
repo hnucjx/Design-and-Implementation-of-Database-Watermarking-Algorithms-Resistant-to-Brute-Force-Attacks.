@@ -39,9 +39,11 @@ class AppSettings(BaseSettings):
     throttled_rate_kbps: int = Field(default=0, ge=0)
     # 停滞看门狗：N 秒内没有任何新增字节就让任务失败（而不是永久 running）。0 = 关闭。
     stall_timeout_seconds: float = Field(default=90.0, ge=0)
+    # aria2c 默认关闭：多连接是 YouTube 侧最敏感的触发条件，403/限速风险显著上升。
+    # 仅在显式开启 aria2c 后生效，连接数保持保守（默认 2，上限 4）。
     aria2c_enabled: bool = False
     aria2c_path: str | None = None
-    aria2c_connections: int = Field(default=1, ge=1, le=4)
+    aria2c_connections: int = Field(default=2, ge=1, le=4)
 
     @property
     def cookies_path(self) -> Path:

@@ -350,6 +350,29 @@ describe("App", () => {
     });
   });
 
+  test("autosaves aria2c connections and clamps them to four", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
+    const connections = screen.getByLabelText("aria2c 连接数（1–4，仅在启用 aria2c 后生效）");
+    await waitFor(() => expect(connections).toHaveValue(2));
+
+    await user.clear(connections);
+    await user.type(connections, "9");
+    await user.tab();
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/settings",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ aria2c_connections: 4 })
+        })
+      );
+    });
+  });
+
   test("selects download directory with a folder dialog", async () => {
     const user = userEvent.setup();
     render(<App />);

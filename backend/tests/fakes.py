@@ -22,7 +22,7 @@ class FakeYtDlpService:
             "aria2c_available": False,
             "aria2c_enabled": False,
             "aria2c_path": None,
-            "aria2c_connections": 1,
+            "aria2c_connections": 2,
             "po_token_provider_available": True,
             "po_token_provider": "yt-dlp-getpot-wpc",
             "po_token_provider_version": "1.0.0",

@@ -1001,6 +1001,24 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
     }
   }
 
+  async function saveAria2cConnections(value: number) {
+    const nextConnections = Math.min(4, Math.max(1, Number(value) || settings.aria2c_connections));
+    if (nextConnections === settings.aria2c_connections) return;
+    setSaveMessage("保存中...");
+    try {
+      onSettingsChange(
+        await updateSettings({
+          aria2c_connections: nextConnections
+        })
+      );
+      setSaveMessage("已保存");
+    } catch {
+      setSaveMessage("保存失败");
+    } finally {
+      window.setTimeout(() => setSaveMessage(""), 1800);
+    }
+  }
+
   async function chooseDownloadDirectory() {
     setSaveMessage("选择中...");
     try {
@@ -1041,6 +1059,17 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
           value={draft.default_concurrency ?? 5}
           onChange={(event) => setDraft({ ...draft, default_concurrency: Number(event.target.value) })}
           onBlur={(event) => void saveConcurrency(Number(event.currentTarget.value))}
+        />
+      </label>
+      <label className="field settings-number-field">
+        <span>aria2c 连接数（1–4，仅在启用 aria2c 后生效）</span>
+        <input
+          type="number"
+          min={1}
+          max={4}
+          value={draft.aria2c_connections ?? 2}
+          onChange={(event) => setDraft({ ...draft, aria2c_connections: Number(event.target.value) })}
+          onBlur={(event) => void saveAria2cConnections(Number(event.currentTarget.value))}
         />
       </label>
       {saveMessage && <span className="settings-save-status">{saveMessage}</span>}

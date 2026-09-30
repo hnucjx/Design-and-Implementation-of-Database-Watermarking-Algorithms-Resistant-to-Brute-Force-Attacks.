@@ -227,7 +227,7 @@ def test_aria2c_is_not_used_by_default_even_when_available(monkeypatch, tmp_path
     assert "external_downloader_args" not in opts
 
 
-def test_aria2c_profile_uses_conservative_single_connection_args(tmp_path: Path) -> None:
+def test_aria2c_profile_uses_conservative_multi_connection_args(tmp_path: Path) -> None:
     aria2c = tmp_path / "aria2c.exe"
     aria2c.write_text("", encoding="utf-8")
     service = YtDlpService(download_dir=tmp_path, aria2c_enabled=True, aria2c_path=str(aria2c))
@@ -241,9 +241,9 @@ def test_aria2c_profile_uses_conservative_single_connection_args(tmp_path: Path)
     assert opts["external_downloader"] == {"http": str(aria2c), "https": str(aria2c)}
     assert opts["external_downloader_args"]["aria2c"] == [
         "-x",
-        "1",
+        "2",
         "-s",
-        "1",
+        "2",
         "-j",
         "1",
         "--min-split-size",
@@ -374,7 +374,7 @@ def test_dependency_status_reports_po_token_provider_without_secret_values(monke
     status = service.get_dependency_status()
 
     assert status["aria2c_enabled"] is False
-    assert status["aria2c_connections"] == 1
+    assert status["aria2c_connections"] == 2
     assert "aria2c_available" in status
     assert status["po_token_provider_available"] is True
     assert status["po_token_provider"] == "yt-dlp-getpot-wpc"

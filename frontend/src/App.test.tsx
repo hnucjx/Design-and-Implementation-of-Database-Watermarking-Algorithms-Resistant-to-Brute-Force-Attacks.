@@ -234,6 +234,9 @@ describe("App", () => {
     const analyzer = (await screen.findByRole("heading", { name: "解析链接" })).closest("form");
     expect(analyzer).toBeInTheDocument();
     expect(within(analyzer as HTMLElement).getByText("未上传 cookies")).toBeInTheDocument();
+    expect(
+      within(analyzer as HTMLElement).getByText(/未配置 cookies 时 YouTube 媒体流 403 概率显著上升/)
+    ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Cookies" })).not.toBeInTheDocument();
 
     const file = new File(["cookie"], "cookies.txt", { type: "text/plain" });
@@ -248,6 +251,9 @@ describe("App", () => {
       );
     });
     expect(await within(analyzer as HTMLElement).findByText("已启用 cookies")).toBeInTheDocument();
+    expect(
+      within(analyzer as HTMLElement).queryByText(/未配置 cookies 时 YouTube 媒体流 403 概率显著上升/)
+    ).not.toBeInTheDocument();
 
     await user.click(within(analyzer as HTMLElement).getByRole("button", { name: "清除 cookies" }));
 

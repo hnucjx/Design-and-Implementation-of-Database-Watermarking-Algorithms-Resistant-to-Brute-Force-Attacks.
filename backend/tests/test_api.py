@@ -713,6 +713,38 @@ def test_job_download_reports_clear_error_when_all_http_403_retries_fail(tmp_pat
     assert item["fallback_reason"] == "media_stream_blocked"
 
 
+def test_media_stream_failure_message_reports_cookie_state(tmp_path: Path) -> None:
+    service = DownloadHttp403FallbackResolutionService(always_forbidden=True)
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/http403",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        payload = wait_for_job_status(client, response.json()["id"], "failed")
+
+    assert "当前 cookies 状态：未配置" in payload["items"][0]["error"]
+
+    cookies = tmp_path / "data" / "cookies.txt"
+    cookies.parent.mkdir(parents=True, exist_ok=True)
+    cookies.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+
+    configured_service = DownloadHttp403FallbackResolutionService(always_forbidden=True)
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=configured_service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/http403",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        payload = wait_for_job_status(client, response.json()["id"], "failed")
+
+    assert "当前 cookies 状态：已配置" in payload["items"][0]["error"]
+
+
 def test_job_download_does_not_store_empty_error_when_http_403_is_wrapped(tmp_path: Path) -> None:
     service = EmptyAssertionFromHttp403Service()
 

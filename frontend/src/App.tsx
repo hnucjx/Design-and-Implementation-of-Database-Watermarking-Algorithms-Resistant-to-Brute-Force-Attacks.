@@ -600,6 +600,11 @@ function UrlAnalyzer({
           </button>
         </div>
       )}
+      {settings && !settings.cookies_enabled && (
+        <p className="hint" role="status">
+          未配置 cookies 时 YouTube 媒体流 403 概率显著上升，建议先导入 cookies 再下载。
+        </p>
+      )}
       {duplicateWarning && <p className="hint">这个链接已经在下载历史中出现过。</p>}
       <button className="primary-button" type="submit" disabled={isAnalyzing || !url.trim()}>
         {isAnalyzing ? <Loader2 className="spin" size={18} /> : <Gauge size={18} />}

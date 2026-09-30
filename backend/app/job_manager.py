@@ -1004,7 +1004,9 @@ class JobManager:
         )
 
     def _media_stream_failure_message(self) -> str:
+        cookie_state = "已配置" if self.settings.cookies_path.exists() else "未配置"
         return (
+            f"当前 cookies 状态：{cookie_state}。"
             "YouTube 拒绝了媒体流下载（HTTP 403）或重置了媒体流连接。后台已在当前清晰度下尝试 PO-token provider、"
             "浏览器 impersonation、断点续传和传输重试；请重新导入 cookies 后重试。若浏览器可正常播放但仍失败，"
             "请检查网络/代理是否能稳定访问 YouTube 媒体域名，或配置有效的 YouTube PO token。"

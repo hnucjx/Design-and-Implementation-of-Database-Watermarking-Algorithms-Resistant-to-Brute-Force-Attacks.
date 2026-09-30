@@ -8,11 +8,17 @@ in a single continuous request. The script prints the HTTP GET count, whether
 the download thread was still running after 25s, and the byte-progress samples.
 """
 import http.server
+import os
 import socketserver
 import sys
 import threading
 import time
 from pathlib import Path
+
+# 本机若配置了系统代理，urllib 会把 127.0.0.1 的请求也发给代理并返回 502，
+# 导致脚本误报。这里强制绕过代理。
+os.environ["NO_PROXY"] = "127.0.0.1,localhost"
+os.environ["no_proxy"] = "127.0.0.1,localhost"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

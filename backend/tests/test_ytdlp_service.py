@@ -151,7 +151,7 @@ def test_default_download_options_use_stability_defaults(tmp_path: Path) -> None
     assert options.retries == 10
     assert opts["retries"] == 10
     assert opts["http_chunk_size"] == 16 * 1024 * 1024
-    assert opts["throttledratelimit"] == 64 * 1024
+    assert "throttledratelimit" not in opts
 
 
 def test_download_options_enable_resumable_stable_retry_defaults(tmp_path: Path) -> None:
@@ -170,19 +170,45 @@ def test_download_options_enable_resumable_stable_retry_defaults(tmp_path: Path)
     assert opts["socket_timeout"] == 30
     assert opts["concurrent_fragment_downloads"] == 1
     assert opts["http_chunk_size"] == 16 * 1024 * 1024
-    assert opts["throttledratelimit"] == 64 * 1024
+    assert "throttledratelimit" not in opts
     retry_sleep = opts["retry_sleep_functions"]
     assert set(retry_sleep) == {"http", "fragment", "file_access", "extractor"}
     assert retry_sleep["http"](3) > retry_sleep["http"](1)
     assert retry_sleep["http"](n=3) > retry_sleep["http"](n=1)
 
 
-def test_throttled_rate_can_be_disabled(tmp_path: Path) -> None:
-    service = YtDlpService(download_dir=tmp_path, throttled_rate_kbps=0)
+def test_throttled_rate_is_disabled_by_default(tmp_path: Path) -> None:
+    """节流守卫默认关闭：避免 ThrottledDownload 被 yt-dlp 的无计数重提取循环接住（PLAN.md P0-1）。"""
+    service = YtDlpService(download_dir=tmp_path)
 
     opts = service.build_download_options(DownloadOptions(mode="video_subtitles", resolution="best"), cookies_path=None)
 
     assert "throttledratelimit" not in opts
+
+
+def test_throttled_rate_can_be_enabled_explicitly(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path, throttled_rate_kbps=64)
+
+    opts = service.build_download_options(DownloadOptions(mode="video_subtitles", resolution="best"), cookies_path=None)
+
+    assert opts["throttledratelimit"] == 64 * 1024
+
+
+def test_settings_default_disables_throttled_rate(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("YTDL_THROTTLED_RATE_KBPS", raising=False)
+    assert AppSettings(download_dir=tmp_path).throttled_rate_kbps == 0
+
+
+def test_settings_env_can_restore_throttled_rate(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("YTDL_THROTTLED_RATE_KBPS", "64")
+    service = YtDlpService(
+        download_dir=tmp_path,
+        throttled_rate_kbps=AppSettings(download_dir=tmp_path).throttled_rate_kbps,
+    )
+
+    opts = service.build_download_options(DownloadOptions(mode="video_subtitles", resolution="best"), cookies_path=None)
+
+    assert opts["throttledratelimit"] == 64 * 1024
 
 
 def test_aria2c_is_not_used_by_default_even_when_available(monkeypatch, tmp_path: Path) -> None:

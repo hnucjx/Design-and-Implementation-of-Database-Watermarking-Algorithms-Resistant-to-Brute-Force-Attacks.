@@ -33,7 +33,10 @@ class AppSettings(BaseSettings):
     youtube_po_browser_path: str | None = None
     youtube_max_parallel_downloads: int = Field(default_factory=default_download_concurrency, ge=1)
     anti403_http_chunk_size_mb: int = Field(default=16, ge=1)
-    throttled_rate_kbps: int = Field(default=64, ge=0)
+    # 0 = 关闭节流守卫。> 0 时写入 yt-dlp 的 throttledratelimit，会在单条流速度低于该值时
+    # 触发 ThrottledDownload(ReExtractInfo)，被 yt-dlp 的无计数重提取循环接住 -> 反复中断重启。
+    # 仅建议在并发 = 1 时开启，见 PLAN.md §P0-1。
+    throttled_rate_kbps: int = Field(default=0, ge=0)
     aria2c_enabled: bool = False
     aria2c_path: str | None = None
     aria2c_connections: int = Field(default=1, ge=1, le=4)

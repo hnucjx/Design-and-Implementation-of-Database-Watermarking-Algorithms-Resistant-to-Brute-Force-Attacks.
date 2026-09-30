@@ -37,6 +37,8 @@ class AppSettings(BaseSettings):
     # 触发 ThrottledDownload(ReExtractInfo)，被 yt-dlp 的无计数重提取循环接住 -> 反复中断重启。
     # 仅建议在并发 = 1 时开启，见 PLAN.md §P0-1。
     throttled_rate_kbps: int = Field(default=0, ge=0)
+    # 停滞看门狗：N 秒内没有任何新增字节就让任务失败（而不是永久 running）。0 = 关闭。
+    stall_timeout_seconds: float = Field(default=90.0, ge=0)
     aria2c_enabled: bool = False
     aria2c_path: str | None = None
     aria2c_connections: int = Field(default=1, ge=1, le=4)

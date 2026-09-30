@@ -57,6 +57,7 @@ def create_app(
         youtube_po_browser_path=app_settings.youtube_po_browser_path,
         anti403_http_chunk_size_mb=app_settings.anti403_http_chunk_size_mb,
         throttled_rate_kbps=app_settings.throttled_rate_kbps,
+        stall_timeout_seconds=app_settings.stall_timeout_seconds,
         aria2c_enabled=app_settings.aria2c_enabled,
         aria2c_path=app_settings.aria2c_path,
         aria2c_connections=app_settings.aria2c_connections,

@@ -21,6 +21,7 @@ from .browser_cookies import (
 )
 from .log_safety import sanitize_log_message
 from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
+from .stall_guard import DownloadStalled, StallGuard
 from .ytdlp_formats import (
     DEFAULT_MIN_AUTO_FALLBACK_HEIGHT,
     actual_format_from_info_dict,
@@ -48,6 +49,7 @@ DEFAULT_ANTI403_HTTP_CHUNK_SIZE_MB = 16
 # 0 = 关闭节流守卫。> 0 会让 yt-dlp 在单条流速度低于该值时抛出 ThrottledDownload
 # （ReExtractInfo 子类），被其无计数重提取循环接住，表现为每约 5 秒中断重启一次。
 DEFAULT_THROTTLED_RATE_KBPS = 0
+DEFAULT_STALL_TIMEOUT_SECONDS = 90.0
 DEFAULT_ARIA2C_CONNECTIONS = 1
 DEFAULT_ARIA2C_MIN_SPLIT_SIZE_MB = 16
 DEFAULT_ARIA2C_RETRY_WAIT_SECONDS = 5
@@ -92,6 +94,7 @@ class YtDlpService:
         youtube_po_browser_path: str | None = None,
         anti403_http_chunk_size_mb: int = DEFAULT_ANTI403_HTTP_CHUNK_SIZE_MB,
         throttled_rate_kbps: int = DEFAULT_THROTTLED_RATE_KBPS,
+        stall_timeout_seconds: float = DEFAULT_STALL_TIMEOUT_SECONDS,
         aria2c_enabled: bool = False,
         aria2c_path: str | None = None,
         aria2c_connections: int = DEFAULT_ARIA2C_CONNECTIONS,
@@ -102,6 +105,7 @@ class YtDlpService:
         self.youtube_po_browser_path = youtube_po_browser_path
         self.anti403_http_chunk_size_mb = max(1, anti403_http_chunk_size_mb)
         self.throttled_rate_kbps = max(0, throttled_rate_kbps)
+        self.stall_timeout_seconds = max(0.0, float(stall_timeout_seconds))
         self.aria2c_enabled = aria2c_enabled
         self.aria2c_path = aria2c_path
         self.aria2c_connections = max(1, min(4, aria2c_connections))
@@ -336,6 +340,9 @@ class YtDlpService:
                 return
             except DownloadCancelled:
                 raise
+            except DownloadStalled:
+                # 停滞不是某个 profile 的问题：继续换 profile 只会重复等待同样的时间。
+                raise
             except Exception as exc:
                 logger.warning(
                     "yt-dlp profile failed: profile=%s resolution=%s error_class=%s error=%s",
@@ -373,9 +380,12 @@ class YtDlpService:
             youtube_profile=youtube_profile,
         )
 
+        stall_guard = StallGuard(self.stall_timeout_seconds)
+
         def guarded_hook(payload: dict[str, Any]) -> None:
             if should_cancel():
                 raise DownloadCancelled("Download was cancelled.")
+            stall_guard.observe(payload)
             progress_hook(payload)
 
         ydl_opts["progress_hooks"] = [guarded_hook]

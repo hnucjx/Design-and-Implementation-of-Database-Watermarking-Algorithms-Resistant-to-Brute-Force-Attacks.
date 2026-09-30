@@ -52,6 +52,7 @@ python scripts\docs.py check
 | [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合：字幕/chunk 不锁死在 99.9%，分离音视频不把已下载字节重置为 0。 |
 | [test_progress_persist.py](../backend/tests/test_progress_persist.py) | 进度 SQLite/SSE 写入节流：首次、终态、时间间隔和进度跳变。 |
 | [test_transfer_stats.py](../backend/tests/test_transfer_stats.py) | 平均速度计算。 |
+| [test_stall_guard.py](../backend/tests/test_stall_guard.py) | 停滞看门狗：字节推进不触发、零增长超时触发、节流振荡（峰值不刷新）触发、合并格式的流切换不被误判。 |
 | [test_paths.py](../backend/tests/test_paths.py) | 安全路径名。 |
 | [test_log_safety.py](../backend/tests/test_log_safety.py) | 日志敏感信息清洗。 |
 | [fakes.py](../backend/tests/fakes.py) | API 测试的 fake service 和辅助对象。 |

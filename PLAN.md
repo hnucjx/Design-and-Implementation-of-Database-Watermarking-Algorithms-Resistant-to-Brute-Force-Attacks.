@@ -427,7 +427,27 @@ python scripts\bench_throttle_guard.py <temp_dir> 0    # 关闭后：GET 2 次�
 
 ---
 
-## 9. 自查表（计划审校）
+## 9. 实施记录（2026-09-30）
+
+基线：`perf-baseline-2026-09-30`（计划提交 `676c157`）。每个修复一个 commit，可单独 `git revert`。
+
+| 项 | 改动 | commit | 回归结果 |
+| --- | --- | --- | --- |
+| P0-1 关闭节流守卫 | `config.py` 默认 `throttled_rate_kbps=0`、`ytdlp_service.py` `DEFAULT_THROTTLED_RATE_KBPS=0` | `c5c71b1` | `bench_throttle_guard.py /tmp 0` → 25s 内 HTTP GET **2** 次、无错误、字节单调增长（对照 `64` 仍为 10 次） |
+| P0-2 停滞看门狗 | 新增 `app/stall_guard.py`，接入 `_download_once` 的 progress hook；`DownloadStalled` 不进 profile 重试链 | `dfbf215` | 新增 `test_stall_guard.py` 9 例全绿；后端 142 → 147 例全绿 |
+| P1-1 并发语义澄清 | 设置标签改为「并发（同时下载的视频数；单个视频无效）」；单视频任务行追加提示 | `bddfdef` | 前端 51 → 52 例全绿，`tsc && vite build` 通过 |
+| P1-2 aria2c 连接数 | 安装 aria2 1.37.0（winget 用户级）；默认连接数 2（上限 4）；新增 `/api/settings` 字段与设置面板输入 | `869a444` | 后端 144 例、前端 52 例全绿 |
+| P1-3 cookies 状态提示 | 媒体流失败文案前置「当前 cookies 状态：未配置 / 已配置」；解析面板在 cookies 缺失时提示 403 风险 | `d78a894` | 后端 145 例、前端 52 例全绿 |
+| P2-1 重试等待上限 | `_bounded_retry_sleep` 上限 30s → 10s | `0882ac6` | 后端全绿 |
+| P2-2 WAL 维护 | 新增 `checkpoint_wal()`，lifespan 启动与停止各执行一次 `TRUNCATE` | `86fce12` | 后端 147 例全绿 |
+
+未实施：P2-3（profile pacing 降到 0.3）——按计划「先观测后决定」，等看门狗积累数据再评估。
+
+并发基准（修复后，未劣化）：`concurrency=1/2/4/8 → wall 8.19/4.10/2.27/1.26s，peak = 并发数`。
+
+真实验收（§6.5）仍**未执行**：本机到 youtube.com 的 HTTPS 直连在 2026-09-30 23:20 实测超时，需先解决连通性并配置 `data/cookies.txt`。
+
+## 10. 自查表（计划审校）
 
 | 检查项 | 结果 |
 | --- | --- |

@@ -52,6 +52,24 @@ python scripts\bench_throttle_guard.py <临时目录> 0    # 关闭后的连续�
 
 判定标准与历史基线见 [PLAN.md](../PLAN.md) 第 6 节。修改下载调度、并发或节流相关参数后，应至少重跑与改动相关的基准，确认未劣化。
 
+## 真实网络验收
+
+`scripts/acceptance_real.py` 启动真实应用（真实 `YtDlpService` + 真实 yt-dlp），对公开播放列表跑多轮并发并输出逐项 CSV。
+脚本会自动读取 Windows 系统代理（WinINet），因此**不需要单独配置代理环境变量**。
+
+```powershell
+python scripts\acceptance_real.py --items 1-12 --concurrency 1,3,5 --mode subtitles_only --subtitles en
+python scripts\acceptance_real.py --mode video_only --items 1-6    # 需要 data/cookies.txt，否则媒体流 403
+```
+
+注意事项：
+
+- 无 cookies 时 YouTube 媒体流一律 403，视频本体无法下载；字幕与元数据路径不受影响。
+- 不要用 `--subtitles all`：空语言列表会被解释为下载**全部**字幕轨，触发 HTTP 429 并使整个 item 失败。
+- 本地基准走 127.0.0.1，脚本已强制设置 `NO_PROXY`，避免被系统代理的 `<-loopback>` 规则拦截。
+
+最近一次执行结果与口径说明见 [PLAN.md](../PLAN.md) 第 9.1 节。
+
 ## 后端测试范围
 
 后端测试位于 [backend/tests](../backend/tests/)。

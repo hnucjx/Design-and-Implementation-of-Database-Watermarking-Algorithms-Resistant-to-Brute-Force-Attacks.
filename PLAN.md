@@ -361,13 +361,17 @@ python scripts\bench_throttle_guard.py <temp_dir> 0    # 关闭后：GET 2 次�
 
 ### 6.5 真实下载验收（**必须先确认连通性**）
 
-> ⚠️ 本机 2026-09-30 23:20 实测：`https://www.youtube.com/` 直连超时（DNS 可解析）。在连通性解决之前，本节**无法执行**，不要据此判定修复无效。
+> ✅ 连通性已于 2026-10-01 解决：本机 WinINet 开启系统代理 `127.0.0.1:7890`，浏览器与
+> `scripts/acceptance_real.py`（自动探测该代理）均可访问 YouTube；此前的「直连超时」是脚本未走代理的测量错误。
+> ⚠️ 但**媒体流仍无法验收**：无 cookies 时全部 403（见 §9.1）。本节完整验收需要 `data/cookies.txt`，
+> 而本机的 Edge cookies 为 v20 app-bound 加密，无法自动导入（见 §9.2-B）。
 
-前置检查脚本（建议固化为 `scripts/preflight.py`）：
+前置检查（已固化在 `scripts/acceptance_real.py` 中）：
 
 1. `data/cookies.txt` 存在，且 `GET /api/diagnostics` 返回 `cookies_enabled=true`；
 2. `GET /api/diagnostics` 中 `yt_dlp_version`、`ffmpeg`、`js_runtime`、`aria2c_available`；
-3. 到 `www.youtube.com` 与 `*.googlevideo.com` 的 HTTPS 连通性（超时 10s）。
+3. 到 `www.youtube.com` 与 `*.googlevideo.com` 的 HTTPS 连通性（超时 10s），**必须经系统代理**；
+4. 本地基准（127.0.0.1）必须设置 `NO_PROXY`，否则被 `<-loopback>` 规则拦成 502（见 §9.2-C）。
 
 验收步骤：
 
@@ -445,7 +449,59 @@ python scripts\bench_throttle_guard.py <temp_dir> 0    # 关闭后：GET 2 次�
 
 并发基准（修复后，未劣化）：`concurrency=1/2/4/8 → wall 8.19/4.10/2.27/1.26s，peak = 并发数`。
 
-真实验收（§6.5）仍**未执行**：本机到 youtube.com 的 HTTPS 直连在 2026-09-30 23:20 实测超时，需先解决连通性并配置 `data/cookies.txt`。
+### 9.1 真实验收结果（2026-10-01，真实网络 + 真实 yt-dlp）
+
+**纠正上一版结论**：「本机到 youtube.com HTTPS 直连超时」是**测量错误**。本机 WinINet 开启了系统代理
+`127.0.0.1:7890`，浏览器走代理可用，而验收脚本用 `urllib` 直连所以超时。经代理实测
+`https://www.youtube.com/` → HTTP 200 / 0.44s，页面、元数据、字幕全部正常。
+脚本 `scripts/acceptance_real.py` 已内置 WinINet 代理自动探测（`detect_system_proxy()`）。
+
+**媒体流仍无法验收**：无 cookies 时，媒体流在**所有客户端 / 所有格式**上一律 403。
+
+| 验证 | 结果 |
+| --- | --- |
+| `format=18` / `bestaudio` / `player_client=web_safari` / `player_client=tv` | 全部 403 或「Requested format is not available」 |
+| 5 个不同视频（`dQw4w9WgXcQ` 等） | 5/5 媒体流 403 |
+| `--impersonate chrome/safari/firefox` | 全部失败（curl_cffi 在该环境抛 `AssertionError`） |
+
+而 cookies 在本机**无法自动获取**（见 §9.2-B）。因此 §6.5 中「6 条目视频」的完整验收仍不可执行，
+改以**同一条代码路径、同一套真实网络**的字幕 / 元数据任务做验收（`mode=subtitles_only`，`subtitles=en`）：
+
+| 并发 | 条目 | 总耗时 | 失败 | 滞留 > 5min | 总字节 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 12 | 63.24s | 1（媒体流 403） | 0 | 1.39 MiB |
+| 3 | 12 | 25.34s | 0 | 0 | 1.46 MiB |
+| 5 | 12 | 22.09s | 0 | 0 | 1.46 MiB |
+
+- **并发阈值判定 PASS**：5 并发 / 1 并发 = **34.93%**（阈值 45%）；加速比 2.86×。
+- **稳定性 PASS**（c=3 / c=5）：0 失败、无 item 停留 running 超过 5 分钟、看门狗无误报。
+- c=1 的 1 例失败是 403 媒体流（无 cookies），**与应用性能改动无关**。
+- 注意口径：12 条目总负载仅 1.46 MiB，单 item 3–5s，**固定元数据开销占主导**，因此 c=3→c=5 只有
+  25.3→22.1s 的边际收益。6 条目时比值仅 55%（未达阈值），12 条目才降到 35%——说明 §6.5 的 45% 阈值
+  是「视频级负载」口径，小负载任务不能直接套用。
+
+### 9.2 新发现的缺陷（均非本次性能改动引入，建议另开计划）
+
+**A. 字幕默认全语言 → HTTP 429 → 整个 item 失败（高优先级）**
+`ytdlp_service.py:710` 的 `subtitle_languages or ["all"]`：前端未显式传语言时（默认 `[]`）被解释为
+**下载全部字幕轨**。实测单视频会并发拉取 20+ 条 VTT（含 `ab-ar`、`aa-ar` 等自动轨），触发
+`HTTP Error 429: Too Many Requests`，进而把**已经可以成功的任务判为 failed**，且视频本体根本没下载
+（产物目录里只有 20 个 `.vtt`）。建议改为空列表即「不下载字幕」，或按 `AppSettings.default_subtitle_languages`（默认 `["en"]`）兜底。
+
+**B. Edge cookies 导入在本机结构上不可用（且 CDP 路径有副作用）**
+1. Edge 的 YouTube cookies 全部是 **v20 app-bound 加密**（53/53），`extract_cookies_from_browser`
+   报 `Failed to decrypt with DPAPI`，yt-dlp/browser_cookie3 无法离线解密；
+2. `_extract_edge_cookies_via_cdp()`（`browser_cookies.py:157-191`）用真实 profile 启动
+   `--remote-debugging-port`，但 Chromium 对默认数据目录一律拒绝：
+   `DevTools remote debugging requires a non-default data directory` → **该路径在任何机器上都必然超时失败**；
+3. 用目录联接（junction）绕过目录限制后端点可连，但**会把真实 cookie 库清空**（53 → 0 条），且 CDP 仍返回 0 条 cookies。
+   已用快照完整恢复（2458 条 / 53 条 youtube），但**该路线不可再用于生产**。
+结论：本机只能通过「浏览器扩展导出 cookies.txt」获得登录态；应用的浏览器导入功能需要重新设计
+（例如改用 `--user-data-dir` 指向带副本的临时目录 + 官方支持的提取方式，或明确提示用户手动导出）。
+
+**C. 验收脚本需显式绕过系统代理的回环拦截**
+本机 `ProxyOverride` 含 `<-loopback>`，本地 HTTP 基准（`bench_throttle_guard.py`）的 127.0.0.1 请求会被代理拦成 502，
+表现为「GET 计数 0」的假故障。已在脚本顶部强制设置 `NO_PROXY` 修复。
 
 ## 10. 自查表（计划审校）
 
@@ -459,7 +515,9 @@ python scripts\bench_throttle_guard.py <temp_dir> 0    # 关闭后：GET 2 次�
 | `DownloadStalled` 文案是否会与现有错误分类冲突 | ✅ §P0-2 已明确规避 "timed out"/"reset" 等关键词 |
 | 停滞判据能否区分「节流循环」与「正常断点续传」 | ✅ §P0-2 采用「历史最大值是否刷新」而非「本轮是否增长」，前者会持续振荡不刷新、后者恢复后会刷新 |
 | 新增依赖是否说明且默认不启用高风险项 | ✅ §5，aria2c 默认关闭 |
-| 验证方式是否覆盖单元 / 离线基准 / 真实验收 | ✅ §6.1–6.5，含离线可跑的两个基准脚本 |
-| 真实验收是否有前置条件与判定阈值 | ✅ §6.5（含连通性警告与量化阈值） |
+| 验证方式是否覆盖单元 / 离线基准 / 真实验收 | ✅ §6.1–6.5，含离线可跑的两个基准脚本 + `scripts/acceptance_real.py` |
+| 真实验收是否有前置条件与判定阈值 | ✅ §6.5（含代理前置条件与量化阈值）；结果见 §9.1 |
+| 真实验收结论是否与实际口径一致 | ⚠️ §9.1：媒体流因 403 未验收；字幕路径验收通过（34.93% / 0 失败），并已注明「小负载不适用 45% 阈值」 |
+| 新发现缺陷是否已记录 | ✅ §9.2：字幕 429、Edge cookies 导入不可用、回环代理拦截 |
 | 回滚是否可单条 / 全部 / 运行时三档 | ✅ §7 |
 | 与上一轮性能计划是否冲突 | ✅ §2.4 已确认 WAL、进度节流、单次 extract、去 sleep 均已落地，本计划不重复 |

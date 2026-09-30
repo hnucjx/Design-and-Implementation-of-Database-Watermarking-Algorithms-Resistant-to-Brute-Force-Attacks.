@@ -6,6 +6,9 @@ __pycache__/
 !.env.example
 .pytest_cache/
 .ruff_cache/
+tmp_acceptance/
+tmp_pytest/
+.workbuddy/
 *.egg-info/
 .tools/
 .sync/

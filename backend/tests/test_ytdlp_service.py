@@ -175,6 +175,8 @@ def test_download_options_enable_resumable_stable_retry_defaults(tmp_path: Path)
     assert set(retry_sleep) == {"http", "fragment", "file_access", "extractor"}
     assert retry_sleep["http"](3) > retry_sleep["http"](1)
     assert retry_sleep["http"](n=3) > retry_sleep["http"](n=1)
+    assert retry_sleep["http"](1) == 2.0
+    assert retry_sleep["http"](20) == 10.0  # 单次等待上限，避免 10 次重试累计成 110s 静默
 
 
 def test_throttled_rate_is_disabled_by_default(tmp_path: Path) -> None:

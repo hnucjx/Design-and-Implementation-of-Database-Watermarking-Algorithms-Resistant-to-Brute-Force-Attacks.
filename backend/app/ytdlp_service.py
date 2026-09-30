@@ -622,7 +622,9 @@ class YtDlpService:
 
     @staticmethod
     def _bounded_retry_sleep(n: int = 0, **_: Any) -> float:
-        return min(30.0, max(1, n) * 2.0)
+        # 上限 10s：retries=10 时单 profile 的最长静默等待从约 110s 降到约 80s，
+        # 失败更快浮出水面；由停滞看门狗（stall_guard）兜底，不再靠长等待自愈。
+        return min(10.0, max(1, n) * 2.0)
 
     @staticmethod
     def _short_retry_sleep(n: int = 0, **_: Any) -> float:

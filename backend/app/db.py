@@ -69,6 +69,19 @@ def _ensure_columns(engine: Engine) -> None:
                     connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
 
 
+def checkpoint_wal(engine: Engine, mode: str = "TRUNCATE") -> None:
+    """Fold the WAL back into the main database file.
+
+    Without an explicit checkpoint a killed process leaves a large `-wal`
+    sidecar behind, and readers have to replay it on every query.
+    """
+    try:
+        with engine.begin() as connection:
+            connection.execute(text(f"PRAGMA wal_checkpoint({mode})"))
+    except Exception as exc:  # noqa: BLE001 - maintenance only, never fatal
+        logger.warning("SQLite WAL checkpoint skipped: %s", exc)
+
+
 def session_dependency(engine: Engine):
     def get_session() -> Generator[Session, None, None]:
         with Session(engine) as session:

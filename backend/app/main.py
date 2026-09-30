@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 
 from .config import AppSettings, REPO_ROOT, get_settings
-from .db import create_app_engine, init_db, session_dependency
+from .db import checkpoint_wal, create_app_engine, init_db, session_dependency
 from .events import EventBroker
 from .job_read_model import read_job
 from .job_manager import JobManager, new_id
@@ -74,11 +74,13 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        await asyncio.to_thread(checkpoint_wal, engine)
         await manager.start()
         try:
             yield
         finally:
             await manager.stop()
+            await asyncio.to_thread(checkpoint_wal, engine)
 
     app = FastAPI(title="YouTube Downloader", version="0.1.0", lifespan=lifespan)
     app.add_middleware(

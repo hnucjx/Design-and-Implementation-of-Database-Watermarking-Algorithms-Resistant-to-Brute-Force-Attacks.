@@ -906,24 +906,52 @@ def test_import_browser_cookies_uses_edge_cdp_fallback_after_dpapi_failure(monke
     assert "YOUTUBE_SECRET" in (tmp_path / "cookies.txt").read_text(encoding="utf-8")
 
 
-def test_edge_cdp_fallback_terminates_process_tree(monkeypatch, tmp_path: Path) -> None:
-    calls: list[list[str]] = []
+def test_edge_cdp_fallback_never_launches_a_browser(monkeypatch, tmp_path: Path) -> None:
+    """CDP 回退不得再启动任何进程：旧实现会挂载**真实** Edge 配置，并破坏它的 cookie 库。"""
 
-    class FakeProcess:
-        pid = 1234
+    launched: list[tuple] = []
 
-        def terminate(self):
-            raise AssertionError("Windows cleanup should use taskkill for the process tree.")
+    def forbidden_popen(*args, **kwargs):
+        launched.append(args)
+        raise AssertionError("CDP fallback must not launch a browser process.")
 
-    def fake_run(args, **kwargs):
-        calls.append(args)
+    monkeypatch.setattr("app.browser_cookies.subprocess.Popen", forbidden_popen)
 
-    monkeypatch.setattr("app.browser_cookies.os.name", "nt")
-    monkeypatch.setattr("app.browser_cookies.subprocess.run", fake_run)
+    with pytest.raises(BrowserCookieImportError) as exc_info:
+        YtDlpService(download_dir=tmp_path)._extract_edge_cookies_via_cdp()
 
-    YtDlpService(download_dir=tmp_path)._terminate_edge_process(FakeProcess())
+    assert exc_info.value.code == "edge_app_bound"
+    assert launched == []
+    assert "scripts/export_cookies_via_cdp.py" in exc_info.value.message
 
-    assert calls == [["taskkill", "/PID", "1234", "/F", "/T"]]
+
+def test_import_browser_cookies_reports_edge_app_bound_after_dpapi_failure(monkeypatch, tmp_path: Path) -> None:
+    def fake_extract(browser_name, profile=None, logger=None, *, keyring=None, container=None):
+        raise RuntimeError("Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927")
+
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+
+    with pytest.raises(BrowserCookieImportError) as exc_info:
+        service.import_browser_cookies("edge", tmp_path / "cookies.txt")
+
+    assert exc_info.value.code == "edge_app_bound"
+    assert not (tmp_path / "cookies.txt").exists()
+
+
+def test_auto_browser_cookie_import_prioritizes_edge_app_bound(monkeypatch, tmp_path: Path) -> None:
+    def fake_extract(browser_name, profile=None, logger=None, *, keyring=None, container=None):
+        if browser_name == "edge":
+            raise RuntimeError("Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927")
+        raise RuntimeError(f"could not find {browser_name} profile")
+
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+
+    with pytest.raises(BrowserCookieImportError) as exc_info:
+        service.import_browser_cookies("auto", tmp_path / "cookies.txt")
+
+    assert exc_info.value.code == "edge_app_bound"
 
 
 def test_auto_browser_cookie_import_prioritizes_locked_edge_error(monkeypatch, tmp_path: Path) -> None:

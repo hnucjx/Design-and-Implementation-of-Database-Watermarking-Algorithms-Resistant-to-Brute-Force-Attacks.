@@ -262,10 +262,8 @@ class YtDlpService:
         BrowserCookieImporter()._close_browser_for_cookie_import(browser)
 
     def _extract_edge_cookies_via_cdp(self) -> YoutubeDLCookieJar:
+        """Edge cookies 无法离线读取，见 ``BrowserCookieImporter._extract_edge_cookies_via_cdp``。"""
         return BrowserCookieImporter()._extract_edge_cookies_via_cdp()
-
-    def _terminate_edge_process(self, process: Any) -> None:
-        BrowserCookieImporter()._terminate_edge_process(process)
 
     def extract_metadata(self, url: str, cookies_path: Path | None = None) -> AnalyzeResponse:
         opts: dict[str, Any] = {

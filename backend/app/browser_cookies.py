@@ -1,17 +1,10 @@
 from collections.abc import Callable
-from contextlib import suppress
 from copy import copy
 from dataclasses import dataclass
-from http.cookiejar import Cookie
-import json
 import os
 from pathlib import Path
-import shutil
-import socket
 import subprocess
 import time
-from typing import Any
-import urllib.request
 
 from yt_dlp.cookies import YoutubeDLCookieJar, extract_cookies_from_browser
 
@@ -42,6 +35,25 @@ class BrowserCookieImportError(RuntimeError):
         else:
             message = f"{browser} 正在运行，cookies 数据库被锁定。请关闭浏览器后重试。"
         return cls("browser_locked", browser, message, raw_detail)
+
+    @classmethod
+    def edge_app_bound(cls, browser: str = "edge", raw_detail: str | None = None) -> "BrowserCookieImportError":
+        """Edge 的 cookies 无法被本应用离线读取——给出**可执行**的下一步，而不是再试一次。
+
+        三条依据都是实测：① v20 app-bound 加密的密钥绑定 Edge 二进制本身，离线一律
+        ``Failed to decrypt with DPAPI``；② Chromium 硬拒在默认 user-data-dir 上开 CDP
+        （``DevTools remote debugging requires a non-default data directory``）；
+        ③ 用 junction 绕开该限制后，**真实 cookie 库被清空（53 -> 0）**。
+        """
+        message = (
+            "Edge 的 cookies 是 v20 app-bound 加密，密钥绑定正在运行的 Edge 进程本身，"
+            "任何离线程序都无法解密。本应用不会再尝试用 CDP 挂载你的真实 Edge 配置"
+            "（该做法在 Chromium 上本就被拒绝，绕过限制的变通手段还会破坏 Edge 的 cookies 数据库）。"
+            "请任选其一：① 运行仓库里的 scripts/export_cookies_via_cdp.py —— 会开一个独立配置的"
+            "浏览器窗口，首次登录一次即可导出到 data/cookies.txt；"
+            "② 用浏览器扩展（如 Get cookies.txt LOCALLY）导出后另存为 data/cookies.txt。"
+        )
+        return cls("edge_app_bound", browser, message, raw_detail)
 
     def to_detail(self) -> dict[str, str | None]:
         return {
@@ -74,6 +86,7 @@ class BrowserCookieImporter:
         candidates = self.candidates if browser == "auto" else [browser]
         errors: list[str] = []
         locked_error: BrowserCookieImportError | None = None
+        app_bound_error: BrowserCookieImportError | None = None
 
         for candidate in candidates:
             try:
@@ -81,6 +94,8 @@ class BrowserCookieImporter:
             except BrowserCookieImportError as exc:
                 if exc.code == "browser_locked":
                     locked_error = exc
+                elif exc.code == "edge_app_bound":
+                    app_bound_error = exc
                 errors.append(f"{candidate}: {exc.raw_detail or exc.message}")
                 continue
             except Exception as exc:
@@ -106,8 +121,12 @@ class BrowserCookieImporter:
                 filename=target_path.name,
             )
 
+        # 优先抛出「用户真能照做」的错误：关掉浏览器可能真的成功，
+        # 而 app-bound 加密只能改用导出脚本 / 扩展。
         if locked_error:
             raise locked_error
+        if app_bound_error:
+            raise app_bound_error
         detail = "; ".join(errors) if errors else "no supported browser candidates were available"
         raise RuntimeError(f"Could not import YouTube cookies from browser: {detail}")
 
@@ -155,160 +174,22 @@ class BrowserCookieImporter:
         time.sleep(1.0)
 
     def _extract_edge_cookies_via_cdp(self) -> YoutubeDLCookieJar:
-        edge = self._edge_executable()
-        if not edge:
-            raise RuntimeError("Microsoft Edge executable was not found.")
-        port = self._free_tcp_port()
-        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        process = subprocess.Popen(
-            [
-                edge,
-                f"--remote-debugging-port={port}",
-                "--remote-allow-origins=*",
-                f"--user-data-dir={self._edge_user_data_dir()}",
-                "--profile-directory=Default",
-                "--headless=new",
-                "--disable-gpu",
-                "--no-first-run",
-                "--disable-default-apps",
-                "https://www.youtube.com/",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creationflags,
-        )
-        try:
-            websocket_url = self._wait_for_cdp_websocket_url(port)
-            cookies = self._read_cdp_cookies(websocket_url)
-        finally:
-            self._terminate_edge_process(process)
+        """读取真实 Edge 配置里的 cookies —— **已停用**，一律抛出可执行的错误。
 
-        jar = YoutubeDLCookieJar()
-        for value in cookies:
-            cookie = self._cdp_cookie(value)
-            if cookie:
-                jar.set_cookie(cookie)
-        return jar
+        这里原本用 ``--user-data-dir=<真实 Edge 目录>`` 启动 Edge 再走 CDP 读 cookie。
+        该实现同时是「必然失败」和「有破坏性」的：
 
-    def _terminate_edge_process(self, process: Any) -> None:
-        if os.name == "nt":
-            creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            with suppress(Exception):
-                subprocess.run(
-                    ["taskkill", "/PID", str(process.pid), "/F", "/T"],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    creationflags=creationflags,
-                )
-            return
-        with suppress(Exception):
-            process.terminate()
-            process.wait(timeout=5)
-        with suppress(Exception):
-            process.kill()
+        - 必然失败：Chromium 拒绝在**默认** user-data-dir 上开 CDP，报
+          ``DevTools remote debugging requires a non-default data directory``；
+          即便绕开，``--headless=new`` 也拿不到 ``.youtube.com`` 域的鉴权 cookie。
+        - 有破坏性：上一轮排查中用 junction 绕开该限制后，**真实 cookie 库被清空
+          （53 -> 0）**，靠快照才恢复。
 
-    def _edge_executable(self) -> str | None:
-        candidates = [
-            shutil.which("msedge"),
-            str(Path(os.environ.get("ProgramFiles(x86)", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe"),
-            str(Path(os.environ.get("ProgramFiles", "")) / "Microsoft" / "Edge" / "Application" / "msedge.exe"),
-        ]
-        for candidate in candidates:
-            if candidate and Path(candidate).exists():
-                return candidate
-        return None
-
-    def _edge_user_data_dir(self) -> Path:
-        return Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Edge" / "User Data"
-
-    def _free_tcp_port(self) -> int:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.bind(("127.0.0.1", 0))
-            return int(sock.getsockname()[1])
-
-    def _wait_for_cdp_websocket_url(self, port: int) -> str:
-        url = f"http://127.0.0.1:{port}/json/list"
-        deadline = time.time() + 15
-        last_error: Exception | None = None
-        while time.time() < deadline:
-            try:
-                with urllib.request.urlopen(url, timeout=1) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                if not isinstance(payload, list):
-                    raise RuntimeError("Edge DevTools returned an invalid target list.")
-                pages = [target for target in payload if isinstance(target, dict) and target.get("type") == "page"]
-                target = next((page for page in pages if "youtube.com" in str(page.get("url", ""))), None)
-                target = target or (pages[0] if pages else None)
-                websocket_url = target.get("webSocketDebuggerUrl") if target else None
-                if websocket_url:
-                    return str(websocket_url)
-            except Exception as exc:
-                last_error = exc
-                time.sleep(0.2)
-        raise RuntimeError(f"Timed out waiting for Edge DevTools endpoint: {last_error}")
-
-    def _read_cdp_cookies(self, websocket_url: str) -> list[dict[str, Any]]:
-        from websockets.sync.client import connect
-
-        with connect(websocket_url, open_timeout=5, close_timeout=2, max_size=None) as websocket:
-            websocket.send(
-                json.dumps(
-                    {
-                        "id": 1,
-                        "method": "Network.getCookies",
-                        "params": {
-                            "urls": [
-                                "https://www.youtube.com/",
-                                "https://youtube.com/",
-                                "https://accounts.google.com/",
-                                "https://www.google.com/",
-                            ]
-                        },
-                    }
-                )
-            )
-            deadline = time.time() + 10
-            while time.time() < deadline:
-                message = json.loads(websocket.recv(timeout=10))
-                if message.get("id") != 1:
-                    continue
-                result = message.get("result") or {}
-                cookies = result.get("cookies") or []
-                if not isinstance(cookies, list):
-                    raise RuntimeError("Edge DevTools returned an invalid cookies payload.")
-                return [cookie for cookie in cookies if isinstance(cookie, dict)]
-        raise RuntimeError("Timed out reading cookies from Edge DevTools.")
-
-    def _cdp_cookie(self, value: dict[str, Any]) -> Cookie | None:
-        name = value.get("name")
-        cookie_value = value.get("value")
-        domain = value.get("domain")
-        if not name or cookie_value is None or not domain:
-            return None
-        expires = value.get("expires")
-        parsed_expires = int(expires) if isinstance(expires, (int, float)) and expires > 0 else None
-        path = str(value.get("path") or "/")
-        return Cookie(
-            version=0,
-            name=str(name),
-            value=str(cookie_value),
-            port=None,
-            port_specified=False,
-            domain=str(domain),
-            domain_specified=True,
-            domain_initial_dot=str(domain).startswith("."),
-            path=path,
-            path_specified=True,
-            secure=bool(value.get("secure")),
-            expires=parsed_expires,
-            discard=parsed_expires is None,
-            comment=None,
-            comment_url=None,
-            rest={"HttpOnly": None} if value.get("httpOnly") else {},
-            rfc2109=False,
-        )
+        因此这里不再触碰用户的真实配置，改为把「下一步该做什么」交给调用方展示。
+        保留方法名是为了继续作为可注入的接缝（``extract_edge_cookies_via_cdp``），
+        将来若要接入基于**独立 profile** 的导出流程，替换这一处即可。
+        """
+        raise BrowserCookieImportError.edge_app_bound("edge")
 
     def _is_browser_cookie_database_locked(self, browser: str, exc: Exception) -> bool:
         return browser == "edge" and "could not copy chrome cookie database" in str(exc).lower()

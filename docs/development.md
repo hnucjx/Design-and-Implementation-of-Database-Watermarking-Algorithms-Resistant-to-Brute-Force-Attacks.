@@ -126,7 +126,9 @@ npm run dev -- --port 5173
 | `scripts` | 可复现的工程辅助脚本：文档工具入口 [docs.py](../scripts/docs.py)，离线基准 [bench_concurrency.py](../scripts/bench_concurrency.py)、[bench_throttle_guard.py](../scripts/bench_throttle_guard.py)。 |
 | `.tools` | 文档工具自动下载的本机缓存，已被 Git 忽略。 |
 | `ai` | 任务计划、重构日志和文档生成 prompt。 |
-| `PLAN.md` | 下载性能与稳定性修复计划：根因分析、修复项、验证与回滚，是引用性能结论时的权威来源。 |
+| `ai/perf/PLAN.md` | 下载性能与稳定性修复计划：根因分析、修复项、验证与回滚，是引用性能结论时的权威来源。 |
+| `ai/bug-fix/` | 逐条修复记录（001~010）与「已知但未处理」清单；写限制与遗留风险时以此为准。 |
+| `ai/docs/` | 文档任务的原始需求与可重复执行的撰写 prompt。 |
 
 ## 环境变量
 

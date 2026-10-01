@@ -85,5 +85,5 @@ PlantUML 源文件：[data-model.puml](diagrams/data-model.puml)。
 - 下载能力集中封装在 `YtDlpService`，避免 API 层暴露任意 yt-dlp 参数。
 - 任务执行与 API 读模型分离，API 只读取投影，任务管理器负责状态转换。
 - 分辨率降级只在下载前可判断的场景自动发生；媒体流 403/连接重置不会中途自动降级重下，详见 [技术文档](technical.md#分辨率降级原因)。
-- 稳定性默认值来自 [PLAN.md](../PLAN.md) 的修复基线：节流守卫默认关闭（`YTDL_THROTTLED_RATE_KBPS=0`），改用 90 秒停滞看门狗兜底；aria2c 多连接默认关闭，仅在显式启用且需要给单视频提速时使用。稳定优先的运行方式是把并发设为 1。
+- 稳定性默认值来自 [PLAN.md](../ai/perf/PLAN.md) 的修复基线：节流守卫默认关闭（`YTDL_THROTTLED_RATE_KBPS=0`），改用 90 秒停滞看门狗兜底；aria2c 多连接默认关闭，仅在显式启用且需要给单视频提速时使用。稳定优先的运行方式是把并发设为 1。
 - 单端口部署：FastAPI 在 `frontend/dist` 存在时挂载静态资源并提供首页，见 [main.py](../backend/app/main.py#L500)；否则只提供 API，页面走 Vite dev server。

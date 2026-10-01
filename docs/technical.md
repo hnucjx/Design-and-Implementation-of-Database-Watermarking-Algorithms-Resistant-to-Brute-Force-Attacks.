@@ -20,7 +20,7 @@
 
 ## 下载前预检测
 
-在实际下载前，`JobManager` 先调用 [prepare_download](../backend/app/ytdlp_service.py#L393) 让 yt-dlp 按当前 selector 选择计划下载格式。源视频清晰度匹配时不再额外 `extract_metadata`——这是上一轮性能修复的成果，见 [PLAN.md](../PLAN.md)。只有计划格式不可选时，才会再解析元数据并按降级原因分类。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L983) 写入：
+在实际下载前，`JobManager` 先调用 [prepare_download](../backend/app/ytdlp_service.py#L393) 让 yt-dlp 按当前 selector 选择计划下载格式。源视频清晰度匹配时不再额外 `extract_metadata`——这是上一轮性能修复的成果，见 [PLAN.md](../ai/perf/PLAN.md)。只有计划格式不可选时，才会再解析元数据并按降级原因分类。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L983) 写入：
 
 - `actual_width`
 - `actual_height`
@@ -68,7 +68,7 @@
 
 并发、限速和重试次数属于运行时设置。并发修改会直接调整后台 worker 数，每个 worker 一次处理一个 `JobItem`；限速和重试次数修改会更新 queued/running/paused 任务的 `DownloadOptions`，前端会显示保存中、保存成功或保存失败状态。如果某个视频正在 yt-dlp 内下载，任务管理器会请求当前项退出并重新入队，依靠 `continuedl=True` 和保留的 `.part` 文件断点续传，从而让新的 `ratelimit` 或 `retries` 尽快生效。
 
-核心参数和默认值的完整清单、以及每个参数的风险与回退方式见 [PLAN.md](../PLAN.md)。性能相关的离线复现脚本：
+核心参数和默认值的完整清单、以及每个参数的风险与回退方式见 [PLAN.md](../ai/perf/PLAN.md)。性能相关的离线复现脚本：
 
 ```powershell
 python scripts\bench_concurrency.py <临时目录>          # item 级并发是否线性生效

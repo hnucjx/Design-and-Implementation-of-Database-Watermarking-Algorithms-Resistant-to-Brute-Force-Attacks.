@@ -11,7 +11,7 @@
 | 变更类型 | 必查文档 |
 | --- | --- |
 | 新增或修改 API endpoint/schema | [API 文档](api.md)、[openapi.yaml](openapi.yaml)、[架构设计](architecture.md)、相关 UML 图 |
-| 修改下载策略、清晰度、格式、cookies、PO token、aria2c、停滞看门狗或节流守卫 | [技术文档](technical.md)、[用户手册](user-manual.md)、[测试文档](testing.md)、[PLAN.md](../PLAN.md)（若属于性能修复范围） |
+| 修改下载策略、清晰度、格式、cookies、PO token、aria2c、停滞看门狗或节流守卫 | [技术文档](technical.md)、[用户手册](user-manual.md)、[测试文档](testing.md)、[PLAN.md](../ai/perf/PLAN.md)（若属于性能修复范围） |
 | 修改任务状态、进度、速度或错误显示 | [API 文档](api.md)、[实现文档](implementation.md)、[用户手册](user-manual.md) |
 | 修改本地播放、打开文件夹或本地文件错误提示 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |
 | 修改任务删除或文件清理行为 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |

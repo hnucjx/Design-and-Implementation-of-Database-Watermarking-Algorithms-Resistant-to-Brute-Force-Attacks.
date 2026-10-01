@@ -31,6 +31,10 @@ from .ytdlp_service import DownloadCancelled, MIN_AUTO_FALLBACK_HEIGHT, YtDlpSer
 
 logger = logging.getLogger(__name__)
 
+# 条目在收尾阶段（状态回写 / SSE 推送 / 诊断日志）崩溃时写给用户看的一句话。
+# 刻意不提「内部错误」以外的猜测：此时连是哪一步崩的都要看日志，编一句话只会误导。
+CRASHED_ITEM_ERROR = "内部错误：任务在收尾阶段异常退出，详情见日志。"
+
 
 class JobManager:
     def __init__(self, engine: Engine, settings: AppSettings, service: YtDlpService, broker: EventBroker) -> None:
@@ -386,8 +390,52 @@ class JobManager:
                 if item_id is None:
                     return
                 await asyncio.to_thread(self._run_item_work, item_id)
+            except Exception:  # noqa: BLE001
+                # 单个条目的收尾/记录阶段崩溃，不能把这个 worker 带走：
+                # worker 一死，队列就少一个消费口，后面的条目会静默堆在 queued 里
+                # （表现为「并发数莫名其妙对不上」，而没有任何一行日志指到这里）。
+                # 见 ai/bug-fix/008：这件兜底与「finally 里不再吞异常」是同一件事的两半。
+                logger.exception("item worker crashed: worker=%s item_id=%s", worker_index, item_id)
+                self._mark_item_failed_after_crash(item_id)
             finally:
                 self._queue.task_done()
+
+    def _mark_item_failed_after_crash(self, item_id: str) -> None:
+        """把「收尾阶段崩掉的条目」变成一个用户能看见的失败。
+
+        没有这一步的话，兜底只是让 worker 活下来，条目仍然永远停在 `running` ——
+        问题从「静默卡住」变成「静默少一个并发」，两者都查不出来。
+
+        整个过程再被包一层：兜底逻辑自己出错也只能记日志，它唯一的职责是不让 worker 死。
+        """
+        try:
+            with Session(self.engine) as session:
+                item = session.get(JobItem, item_id)
+                if item is None or item.status not in {JobStatus.queued.value, JobStatus.running.value}:
+                    return
+                job = session.get(Job, item.job_id)
+                item.status = JobStatus.failed.value
+                item.error = CRASHED_ITEM_ERROR
+                item.speed = None
+                item.eta = None
+                item.finished_at = utc_now()
+                item.updated_at = item.finished_at
+                session.add(item)
+                session.commit()
+                if job is not None:
+                    self._refresh_job_counts(session, job)
+                    self._maybe_finish_job(session, job)
+                self._publish_threadsafe(
+                    {
+                        "type": "item_finished",
+                        "job_id": item.job_id,
+                        "item_id": item.id,
+                        "status": item.status,
+                        "error": item.error,
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to mark a crashed item as failed: item_id=%s", item_id)
 
     def _queued_item_ids(self, job_id: str) -> list[str]:
         with Session(self.engine) as session:
@@ -626,9 +674,15 @@ class JobManager:
             item.status = JobStatus.succeeded.value
             item.progress = 100.0
         finally:
+            # 这里**只允许**在分支里收尾，不允许用 `return` 提前退出：
+            # `finally` 里的 `return` 会静默吞掉正在传播的异常（CPython 只给一句
+            # SyntaxWarning: 'return' in a 'finally' block，而这条警告只在源码被重新
+            # 编译、`__pycache__` 失效时才打印），结果是条目永远停在 running、
+            # 日志里连异常都没有。见 ai/bug-fix/008。
             if job.id in self._deleted or item.id in self._deleted_items:
-                return
-            if runtime_restart_requested:
+                # 删除竞态：任务/条目在下载过程中被删掉，状态行已不存在，不再回写。
+                pass
+            elif runtime_restart_requested:
                 item.updated_at = utc_now()
                 job.updated_at = item.updated_at
                 session.add(item)
@@ -644,24 +698,24 @@ class JobManager:
                     }
                 )
                 self._enqueue_threadsafe(item.id)
-                return
-            item.finished_at = utc_now() if item.status != JobStatus.paused.value else None
-            if item.status in {JobStatus.succeeded.value, JobStatus.failed.value, JobStatus.cancelled.value}:
-                item.speed = transfer_stats.average_speed()
-                item.eta = None
-            item.updated_at = utc_now()
-            session.add(item)
-            session.commit()
-            self._refresh_job_counts(session, job)
-            self._publish_threadsafe(
-                {
-                    "type": "item_finished",
-                    "job_id": job.id,
-                    "item_id": item.id,
-                    "status": item.status,
-                    "error": item.error,
-                }
-            )
+            else:
+                item.finished_at = utc_now() if item.status != JobStatus.paused.value else None
+                if item.status in {JobStatus.succeeded.value, JobStatus.failed.value, JobStatus.cancelled.value}:
+                    item.speed = transfer_stats.average_speed()
+                    item.eta = None
+                item.updated_at = utc_now()
+                session.add(item)
+                session.commit()
+                self._refresh_job_counts(session, job)
+                self._publish_threadsafe(
+                    {
+                        "type": "item_finished",
+                        "job_id": job.id,
+                        "item_id": item.id,
+                        "status": item.status,
+                        "error": item.error,
+                    }
+                )
 
     def _download_with_cookie_refresh(
         self,

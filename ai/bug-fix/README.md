@@ -118,10 +118,10 @@ failed · 0/1 完成 · 当前没有 1440p 的视频，低于选定分辨率的�
 4. 同一 item 内多条字幕轨仍是串行请求，若 YouTube 收紧限流可能还需请求间隔控制（见 004 关联）。
 5. **环境净化只覆盖 `NODE_OPTIONS`**（007 遗留）。其它同样能打坏子进程的宿主注入没有处理 ——
    只处理实测造成故障的那一个，不凭想象扩大范围。
-6. **`docs/development.md` 的环境变量表缺两个字段**：`YTDL_JS_RUNTIME_PATH` 与 `YTDL_PROXY`，
-   而表头写着「列出全部字段」。同一处还发现文档把 `YTDL_JS_RUNTIME_PATH` 误写成 `YTDL_JS_RUNTIME`
-   —— 实测那个名字设了**不生效**（`AppSettings().js_runtime_path` 仍为 `None`），本轮已在
-   `docs/troubleshooting.md` 顺手改正。是否反过来把字段改名成 `js_runtime` 属于产品决定，没有动。
+6. ~~**`docs/development.md` 的环境变量表缺两个字段**：`YTDL_JS_RUNTIME_PATH` 与 `YTDL_PROXY`~~
+   → 已处理（2026-10-02 文档同步轮）：两行已补进表内，`YTDL_JS_RUNTIME` 这个名字的错误写法
+   也已在 `docs/technical.md` 点明「设了不生效」。
+   **遗留**：是否反过来把 `AppSettings.js_runtime_path` 改名成 `js_runtime` 属于产品决定，没有动。
 7. **端口预检只在 `python -m app` 这条入口生效**（009 遗留）。继续敲
    `python -m uvicorn app.main:app --port 8000` 仍然是原始报错；`docs/openapi.yaml` 的 server URL
    也仍是硬编码 `8000`，没有跟随 `YTDL_API_PORT`。

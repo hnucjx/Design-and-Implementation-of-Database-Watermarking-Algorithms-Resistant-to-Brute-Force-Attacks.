@@ -48,6 +48,24 @@
 | [logging_setup.py](../backend/app/logging_setup.py#L48) | L4 基础设施 | 配置 root/uvicorn logger，落盘 `data/logs/app.log` 并轮转。 | 不决定打什么日志，不解析业务语义。 |
 | [paths.py](../backend/app/paths.py#L7) / [log_safety.py](../backend/app/log_safety.py#L11) | L5 纯工具 | 文件名安全化、日志敏感信息清洗。 | 无项目内依赖，可单独测试。 |
 
+## 前端组件边界
+
+`App.tsx` 负责状态编排与 SSE 订阅，展示职责拆到 `components/` 下四个组件：
+
+| 组件 | 职责 | 不负责 |
+| --- | --- | --- |
+| [CookieSection.tsx](../frontend/src/components/CookieSection.tsx#L121) | cookies 状态、校验按钮与结论展示；两个说明浮层（[获取方式](../frontend/src/components/CookieSection.tsx#L53)、[结论解读](../frontend/src/components/CookieSection.tsx#L96)）就近挂在这里。 | 不决定用哪份 cookies（后端决定），不构造请求体。 |
+| [ProxySection.tsx](../frontend/src/components/ProxySection.tsx#L140) | 代理输入框、检测结果展示；[常用端口](../frontend/src/components/ProxySection.tsx#L75)与[排查顺序](../frontend/src/components/ProxySection.tsx#L112)两个说明浮层。 | 不解析代理来源（后端回传 `proxy_source`），不保存设置（保存由 `SettingsPanel` 触发）。 |
+| [HelpPopover.tsx](../frontend/src/components/HelpPopover.tsx#L42) | **通用非模态说明浮层**：定位、钉住、关闭、记忆，以及窄屏抽屉形态。所有辅助说明共用它。 | 不含任何业务文案（文案由调用方以 children 传入）。 |
+| [JobQueue.tsx](../frontend/src/components/JobQueue.tsx#L16) | 任务中心展示与本地文件操作入口。 | 不直接访问本机文件系统（一律走后端受控打开/删除接口）。 |
+
+说明浮层的设计约束（这几条是界面改版时最容易破坏的，改之前先读）：
+
+1. **默认收起，且同一时刻最多展开一块**：说明是次要信息，不允许常驻版面。钉住状态写 `localStorage`（键前缀 `cascade.help.open.v1.`），关闭时一并清除记忆 —— 所以刷新后最多只有一块保持展开，见 [rememberOpen](../frontend/src/components/HelpPopover.tsx#L29)。
+2. **不抢焦点、不阻塞操作**：面板 `aria-modal=false`、打开时不 `autoFocus`、没有遮罩层，触发按钮在 `mousedown` 时阻止默认行为。这样在点开「常用端口」时，代理输入框里的光标和未保存的输入都不会被打断。
+3. **窄屏改形态而不是改内容**：`≤640px` 或设备无 hover 能力时渲染为贴底抽屉（`is-sheet`），左右各留 8px、高度上限 62vh，见 [SHEET_QUERY](../frontend/src/components/HelpPopover.tsx#L18)。
+4. **浮层内部不允许横向溢出**：面板宽度上限 440px，三列表格会在浮层内撑出滚动条并把列截掉 —— 代理端口对照因此用两列网格而不是表格。浮层挂在 `white-space: nowrap` 的宿主元素（例如状态文字）内时，必须显式重置 `white-space` 与字重，否则说明文字会继承成一行粗体。
+
 ## 依赖方向与分层规则
 
 ![后端模块依赖](assets/diagrams/module-dependencies.svg)

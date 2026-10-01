@@ -168,7 +168,7 @@ python scripts\docs.py render      # 渲染全部 puml 到 SVG
 python scripts\docs.py check       # 校验本地链接 + SVG 与源一致
 ```
 
-### 5.1 必须存在的图（当前 14 张）
+### 5.1 必须存在的图（当前 15 张）
 
 | 源码 | 用途 |
 | --- | --- |
@@ -299,7 +299,7 @@ git ls-remote origin main   # 校验远端 sha 与本地一致
 | 前端测试 | `App.test.tsx`，**65 passed** |
 | HTTP 操作 | 28 个（`openapi.yaml` 的 `operationId` 数：26 个 `/api/*` + `/health` + 静态首页 `/`） |
 | 环境变量 | `YTDL_` 前缀，`AppSettings` 共 22 个字段（另有 `YTDL_LOG_LEVEL` 不属于 `AppSettings`） |
-| UML 图 | 14 张（`.puml` 与 `.svg` 成对） |
+| UML 图 | 15 张（`.puml` 与 `.svg` 成对） |
 | 截图 | 4 张 |
 | 修复记录 | `ai/bug-fix/` 001~010，已知未处理 12 条 |
 | 本机渲染基线 | PlantUML `1.2026.5`、Java 25.0.3、Graphviz 15.1.1 |

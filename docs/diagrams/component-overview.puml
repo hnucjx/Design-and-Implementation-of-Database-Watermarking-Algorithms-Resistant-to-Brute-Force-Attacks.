@@ -6,6 +6,9 @@ skinparam shadowing false
 package "Frontend" {
   [App.tsx\nstate + SSE + panels] as App
   [JobQueue.tsx\ntask center] as Queue
+  [ProxySection.tsx\nproxy input + test] as ProxySection
+  [CookieSection.tsx\ncookie state + verify] as CookieSection
+  [HelpPopover.tsx\nnon-modal help overlay] as HelpPopover
   [api.ts\nHTTP boundary] as ApiClient
   [types.ts] as Types
   [quality.ts] as Quality
@@ -39,19 +42,33 @@ package "Backend / progress" {
   [transfer_stats.py\naverage speed] as Stats
 }
 
+package "Backend / self-check" {
+  [proxy.py\nproxy resolution] as ProxyResolver
+  [connectivity.py\nproxy proof] as Connectivity
+  [cookie_health.py\ncookie report] as CookieHealth
+  [error_advice.py\nexception -> advice] as ErrorAdvice
+  [runtime_env.py\nhostile env scrubbing] as RuntimeEnv
+}
+
 package "Backend / support" {
   [models.py\nSQLModel tables] as Models
   [db.py\nengine + pragmas] as DB
   [fallback_policy.py\ndowngrade messages] as Fallback
   [paths.py\nsafe names] as Paths
   [log_safety.py\nlog scrubbing] as LogSafety
+  [logging_setup.py\nfile logging] as LoggingSetup
+  [dev_server.py\nport occupant probe] as DevServer
 }
 
 App --> Queue
+App --> ProxySection
+App --> CookieSection
 App --> ApiClient
 App --> Quality
 App --> Formatting
 Queue --> Formatting
+ProxySection --> HelpPopover
+CookieSection --> HelpPopover
 ApiClient --> Types
 ApiClient --> Main : HTTP + SSE
 Main --> Config
@@ -61,6 +78,14 @@ Main --> ReadModel
 Main --> Service
 Main --> DB
 Main --> SystemOpen
+Main --> CookieHealth
+Main --> Connectivity
+Main --> RuntimeEnv
+Main --> LoggingSetup
+CookieHealth --> Connectivity
+CookieHealth --> ProxyResolver
+Connectivity --> ProxyResolver
+ErrorAdvice --> LogSafety
 Manager --> Service
 Manager --> Progress
 Manager --> PersistGate

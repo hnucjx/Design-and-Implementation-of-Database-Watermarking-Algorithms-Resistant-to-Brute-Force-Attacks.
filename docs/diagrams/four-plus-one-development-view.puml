@@ -8,6 +8,7 @@ package "frontend/src" {
   [components/JobQueue.tsx] as JobQueue
   [components/ProxySection.tsx] as ProxySection
   [components/CookieSection.tsx] as CookieSection
+  [components/HelpPopover.tsx] as HelpPopover
   [api.ts] as ApiClient
   [types.ts] as FrontendTypes
   [quality.ts] as Quality
@@ -37,6 +38,8 @@ package "backend/app" {
   [error_advice.py] as ErrorAdvice
   [runtime_env.py] as RuntimeEnv
   [logging_setup.py] as LoggingSetup
+  [dev_server.py] as DevServer
+  [__main__.py] as CliEntry
   [output_paths.py] as OutputPaths
   [paths.py] as Paths
   [log_safety.py] as LogSafety
@@ -54,6 +57,8 @@ package "scripts" {
   [acceptance_network.py] as AcceptanceNetwork
   [bench_concurrency.py] as BenchConcurrency
   [bench_throttle_guard.py] as BenchThrottle
+  [export_cookies_via_cdp.py] as CookieExport
+  [acceptance_real.py] as AcceptanceReal
 }
 
 App --> JobQueue
@@ -66,7 +71,11 @@ ApiClient --> FrontendTypes
 JobQueue --> FrontendTypes
 ProxySection --> ApiClient
 CookieSection --> ApiClient
+ProxySection --> HelpPopover
+CookieSection --> HelpPopover
 
+CliEntry --> Main
+CliEntry --> DevServer
 Main --> Config
 Main --> Schemas
 Main --> Manager

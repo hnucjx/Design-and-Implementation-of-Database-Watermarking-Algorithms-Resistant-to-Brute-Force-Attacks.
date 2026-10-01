@@ -80,6 +80,19 @@ python scripts\docs.py check
 
 该命令不会修改已提交 SVG；发现 UML 产物过期时，先运行 `render`，再检查差异。
 
+## 代码行锚点检查
+
+文档里大量使用 `../backend/app/main.py#L98` 这类行锚。代码一改，行号就会漂移，而 Markdown 链接不会报错 —— 它会静默地指向错误的行。用脚本核对：
+
+```powershell
+python scripts\check_doc_anchors.py          # 只报告，有漂移时退出码 1
+python scripts\check_doc_anchors.py --fix    # 能唯一确定符号的锚点直接重算
+```
+
+判定方式是「链接标签是否等于该行的符号名」：标签是符号名（如 `[resolve_proxy](../backend/app/proxy.py#L169)`）就能自动重算；标签是文件名或散文（如 `[main.py](../backend/app/main.py#L500)`）会列进「待人工复核」—— 那是正常项，不是漂移。
+
+改动 `backend/app/**` 或 `frontend/src/**` 之后跑一次，把结果并进同一个 commit，不要让锚点漂移累积。
+
 ## 渲染器版本敏感性
 
 `check` 的一致性判定是**逐字节比较**：它把 `docs/diagrams/*.puml` 复制到临时目录，用当前机器的 Java、Graphviz 和固定版本 PlantUML 现场渲染，再与 `docs/assets/diagrams/*.svg` 逐文件比对。
@@ -105,6 +118,7 @@ python scripts\docs.py check
 1. 阅读 [文档中心](index.md) 与 [维护 checklist](maintenance.md#变更-checklist)，确认需要同步更新的文档。
 2. 修改 Markdown 和必要的 `.puml` 源文件。
 3. 运行 `python scripts\docs.py render`。
-4. 运行 `python scripts\docs.py check` 和 `git diff --check`。
+4. 运行 `python scripts\docs.py check`、`python scripts\check_doc_anchors.py` 和 `git diff --check`。
 5. 涉及代码行为时，再执行 [测试文档](testing.md#自动测试命令) 中的完整验证。
-6. 使用 `git status -sb` 确认 `.puml` 与 `.svg` 成对提交，且 `.tools/` 未进入 Git。
+6. 涉及界面时，重拍 `docs/assets/screenshots/` 下受影响的截图并替换；截图不得包含本机用户名路径等个人信息。
+7. 使用 `git status -sb` 确认 `.puml` 与 `.svg` 成对提交，且 `.tools/` 未进入 Git。

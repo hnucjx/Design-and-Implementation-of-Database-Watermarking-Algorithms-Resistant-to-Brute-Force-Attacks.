@@ -34,6 +34,10 @@
 | FR-12 | 支持诊断依赖状态、cookies 状态和稳定性参数。 | [`/api/diagnostics`](../backend/app/main.py#L139)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L287) |
 | FR-13 | 下载停滞可观测：在可配置窗口内没有新增字节时主动判为失败，而不是永久 `running`。 | [`StallGuard`](../backend/app/stall_guard.py#L32)、[`_download_once`](../backend/app/ytdlp_service.py#L588) |
 | FR-14 | 媒体流失败时在错误文案中带上当前 cookies 状态，便于区分「未配置 cookies」与网络问题。 | [`_media_stream_failure_message`](../backend/app/job_manager.py#L1082) |
+| FR-15 | 代理可作为配置项读写（留空=自动、`direct`=强制直连、其余按 URL），并能**真的发一次请求**验证连通性，返回状态码、耗时、字节数与原始异常。 | [`proxy.py`](../backend/app/proxy.py#L169)、[`POST /api/proxy/test`](../backend/app/main.py#L159) |
+| FR-16 | 已配置的 cookies 可被校验：离线检查格式/域名/鉴权项/过期，可选联网确认登录态，输出「未配置 / 未登录 / 已登录」三档结论与证据。 | [`cookie_health.py`](../backend/app/cookie_health.py#L234)、[`POST /api/cookies/verify`](../backend/app/main.py#L184) |
+| FR-17 | 依赖与 JS 运行时状态可在不重启应用的前提下重新探测，并把结论回显到界面。 | [`POST /api/diagnostics/runtime`](../backend/app/main.py#L210)、[`runtime_env.py`](../backend/app/runtime_env.py#L58) |
+| FR-18 | 界面上的解释性内容默认收起，挂在其所解释的对象旁边，按需展开；展开时不抢占输入焦点、不阻塞其他操作，钉住状态可记忆。 | [`HelpPopover`](../frontend/src/components/HelpPopover.tsx#L42)、[用户手册：辅助说明的查看方式](user-manual.md#辅助说明的查看方式) |
 
 ## 非功能需求
 
@@ -41,7 +45,7 @@
 | --- | --- |
 | 可维护性 | 下载策略、降级原因、读模型、cookies 导入和格式选择拆分到独立模块；文档工具链可复现并检查本地链接与 UML 产物，详见 [实现文档](implementation.md) 和 [文档写作与生成环境](documentation-workflow.md)。 |
 | 稳定性 | 默认稳定性基线见 [PLAN.md](../ai/perf/PLAN.md)：关闭单流节流守卫（`YTDL_THROTTLED_RATE_KBPS=0`），用 90 秒停滞看门狗兜底，保留断点续传、`http_chunk_size=16 MiB` 和同清晰度多 profile 重试；aria2c 多连接默认关闭。支持把并发设为 1 的稳定优先运行方式。 |
-| 可观测性 | 任务中心显示进度、速度、视频大小、ETA、实际分辨率、实际格式和错误原因；诊断接口返回依赖状态与稳定性参数；停滞与媒体流失败都有可读原因。 |
+| 可观测性 | 任务中心显示进度、速度、视频大小、ETA、实际分辨率、实际格式和错误原因；诊断接口返回依赖状态与稳定性参数；停滞与媒体流失败都有可读原因。失败日志落盘 `data/logs/app.log` 并带 `category=` 与「诊断 / 原因 / 建议」结构，见 [实现文档](implementation.md#日志落盘)。代理与 cookies 各有一次「真的发请求」的自检，避免只报结论不给证据。 |
 | 安全性 | 不在 UI 或日志回显 cookies、token、敏感 URL query；日志清洗见 [log_safety.py](../backend/app/log_safety.py#L11)；安全审查结论见 [安全审计报告](safety-review.md)。 |
 | 本地化 | 当前 UI 和主要错误信息面向中文用户。 |
 | 可测试性 | 后端使用 pytest，前端使用 Vitest/jsdom，默认不依赖真实 YouTube 下载；并发与节流行为有可离线复现的基准脚本。 |
@@ -61,5 +65,7 @@
 
 - 对应自动测试通过，命令见 [测试文档](testing.md#自动测试命令)。
 - API、配置、下载策略或任务字段变化已同步更新 [API 文档](api.md)、[技术文档](technical.md) 和相关 UML 图。
-- 文档变更已运行 `python scripts\docs.py check`，确认本地链接和 UML 产物一致。
+- 文档变更已运行 `python scripts\docs.py check`（本地链接与 UML 产物一致）与 `python scripts\check_doc_anchors.py`（代码行锚点无漂移）。
+- 界面变更已重拍 `docs/assets/screenshots/` 下受影响的截图，且截图不含本机用户名路径等个人信息。
 - README 仍保持入口页定位，详细说明不回流到 README。
+- 新增的失败路径必须给出可执行的下一步，只报「失败」不给下一步的提示视为未完成。

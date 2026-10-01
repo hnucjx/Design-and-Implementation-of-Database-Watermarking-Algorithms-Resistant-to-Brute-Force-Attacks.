@@ -27,6 +27,7 @@
 - `subprocess.run([ffmpeg, ...])` 使用固定参数列表（[system_open.py](../backend/app/system_open.py#L67)、[ytdlp_service.py](../backend/app/ytdlp_service.py#L421)）
 - `subprocess.run([taskkill, ...])` 使用已知固定命令（[browser_cookies.py](../backend/app/browser_cookies.py#L141)）
 - `subprocess.Popen([edge, --remote-debugging-port=..., ...])` 参数由常量或系统路径构成，非用户可控（[browser_cookies.py](../backend/app/browser_cookies.py#L157)）
+- `subprocess.run(["netstat", ...])` / `(["tasklist", "/FI", f"PID eq {pid}", ...])` 用于识别端口占用者：命令名与参数都是常量，`pid` 由 [parse_listening_pids](../backend/app/dev_server.py#L71) 用 `int()` 从 `netstat` 输出解析、解析失败即跳过，因此无法注入（[dev_server.py](../backend/app/dev_server.py#L119)）
 - yt-dlp 通过 Python SDK（`yt_dlp.YoutubeDL`）调用，非 shell 或 subprocess
 
 ## 2. 路径遍历（Path Traversal）
@@ -251,3 +252,7 @@
 | cookies 登录态校验 | [cookie_health.py](../backend/app/cookie_health.py#L234)、`POST /api/cookies/verify` | 只读 `data/cookies.txt`，用 `MozillaCookieJar` 发一次 `https://www.youtube.com/`。**不返回 cookie 内容**，只返回条数、域名分布、命中的 cookie **名字**与 `LOGGED_IN` 判定。 | 返回的 cookie 名字集合（如 `SID`/`HSID`）本身是低敏信息；确认没有路径能把文件内容带出来。`deep=false` 时完全不联网。 |
 | 日志落盘 | [logging_setup.py](../backend/app/logging_setup.py#L48) | 写 `<data_dir>/logs/app.log`，UTF-8、2 MiB × 3 轮转。目录不可写时降级为「仅控制台」而不是启动失败。写入前统一过 [sanitize_log_message](../backend/app/log_safety.py#L11)。**已确认 `data/` 与 `*.log` 都在 `.gitignore` 内**，日志不会入库。 | 日志是**新增的持久化面**：确认所有进日志的字符串都过了清洗（尤其是来自 yt-dlp 的原始错误与代理 URL）。 |
 | 宿主环境变量摘除 | [runtime_env.py](../backend/app/runtime_env.py#L58) | 只在自己的进程内 `os.environ.pop("NODE_OPTIONS")`，且**只在命中 `--require`/`--import`/`--loader`/`--experimental-loader` 时**；不写系统环境、不改注册表；动作记进日志与诊断。 | 这是一处「应用会修改自身环境」的行为，需要确认它不会被误用成静默隐藏宿主配置的手段（当前实现只针对会破坏 JS 运行时的强加载开关，且必定留痕）。 |
+| 代理解析 | [proxy.py](../backend/app/proxy.py#L169) | 把「显式配置 / 系统代理 / 环境变量」归一成代理 URL，并**在回显前剥离凭据**（用户密码不会进界面和日志）。不发起请求。 | 解析结果会进日志（`proxy resolved ...`）与诊断响应；确认 `socks`/`http` 等 scheme 归一不会把凭据带出来，且 `direct` 语义不会被误解成「无代理」。 |
+| 端口占用者识别 | [dev_server.py](../backend/app/dev_server.py#L111) | 调用 `netstat` / `tasklist` 两个只读命令（list 参数形式，见第 1 节），PID 经 `int()` 校验；命令缺失或超时一律退化成「不知道是谁」。 | 这是一处**新的子进程面**（2026-10-01 引入）：确认 `tasklist` 输出的进程名只用于展示、不会被当成路径或命令再消费；确认失败路径不会泄露本机环境细节。 |
+| 错误翻译 | [error_advice.py](../backend/app/error_advice.py#L116) | 纯字符串判定：把异常链映射成「诊断 / 原因 / 建议」，不联网、不读库、不改变重试行为。 | 映射输出会直接展示给用户并进日志；确认原始异常在拼接前统一过 [log_safety](../backend/app/log_safety.py#L11) 清洗，不会把 URL query 或 token 带出来。 |
+| 说明浮层 | [HelpPopover.tsx](../frontend/src/components/HelpPopover.tsx#L42) | 纯前端展示：面板内容由调用方以 children 传入，组件自身不拼接 HTML、不使用 `dangerouslySetInnerHTML`；钉住状态只往 `localStorage` 写一个布尔值。 | `localStorage` 键前缀 `cascade.help.open.v1.` 属本机非敏感状态；若将来把说明内容改成远端获取，本节需要重新评估（当前无远端内容）。 |

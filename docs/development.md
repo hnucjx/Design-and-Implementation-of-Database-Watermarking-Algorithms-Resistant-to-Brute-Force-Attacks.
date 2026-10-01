@@ -123,7 +123,7 @@ npm run dev -- --port 5173
 | `data` | 本地 SQLite、cookies，已被 Git 忽略。 |
 | `downloads` | 默认下载产物目录，已被 Git 忽略。 |
 | `docs` | 工程文档、PlantUML 源和渲染图。 |
-| `scripts` | 可复现的工程辅助脚本：文档工具入口 [docs.py](../scripts/docs.py)，离线基准 [bench_concurrency.py](../scripts/bench_concurrency.py)、[bench_throttle_guard.py](../scripts/bench_throttle_guard.py)。 |
+| `scripts` | 可复现的工程辅助脚本：文档工具入口 [docs.py](../scripts/docs.py) 与锚点检查 [check_doc_anchors.py](../scripts/check_doc_anchors.py)；离线基准 [bench_concurrency.py](../scripts/bench_concurrency.py)、[bench_throttle_guard.py](../scripts/bench_throttle_guard.py)；cookies 导出 [export_cookies_via_cdp.py](../scripts/export_cookies_via_cdp.py)；需真实网络的验收 [acceptance_network.py](../scripts/acceptance_network.py)、[acceptance_real.py](../scripts/acceptance_real.py)。 |
 | `.tools` | 文档工具自动下载的本机缓存，已被 Git 忽略。 |
 | `ai` | 任务计划、重构日志和文档生成 prompt。 |
 | `ai/perf/PLAN.md` | 下载性能与稳定性修复计划：根因分析、修复项、验证与回滚，是引用性能结论时的权威来源。 |
@@ -132,7 +132,7 @@ npm run dev -- --port 5173
 
 ## 环境变量
 
-配置类定义见 [AppSettings](../backend/app/config.py#L19)，前缀为 `YTDL_`，并会读取仓库根目录的 `.env`。`env_file` 用的是**绝对路径**（`REPO_ROOT / ".env"`），所以与你从哪个目录启动无关 —— 相对路径会按当前工作目录解析，而文档里的命令都是 `cd backend` 之后执行的。`.env` 已被 Git 忽略。下表列出全部字段及其当前默认值（`js_runtime_path` 与 `proxy` 两个字段见上文说明，未重复列表）。
+配置类定义见 [AppSettings](../backend/app/config.py#L19)，前缀为 `YTDL_`，并会读取仓库根目录的 `.env`。`env_file` 用的是**绝对路径**（`REPO_ROOT / ".env"`），所以与你从哪个目录启动无关 —— 相对路径会按当前工作目录解析，而文档里的命令都是 `cd backend` 之后执行的。`.env` 已被 Git 忽略。下表列出 `AppSettings` 的全部 22 个字段及其当前默认值；另有 `YTDL_LOG_LEVEL`（默认 `INFO`）不经过 `AppSettings`，由 [configure_logging](../backend/app/logging_setup.py#L48) 直接读取。
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -149,6 +149,8 @@ npm run dev -- --port 5173
 | `YTDL_YOUTUBE_PO_TOKEN` | 空 | 高级排障用 YouTube PO token。 |
 | `YTDL_YOUTUBE_VISITOR_DATA` | 空 | 与 PO token 配套的 visitor data。 |
 | `YTDL_YOUTUBE_PO_BROWSER_PATH` | 空 | PO-token provider 使用的浏览器路径。 |
+| `YTDL_JS_RUNTIME_PATH` | 空 | JS 运行时（Deno / Node）可执行文件路径，用于解 YouTube 的 nsig。留空时按「PATH → 常见安装目录」自动探测，探测不到会直接导致提取失败。见 [技术文档](technical.md#js-运行时与-n-challenge)。 |
+| `YTDL_PROXY` | 空 | 代理。留空 = 自动（优先 Windows 系统代理，其次 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量）；`direct`/`none`/`off` = 强制直连；其余按代理 URL 处理，缺 scheme 时补 `http://`（`127.0.0.1:7890` 可直接写）。解析逻辑见 [proxy.py](../backend/app/proxy.py#L169)。 |
 | `YTDL_YOUTUBE_MAX_PARALLEL_DOWNLOADS` | `5` | YouTube 同时下载的视频数；若追求稳定，可设为 `1`。 |
 | `YTDL_ANTI403_HTTP_CHUNK_SIZE_MB` | `16` | HTTP chunk 大小，按块重开请求以降低 403 概率。 |
 | `YTDL_THROTTLED_RATE_KBPS` | `0`（关闭） | 单条流低速重取阈值。`> 0` 时会写入 yt-dlp 的 `throttledratelimit`，见 [技术文档](technical.md#稳定下载策略)。 |

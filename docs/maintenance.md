@@ -24,6 +24,8 @@
 | 修改代理、网络自检、cookies 校验或运行环境自检 | [用户手册](user-manual.md)、[排障手册](troubleshooting.md)、[API 文档](api.md)、[openapi.yaml](openapi.yaml)、[技术文档](technical.md) |
 | 修改日志、日志级别或错误提示文案 | [排障手册](troubleshooting.md)、[用户手册](user-manual.md#自检与日志)、[测试文档](testing.md)、[安全审计报告](safety-review.md) |
 | 新增或删除用户关键操作 | [用户手册](user-manual.md)、[需求分析](requirements.md)、[4+1 架构视图](4-plus-1-view.md)、4+1 场景视图 |
+| 修改界面说明、说明浮层、面板布局或文案语气 | [用户手册](user-manual.md#辅助说明的查看方式)、[设计文档](design.md#前端组件边界)、[实现文档](implementation.md#前端实现)、[需求分析](requirements.md#功能需求)、`docs/assets/screenshots/` 截图（必须重拍替换） |
+| 新增或删除后端模块 / 前端组件 | [设计文档](design.md#模块职责矩阵)、[设计文档](design.md#前端组件边界)、[实现文档](implementation.md)、[架构设计](architecture.md)、`component-overview.puml`、`module-dependencies.puml`、4+1 开发视图 |
 | 修改安全相关的文件操作、CORS、日志清洗、环境变量或依赖 | [安全审计报告](safety-review.md)（更新基线 commit 与审查日期；新增的网络/文件/环境访问面要登记进「待复核项」） |
 
 ## 排障流程
@@ -76,4 +78,6 @@
 - [openapi.yaml](openapi.yaml) 的路径、状态码与模型字段是否仍与 `main.py`、`schemas.py` 一致（改动接口后必须显式核对，规范不会自动跟随代码）。
 - 是否已运行 `python scripts\docs.py check`，确认本地链接和 UML 产物一致；并运行 `python scripts\check_doc_anchors.py` 确认代码行锚点没有漂移。
 - 面向用户的报错文案是否都能被用户照着做：只给「失败」不给下一步的提示视为未完成（新增失败路径必须带 `next_steps`）。
+- `docs/assets/screenshots/` 下的截图是否仍是当前界面（界面改版后未重拍的截图等于过时文档），且不含本机用户名路径等个人信息。
+- 文档里声明的限制与「尚未验证」是否与 [ai/bug-fix/README.md](../ai/bug-fix/README.md) 的「已知但未处理」清单一致（两边不允许各说各话）。
 - 是否遗漏 `ai/` 下的任务或审查记录。

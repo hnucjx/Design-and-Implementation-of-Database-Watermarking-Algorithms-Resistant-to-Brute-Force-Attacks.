@@ -24,6 +24,8 @@ PlantUML 源文件：[system-context.puml](diagrams/system-context.puml)。
 | yt-dlp 服务 | 元数据解析、下载参数构建、profile 重试、格式选择和依赖诊断。 | [YtDlpService](../backend/app/ytdlp_service.py#L187) |
 | 停滞看门狗 | 观测 progress 回调，把静默卡死转为可见失败。 | [StallGuard](../backend/app/stall_guard.py#L32) |
 | 浏览器 cookies 导入器 | 从本机浏览器导入 YouTube/Google cookies，并处理 Edge 锁库和 CDP fallback。 | [BrowserCookieImporter](../backend/app/browser_cookies.py#L67) |
+| 代理与连通性自检 | 解析代理来源（显式 > 系统 > 环境变量）并**真的发一次请求**验证连通；cookies 体检则把离线格式检查与 `LOGGED_IN` 探针合成一个结论。 | [proxy.py](../backend/app/proxy.py#L169)、[connectivity.py](../backend/app/connectivity.py#L73)、[cookie_health.py](../backend/app/cookie_health.py#L234) |
+| 错误翻译与自检留痕 | 把异常链翻译成「诊断 / 原因 / 建议」三段可执行结论；启动时摘除会打坏 JS 运行时的宿主环境变量并留痕。 | [error_advice.py](../backend/app/error_advice.py#L116)、[runtime_env.py](../backend/app/runtime_env.py#L58) |
 | 本机打开器 | 选择可解码播放器打开视频、打开输出目录。 | [system_open.py](../backend/app/system_open.py#L23) |
 
 ## 组件关系
@@ -32,7 +34,7 @@ PlantUML 源文件：[system-context.puml](diagrams/system-context.puml)。
 
 PlantUML 源文件：[component-overview.puml](diagrams/component-overview.puml)。
 
-后端将 API 入口、任务管理、读模型、下载服务、cookies 导入、格式选择、降级策略和进度统计分成独立模块。前端将 API 客户端、类型、格式化工具、清晰度工具和任务中心组件拆分，减少 `App.tsx` 的展示职责。
+后端将 API 入口、任务管理、读模型、下载服务、cookies 导入、格式选择、降级策略、代理解析与连通性自检分成独立模块。前端将 API 客户端、类型、格式化工具、清晰度工具和展示组件拆分，减少 `App.tsx` 的展示职责；展示组件是任务中心 [JobQueue](../frontend/src/components/JobQueue.tsx#L16)、cookies 区 [CookieSection](../frontend/src/components/CookieSection.tsx#L121)、代理区 [ProxySection](../frontend/src/components/ProxySection.tsx#L140)，以及被这两处共用的说明浮层 [HelpPopover](../frontend/src/components/HelpPopover.tsx#L42)。
 
 ## 关键数据流
 

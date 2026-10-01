@@ -120,7 +120,13 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 ## 前端实现
 
-前端 API 调用集中在 [api.ts](../frontend/src/api.ts#L27)。共享类型集中在 [types.ts](../frontend/src/types.ts)。任务中心展示组件是 [JobQueue](../frontend/src/components/JobQueue.tsx#L16)。
+前端 API 调用集中在 [api.ts](../frontend/src/api.ts#L27)。共享类型集中在 [types.ts](../frontend/src/types.ts)。任务中心展示组件是 [JobQueue](../frontend/src/components/JobQueue.tsx#L16)。cookies 区域与代理区域分别是 [CookieSection](../frontend/src/components/CookieSection.tsx#L121) 和 [ProxySection](../frontend/src/components/ProxySection.tsx#L140)。
+
+辅助说明统一走 [HelpPopover](../frontend/src/components/HelpPopover.tsx#L42)：它是**非模态浮层**，默认收起；桌面端悬停即看、点击钉住，窄屏（`≤640px`）渲染为贴底抽屉。三条实现约定值得单独记住：
+
+- **钉住会记忆、关闭会清掉**：`rememberOpen` 把 `cascade.help.open.v1.<id>` 写进 `localStorage`，关闭时 `removeItem`；因此刷新后最多只有一块说明保持展开，见 [rememberOpen](../frontend/src/components/HelpPopover.tsx#L29)。
+- **不抢输入框焦点**：触发按钮在 `mousedown` 上阻止默认行为，面板 `aria-modal=false` 且没有遮罩。点开「常用端口」时，代理输入框里没保存的地址不会因失焦被提前写进设置。
+- **定位在打开时算一次**：面板用 `fixed` 定位并夹进视口（下方空间不足则上翻），因此它不占版面、展开前后主功能区位置不变；窗口尺寸变化会重新计算。
 
 辅助函数职责：
 

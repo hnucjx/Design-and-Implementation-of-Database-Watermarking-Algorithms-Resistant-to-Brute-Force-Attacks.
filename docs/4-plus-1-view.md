@@ -22,13 +22,15 @@ PlantUML 源文件：[four-plus-one-logical-view.puml](diagrams/four-plus-one-lo
 
 逻辑视图把系统分为 UI 领域、应用服务、领域策略和持久化模型。任务创建、下载、进度聚合、分辨率降级、cookies 导入和设置持久化都通过后端应用服务协调；下载策略和 fallback 文案由独立策略模块承载，避免散落在 API 路由或前端展示组件中。停滞看门狗同样作为独立策略模块挂在下载服务上，而不是混进任务管理器的状态机。
 
+自检能力也被拆成「解析」与「证明」两件事：代理来源的**解析**（[proxy.py](../backend/app/proxy.py)）与代理**是否真的通**（[connectivity.py](../backend/app/connectivity.py)）分开，cookies 的**体检**（[cookie_health.py](../backend/app/cookie_health.py)）与 cookies 的**导入**（[browser_cookies.py](../backend/app/browser_cookies.py)）分开。理由与分层规则一致：解析是纯函数，证明要发请求，两者的失败语义和重试代价完全不同 —— 混在一起就会在排障时把「代理坏了」误判成「提取器坏了」。
+
 ## 开发视图
 
 ![4+1 开发视图](assets/diagrams/four-plus-one-development-view.svg)
 
 PlantUML 源文件：[four-plus-one-development-view.puml](diagrams/four-plus-one-development-view.puml)。
 
-开发视图展示源码层依赖。前端由 [App.tsx](../frontend/src/App.tsx) 编排状态，展示组件集中在 [JobQueue.tsx](../frontend/src/components/JobQueue.tsx)，HTTP 边界集中在 [api.ts](../frontend/src/api.ts)。后端由 [main.py](../backend/app/main.py) 暴露 HTTP API，[job_manager.py](../backend/app/job_manager.py) 处理队列和 worker，[ytdlp_service.py](../backend/app/ytdlp_service.py) 隔离 yt-dlp 细节；进度聚合、落库节流、平均速度、停滞检测和输出路径解析各自独立成模块，依赖方向保持「入口 → 编排 → 下载 → 纯工具」，细节见 [组件关系](architecture.md#组件关系)。
+开发视图展示源码层依赖。前端由 [App.tsx](../frontend/src/App.tsx) 编排状态，展示职责拆到 [components/](../frontend/src/components/)：任务中心 [JobQueue.tsx](../frontend/src/components/JobQueue.tsx)、cookies 区 [CookieSection.tsx](../frontend/src/components/CookieSection.tsx)、代理区 [ProxySection.tsx](../frontend/src/components/ProxySection.tsx)，以及被后两者共用的说明浮层 [HelpPopover.tsx](../frontend/src/components/HelpPopover.tsx)；HTTP 边界集中在 [api.ts](../frontend/src/api.ts)。后端由 [main.py](../backend/app/main.py) 暴露 HTTP API，本地启动入口是 [__main__.py](../backend/app/__main__.py)（端口预检与占用者识别见 [dev_server.py](../backend/app/dev_server.py)），[job_manager.py](../backend/app/job_manager.py) 处理队列和 worker，[ytdlp_service.py](../backend/app/ytdlp_service.py) 隔离 yt-dlp 细节；进度聚合、落库节流、平均速度、停滞检测、输出路径解析、代理解析与连通性自检各自独立成模块，依赖方向保持「入口 → 编排 → 下载 → 纯工具」，细节见 [组件关系](architecture.md#组件关系) 与 [设计文档](design.md#前端组件边界)。
 
 ## 进程视图
 
@@ -52,13 +54,13 @@ PlantUML 源文件：[four-plus-one-physical-view.puml](diagrams/four-plus-one-p
 
 PlantUML 源文件：[four-plus-one-scenario-view.puml](diagrams/four-plus-one-scenario-view.puml)。
 
-场景视图把用户主要用例串联起来：解析链接、选择下载选项、创建单视频或 playlist 任务、监控进度、调整运行时设置、导入 cookies、按建议清晰度重试、播放/打开文件夹，以及删除任务或相关文件。每个场景都应能回溯到 API 文档、实现文档和至少一张 UML 图。
+场景视图把用户主要用例串联起来：解析链接、选择下载选项、创建单视频或 playlist 任务、监控进度、调整运行时设置、导入 cookies、按建议清晰度重试、配置代理并验证连通、校验 cookies 登录态、查看就近的辅助说明、播放/打开文件夹，以及删除任务或相关文件。每个场景都应能回溯到 API 文档、实现文档和至少一张 UML 图。
 
 ## 持续更新规则
 
 修改架构、模块边界、运行时任务流程、部署假设或关键用户场景时，必须同步检查本页五个视图：
 
-- 只改 UI 文案或样式，通常无需更新 4+1 图，但若新增/删除任务中心能力，应检查场景视图。
+- 只改 UI 文案或样式，通常无需更新 4+1 图，但若新增/删除任务中心能力、说明浮层或可配置项入口，应检查场景视图与 [用户手册](user-manual.md)。
 - 修改后端模块职责、拆分文件或调整依赖方向，应更新开发视图、逻辑视图和 [模块依赖图](diagrams/module-dependencies.puml)。
 - 修改任务队列、运行时设置、SSE、进度聚合、暂停/重启/删除流程，应更新进程视图、[运行时并发图](diagrams/runtime-concurrency.puml) 和 [下载数据流图](diagrams/download-data-flow.puml)。
 - 修改端口、部署模式、外部工具、文件位置、播放器/文件管理器调用方式，应更新物理视图。

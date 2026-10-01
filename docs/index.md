@@ -17,7 +17,7 @@
 
 ## 文档职责
 
-- [用户手册](user-manual.md)：面向最终使用者，说明启动入口、下载、代理与网络、cookies、任务中心、自检与日志。
+- [用户手册](user-manual.md)：面向最终使用者，说明启动入口、下载、代理与网络、cookies、任务中心、辅助说明的查看方式、自检与日志。
 - [排障手册](troubleshooting.md)：面向「应用用不起来的人」，按症状（原始报错原文）查该点哪里，含代理、cookies、JS 运行时三篇与日志阅读方法。
 - [需求分析](requirements.md)：描述项目要解决的问题、功能需求、非功能需求和明确不支持的边界。
 - [架构设计](architecture.md)：说明系统组成、模块边界、数据流和关键架构图。
@@ -31,6 +31,10 @@
 - [测试文档](testing.md)：记录自动测试、手动验收和高风险回归场景。
 - [维护文档](maintenance.md)：规定文档同步、变更审查和排障流程。
 - [安全审计报告](safety-review.md)：按风险类别记录当前基线的安全审查结论、检查清单与建议。
+
+## 界面截图
+
+截图位于 [assets/screenshots](assets/screenshots/)，由真实浏览器实拍后随文档提交：首页 `home.png`，以及辅助说明的三种状态 `help-collapsed.png`（默认收起）、`help-open-desktop.png`（桌面端浮层）、`help-open-mobile.png`（窄屏底部抽屉）。界面改版后必须重拍替换，且不得包含本机用户名路径等个人信息。
 
 ## UML 图
 

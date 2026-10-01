@@ -116,7 +116,7 @@ YouTube 媒体流 403 或连接中断时，`YtDlpService.download()` 会在同�
 
 YouTube 的 `n` 参数（nsig）需要跑 JS 才能解出来，这是**登录态取数路径的必需项**。相关实现在 [ytdlp_service.py](../backend/app/ytdlp_service.py#L187) 的运行时探测，以及 [runtime_env.py](../backend/app/runtime_env.py#L58) 的环境净化。
 
-探测顺序是「显式 `js_runtime_path` → Deno → Node」，且**不只判断文件存在，而是真的用与 yt-dlp 相同的权限模型跑一次**：
+探测顺序是「显式 `js_runtime_path` → Deno → Node」，其中 `js_runtime_path` 来自设置面板或环境变量 **`YTDL_JS_RUNTIME_PATH`**（历史上文档把它写成 `YTDL_JS_RUNTIME`，实测那个名字设了不生效，见 [006](../ai/bug-fix/006-proxy-is-not-configurable.md) 的遗留项）。探测**不只判断文件存在，而是真的用与 yt-dlp 相同的权限模型跑一次**：
 
 ```
 node --experimental-permission --no-warnings=ExperimentalWarning -e <probe>
@@ -135,6 +135,13 @@ Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段�
 浏览器导入器只保存 YouTube/Google 相关 cookies，过滤规则见 [YOUTUBE_COOKIE_DOMAIN_SUFFIXES](../backend/app/browser_cookies.py#L13)。Edge 锁库和 DPAPI fallback 处理见 [browser_cookies.py](../backend/app/browser_cookies.py#L117)。
 
 未配置 cookies 时，YouTube 媒体流 403 概率显著上升。任务中心的媒体流失败文案会前置「当前 cookies 状态：已配置 / 未配置」，见 [_media_stream_failure_message](../backend/app/job_manager.py#L1082)，便于先排除这个最常见的前置条件。
+
+已配置的 cookies 是否真的可用，由 [cookie_health.py](../backend/app/cookie_health.py#L234) 判定（`POST /api/cookies/verify`）。它把两件事合成一个结论：
+
+- **离线体检**（始终执行）：Netscape 格式是否可解析、`.youtube.com` / `.google.com` 域上各有多少条、命中的鉴权项**名字**、最近到期时间。不联网，因此也适用于「只想确认文件格式对不对」。
+- **联网确认**（`deep=true` 时）：用这份 cookies 请求一次 `https://www.youtube.com/`，读页面里的 `"LOGGED_IN"`。
+
+结论只有三档 —— **未配置 / 未登录 / 已登录**，且每档都带上面那几行证据。响应**不返回 cookie 内容**，只返回条数与名字集合。界面上「结论解读」说明就挂在这三条证据旁边，见 [用户手册](user-manual.md#cookies)。
 
 ## PO token 与浏览器 impersonation
 

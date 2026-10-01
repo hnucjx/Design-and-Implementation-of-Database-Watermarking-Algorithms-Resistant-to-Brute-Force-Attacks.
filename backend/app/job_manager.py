@@ -900,9 +900,35 @@ class JobManager:
             return job_options
         return DownloadOptions.model_validate(json.loads(item.options_json))
 
+    def _probe_preparation(self, item: JobItem, options: DownloadOptions) -> Any | None:
+        """探测目标清晰度能否选出可下载组合。返回 `None` 表示**不可选**。
+
+        「不可选」有两种表现形式，必须都当成否定结论：
+        1. `prepare_download` 返回 `is_selectable=False`；
+        2. `prepare_download` 抛「Requested format is not available」—— yt-dlp 在
+           `extract_info` 内部就做格式选择，匹配不到直接抛 `DownloadError`。
+
+        `YtDlpService.prepare_download` 已把 (2) 归一成 (1)；这里再兜一层，让任何一个
+        service 实现都不能把降级分支变成死代码。**其余异常继续抛出**：那些是真实故障
+        （网络、JS challenge、cookies 失效），被降级逻辑吞掉只会让病因更难查。见 ai/bug-fix/010。
+        """
+        try:
+            preparation = self.service.prepare_download(
+                item.source_url,
+                options,
+                cookies_path=self._cookies_path(),
+            )
+        except Exception as exc:
+            if not YtDlpService.is_requested_format_unavailable_error(exc):
+                raise
+            return None
+        if not preparation.is_selectable:
+            return None
+        return preparation
+
     def _prepare_download(self, session: Session, item: JobItem, options: DownloadOptions) -> DownloadOptions:
-        preparation = self.service.prepare_download(item.source_url, options, cookies_path=self._cookies_path())
-        if preparation.is_selectable:
+        preparation = self._probe_preparation(item, options)
+        if preparation is not None:
             self._apply_download_preparation(session, item, preparation)
             return options
         if options.format_id or YtDlpService._resolution_height(options.resolution) is None:
@@ -942,12 +968,8 @@ class JobManager:
             reason = REQUESTED_RESOLUTION_UNSELECTABLE
 
         fallback_options = self._options_with_resolution(options, fallback)
-        fallback_preparation = self.service.prepare_download(
-            item.source_url,
-            fallback_options,
-            cookies_path=self._cookies_path(),
-        )
-        if not fallback_preparation.is_selectable:
+        fallback_preparation = self._probe_preparation(item, fallback_options)
+        if fallback_preparation is None:
             raise RuntimeError(self._unselectable_resolution_message(options.resolution))
 
         self._set_resolution_fallback(item, options.resolution, fallback, reason)

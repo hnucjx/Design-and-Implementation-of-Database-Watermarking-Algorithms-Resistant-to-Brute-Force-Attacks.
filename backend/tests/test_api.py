@@ -32,6 +32,7 @@ from fakes import (
     LowOnlyFallbackYtDlpService,
     MediaStreamBlockedUntilLowerResolutionService,
     PreparedBlockingYtDlpService,
+    RaisingUnselectableProbeService,
     RuntimeRestartYtDlpService,
     SingleAutoFallbackYtDlpService,
     SidecarThenMediaProgressYtDlpService,
@@ -1194,6 +1195,36 @@ def test_single_download_auto_falls_back_to_highest_lower_resolution(tmp_path: P
     assert item["actual_width"] == 1280
     assert item["actual_height"] == 720
     assert item["actual_format"] == "mp4 · avc1 + mp4a"
+
+
+def test_unselectable_probe_that_raises_still_auto_falls_back_and_downloads(tmp_path: Path) -> None:
+    """探针抛「Requested format is not available」时，降级必须照常发生并真的开始下载。
+
+    这是 ai/bug-fix/010 的端到端回归测试：线上 yt-dlp 正是**抛异常**而不是返回
+    `is_selectable=False`，结果 `_prepare_download` 的降级分支整段被跳过 ——
+    任务在提示「已自动降级到 720p」之后直接 failed，一个字节都没下。
+    """
+    service = RaisingUnselectableProbeService()
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post(
+            "/api/jobs",
+            json={
+                "url": "https://youtu.be/unsupported",
+                "options": {"mode": "video_subtitles", "resolution": "1080p"},
+            },
+        )
+        assert response.status_code == 201
+        payload = wait_for_job_status(client, response.json()["id"], "succeeded")
+
+    item = payload["items"][0]
+    assert [option.resolution for option in service.download_options] == ["720p"]
+    assert item["status"] == "succeeded"
+    assert item["requested_resolution"] == "1080p"
+    assert item["fallback_resolution"] == "720p"
+    assert item["fallback_reason"] == "requested_resolution_missing"
+    assert item["error"] is None
+    assert item["actual_height"] == 720
 
 
 def test_low_source_can_auto_fallback_below_720_with_clear_reason(tmp_path: Path) -> None:

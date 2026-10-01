@@ -33,6 +33,7 @@
 | [007](007-js-challenge-fails-only-when-cookies-are-on.md) | 带 cookies 反而失败：n challenge 被宿主环境打坏 | `5e556f9` | `NODE_OPTIONS=--require=` 让 yt-dlp 启动的 node 在权限模型下 `ERR_ACCESS_DENIED` 退出，报出「The page needs to be reloaded.」；而应用当时**根本不写日志**，连查都没法查 |
 | [008](008-return-in-finally-swallows-the-real-error.md) | 收尾阶段出的错被静默吞掉 | `fd8b50e` | `finally` 里的 `return` 丢弃正在传播的异常，而 `_worker` 又没有兜底 → 删除/重启竞态下要么条目永久停在 `running`、要么队列静默少一个消费口，两者都不留一行日志 |
 | [009](009-local-dev-port-is-occupied-and-unconfigurable.md) | 8000 被 IncrediBuild 长期占用，启动失败而报错指着「权限」 | `b4f7aba` | `Manager.exe` 以 `0.0.0.0:8000` **独占**监听 → 绑 `127.0.0.1:8000` 得到 `WinError 10013`（权限）而不是 10048（地址已用）；端口值散落多处、Vite 代理还硬编码，换端口会让 `/api` 静默打到 IncrediBuild 上 |
+| [010](010-unselectable-probe-raise-skips-the-fallback.md) | 提示「已自动降级到 1080p」，却根本没有开始下载 | `—` | yt-dlp 把「选不出格式」实现成**抛异常**，而降级分支挂在「返回 `is_selectable=False`」上 → 整段降级成了死代码；默认清晰度 1440p 遇上只有 1080p 的视频必然命中 |
 
 ## 本轮（2026-10-01）背景
 
@@ -84,6 +85,26 @@ ERROR uvicorn.error | [Errno 13] error while attempting to bind on address
 两者没有因果关系，各自独立提交、可独立回滚。共同点是同一个毛病：
 **报错文本指向的地方，和真正坏掉的地方不是同一处** —— 与 001~007 那一轮的主题一脉相承。
 
+## 本轮（2026-10-01 晚）背景：一份界面提示牵出的一处
+
+输入是用户在 Edge 里下载 `https://youtu.be/hTdSU7q5WCo` 时看到的两句话：
+
+```text
+failed · 0/1 完成 · 当前没有 1440p 的视频，低于选定分辨率的最高可用分辨率是 1080p。
+检测到 1440p 清晰度，但该清晰度当前没有可下载的视频/音频组合，已自动降级到 1080p。
+```
+
+[010](010-unselectable-probe-raise-skips-the-fallback.md) 的特殊之处在于 ——
+**它是一处「看起来已经处理了」的缺陷**。降级逻辑写得相当完整：解析元数据分类原因、
+算降级候选、用降级后的清晰度**再探一次**、写回状态与文案。
+但它的入口条件挂在「探针**返回** `is_selectable=False`」上，而真实故障里探针是**抛异常**，
+于是这一整段从未执行过。
+
+与 [008](008-return-in-finally-swallows-the-real-error.md) 属于同一主题：
+**分支本身写对了，触发条件写错了。** 008 在收尾阶段（`finally` 里的 `return` 让收尾走不到），
+010 在下载前（降级挂在错误的信号上）。两者的症状也同形 ——
+代码「什么都没做」，而日志与界面都在说「已经做过了」。
+
 ## 已知但**未处理**的问题（下一轮候选）
 
 1. ~~**应用没有代理配置项。**~~ → 已由 [006](006-proxy-is-not-configurable.md) 处理。
@@ -108,3 +129,14 @@ ERROR uvicorn.error | [Errno 13] error while attempting to bind on address
    没有真的在浏览器里删掉一个正在下载的条目来观察。
 9. **`port_available()` 存在「探测通过、随后被抢走」的竞态**（009 遗留），没有加锁也没有重试 ——
    预检只负责把话说清楚，不构成占用保证。
+10. **`requested_resolution_unselectable` 的文案仍然名实不符**（010 遗留）。该原因在**下载阶段**
+   被标注时，文案会写「已自动降级到 X」，但设计上那里只做标注、**不**自动重下
+   （见 [architecture.md](../../docs/architecture.md)），用户必须自己点重启。
+   010 修掉了「预检抛异常被误判成该原因」这条错路，但文案本身没动 ——
+   改它要同步前端 fixture 与 `docs/openapi.yaml` 的示例值，属另一件事。
+11. **预检仍会向 stderr 打一行 `ERROR: ... Requested format is not available.`**（010 遗留）。
+   实测确认 yt-dlp 在 `trouble()` 里先 `to_stderr()` 再抛异常，`quiet=True` 拦不住。
+   对用户无害（任务其实成功），但看起来像报错。修法是在探针上挂一个静默 logger，未做。
+12. **`is_requested_format_unavailable_error` 是纯字符串匹配**（010 遗留）。yt-dlp 一旦改这句英文，
+   两处归一同时失效，缺陷会以「降级不执行」的形式回归。有意保持窄匹配（宁可失效也不吞真故障），
+   但没有版本探测或第二个关键词兜底。

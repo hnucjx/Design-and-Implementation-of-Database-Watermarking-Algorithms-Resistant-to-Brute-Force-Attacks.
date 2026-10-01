@@ -8,6 +8,7 @@ import pytest
 import yt_dlp
 from yt_dlp.cookies import YoutubeDLCookieJar
 from yt_dlp.networking.impersonate import ImpersonateTarget
+from yt_dlp.utils import DownloadError
 
 from app.config import AppSettings
 from app.schemas import DownloadOptions, FormatOption
@@ -258,6 +259,72 @@ def test_extract_metadata_applies_resolved_proxy(monkeypatch, tmp_path: Path) ->
     YtDlpService(download_dir=tmp_path).extract_metadata("https://youtu.be/x")
 
     assert captured_opts["proxy"] == "http://127.0.0.1:7890"
+
+
+def test_prepare_download_reports_unselectable_instead_of_raising(monkeypatch, tmp_path: Path) -> None:
+    """yt-dlp 把「选不出格式」实现成**抛异常**；预检必须把它归一成 is_selectable=False。
+
+    这是 ai/bug-fix/010 的回归测试。此前这个异常直接逃逸到 `JobManager`，而
+    `_prepare_download` 的降级分支只认「返回 is_selectable=False」，
+    于是「不可选就降一级重试」整段成为死代码 —— 界面说「已自动降级到 1080p」，
+    实际一个字节都没下。
+    """
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=False):
+            raise DownloadError(
+                "ERROR: [youtube] x: Requested format is not available. "
+                "Use --list-formats for a list of available formats"
+            )
+
+    monkeypatch.setattr("app.ytdlp_service.yt_dlp.YoutubeDL", FakeYoutubeDL)
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    preparation = service.prepare_download(
+        "https://youtu.be/x",
+        DownloadOptions(mode="video_subtitles", resolution="1440p"),
+    )
+
+    assert preparation.is_selectable is False
+
+
+def test_prepare_download_reraises_errors_that_are_not_about_format_selection(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """真实故障（网络 / JS challenge / cookies）必须继续抛出，不能被降级逻辑吞掉。"""
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            self.opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=False):
+            raise DownloadError("ERROR: [youtube] x: The page needs to be reloaded.")
+
+    monkeypatch.setattr("app.ytdlp_service.yt_dlp.YoutubeDL", FakeYoutubeDL)
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    with pytest.raises(DownloadError, match="page needs to be reloaded"):
+        service.prepare_download(
+            "https://youtu.be/x",
+            DownloadOptions(mode="video_subtitles", resolution="1440p"),
+        )
 
 
 def test_dependency_status_exposes_proxy_source_and_redacts_credentials(monkeypatch, tmp_path: Path) -> None:

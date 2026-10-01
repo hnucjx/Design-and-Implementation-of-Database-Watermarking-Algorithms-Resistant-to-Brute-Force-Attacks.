@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from app.proxy import resolve_proxy
 from app.schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
 from app.ytdlp_service import BrowserCookieImportError, DownloadCancelled
+from yt_dlp.utils import DownloadError
 class FakeYtDlpService:
     def __init__(self):
         self.downloads = []
@@ -367,6 +368,25 @@ class SingleAutoFallbackYtDlpService(FakeYtDlpService):
         if options.resolution == "720p":
             return SimpleNamespace(is_selectable=True, width=1280, height=720, actual_format="mp4 · avc1 + mp4a")
         return SimpleNamespace(is_selectable=False, width=None, height=None, actual_format=None)
+
+
+class RaisingUnselectableProbeService(SingleAutoFallbackYtDlpService):
+    """复现真实 yt-dlp 的行为：选不出格式时 `prepare_download` **抛异常**而不是返回。
+
+    线上就是这么失败的：`YtDlpService.prepare_download` 把 yt-dlp 的
+    `DownloadError('Requested format is not available')` 直接抛了出去，而
+    `JobManager._prepare_download` 的降级分支只认「返回 is_selectable=False」，
+    于是整段降级逻辑被跳过 —— 界面提示「已自动降级到 720p」，实际一个字节都没下。
+    见 ai/bug-fix/010。
+    """
+
+    def prepare_download(self, url, options, cookies_path=None):
+        if options.resolution == "720p":
+            return SimpleNamespace(is_selectable=True, width=1280, height=720, actual_format="mp4 · avc1 + mp4a")
+        raise DownloadError(
+            "ERROR: [youtube] unsupported: Requested format is not available. "
+            "Use --list-formats for a list of available formats"
+        )
 
 
 class AutoFallbackYtDlpService(FakeYtDlpService):

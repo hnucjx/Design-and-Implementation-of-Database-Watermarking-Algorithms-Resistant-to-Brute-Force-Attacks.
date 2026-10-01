@@ -396,6 +396,18 @@ class YtDlpService:
         options: DownloadOptions,
         cookies_path: Path | None = None,
     ) -> DownloadPreparation:
+        """探测「目标清晰度在当前 selector 下能不能选出可下载组合」。
+
+        返回 `is_selectable=False` 表示**不可选**，调用方据此降级重试。
+
+        注意：yt-dlp 把「选不出格式」实现成**抛异常**而不是返回空结果 ——
+        格式选择就发生在 `extract_info` 内部，匹配不到直接抛
+        `DownloadError: Requested format is not available`。但预检的语义是
+        「这个清晰度**能不能**选」，选不出来是**正常结论**，不是调用失败。
+        因此这里必须把该异常转成 `is_selectable=False`；否则调用方
+        （`JobManager._prepare_download`）写的「不可选就降一级重试」分支永远不会
+        被执行，症状是界面提示「已自动降级到 1080p」而一个字节都没下。见 ai/bug-fix/010。
+        """
         if options.mode == "subtitles_only":
             return DownloadPreparation(is_selectable=True)
 
@@ -403,7 +415,14 @@ class YtDlpService:
         ydl_opts["skip_download"] = True
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            try:
+                info = ydl.extract_info(url, download=False)
+            except Exception as exc:
+                # 只把「格式选不出来」当作否定结论；其余异常（网络、JS challenge、
+                # cookies 失效）必须继续抛出，否则真实的失败原因会被降级逻辑掩盖。
+                if not self.is_requested_format_unavailable_error(exc):
+                    raise
+                return DownloadPreparation(is_selectable=False)
             if not info:
                 return DownloadPreparation(is_selectable=False)
             formats = info.get("formats") or []

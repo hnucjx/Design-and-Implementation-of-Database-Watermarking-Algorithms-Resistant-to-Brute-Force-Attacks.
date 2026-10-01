@@ -125,6 +125,10 @@ failed · 0/1 完成 · 当前没有 1440p 的视频，低于选定分辨率的�
 7. **端口预检只在 `python -m app` 这条入口生效**（009 遗留）。继续敲
    `python -m uvicorn app.main:app --port 8000` 仍然是原始报错；`docs/openapi.yaml` 的 server URL
    也仍是硬编码 `8000`，没有跟随 `YTDL_API_PORT`。
+   → **后半句已处理**：`docs/openapi.yaml` 现在把该 server 明确标为「默认端口」，
+   并在 `info.description` 里写明端口来自 `YTDL_API_PORT`、以启动日志打印的地址为准。
+   OpenAPI 的 `servers[].url` 本身必须是具体 URL，无法表达变量，所以只能这样降级表达。
+   前半句（裸 uvicorn 无预检）保持未处理。
 8. **008 的触发路径没有在真实界面里出现过**：删除竞态 + 收尾出错这个组合只在测试里构造过，
    没有真的在浏览器里删掉一个正在下载的条目来观察。
 9. **`port_available()` 存在「探测通过、随后被抢走」的竞态**（009 遗留），没有加锁也没有重试 ——

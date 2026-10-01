@@ -20,7 +20,7 @@
 | 修改测试命令或测试策略 | [测试文档](testing.md)、README 测试摘要入口 |
 | 重构模块边界或调整依赖方向 | [设计文档](design.md)、[架构设计](architecture.md)、[4+1 架构视图](4-plus-1-view.md)、[实现文档](implementation.md)、组件图、模块依赖图、4+1 逻辑视图和开发视图 |
 | 修改任务队列、SSE、运行时设置、进度、暂停/重启/删除流程 | [设计文档](design.md#运行时并发模型)、[4+1 架构视图](4-plus-1-view.md)、[技术文档](technical.md)、[实现文档](implementation.md)、4+1 进程视图、运行时并发图、下载数据流图 |
-| 修改端口、部署模式、外部工具、文件位置或本机打开方式 | [4+1 架构视图](4-plus-1-view.md)、[开发文档](development.md)、4+1 物理视图 |
+| 修改端口、绑定地址、部署模式、外部工具、文件位置或本机打开方式 | [4+1 架构视图](4-plus-1-view.md)、[开发文档](development.md)、[安全审计报告](safety-review.md#14-网络安全)、4+1 物理视图 |
 | 修改代理、网络自检、cookies 校验或运行环境自检 | [用户手册](user-manual.md)、[排障手册](troubleshooting.md)、[API 文档](api.md)、[openapi.yaml](openapi.yaml)、[技术文档](technical.md) |
 | 修改日志、日志级别或错误提示文案 | [排障手册](troubleshooting.md)、[用户手册](user-manual.md#自检与日志)、[测试文档](testing.md)、[安全审计报告](safety-review.md) |
 | 新增或删除用户关键操作 | [用户手册](user-manual.md)、[需求分析](requirements.md)、[4+1 架构视图](4-plus-1-view.md)、4+1 场景视图 |

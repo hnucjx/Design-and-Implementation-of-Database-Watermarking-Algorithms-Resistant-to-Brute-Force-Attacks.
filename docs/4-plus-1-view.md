@@ -44,7 +44,7 @@ PlantUML 源文件：[four-plus-one-process-view.puml](diagrams/four-plus-one-pr
 
 PlantUML 源文件：[four-plus-one-physical-view.puml](diagrams/four-plus-one-physical-view.puml)。
 
-物理视图明确本项目是本机单用户应用：浏览器访问 `127.0.0.1:8000`，FastAPI 托管前端并提供 API，SQLite、cookies、下载文件和系统播放器/文件管理器都在同一台用户机器上。外部工具依赖为 `ffmpeg`（必需，缺失时高清晰度直接报错）和 `aria2c`（可选，默认关闭，同时需要 `YTDL_ARIA2C_ENABLED=true`）。文档生成环境也作为工程交付物存在于开发机：仓库内脚本管理 PlantUML jar 缓存，并调用 Java 与 Graphviz 生成 SVG。项目不面向公网多用户部署，边界见 [需求分析](requirements.md#约束与边界)。
+物理视图明确本项目是本机单用户应用：浏览器访问 `127.0.0.1` 上的 FastAPI（端口由 `YTDL_API_PORT` 决定，默认 `8000`，启动时会打印实际地址），FastAPI 托管前端并提供 API，SQLite、cookies、下载文件和系统播放器/文件管理器都在同一台用户机器上。**端口是可配的，绑定地址不是** —— 应用只监听 `127.0.0.1`，从不暴露到网络。外部工具依赖为 `ffmpeg`（必需，缺失时高清晰度直接报错）和 `aria2c`（可选，默认关闭，同时需要 `YTDL_ARIA2C_ENABLED=true`）。文档生成环境也作为工程交付物存在于开发机：仓库内脚本管理 PlantUML jar 缓存，并调用 Java 与 Graphviz 生成 SVG。项目不面向公网多用户部署，边界见 [需求分析](requirements.md#约束与边界)。
 
 ## 场景视图
 

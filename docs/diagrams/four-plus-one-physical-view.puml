@@ -4,10 +4,10 @@ skinparam shadowing false
 
 node "User workstation" as Workstation {
   node "Browser process" as Browser {
-    artifact "React UI\nserved from :8000" as UI
+    artifact "React UI\nserved by FastAPI on the same port" as UI
   }
 
-  node "Python process\nuvicorn app.main:app" as Python {
+  node "Python process\npython -m app" as Python {
     component "FastAPI API + SSE" as API
     component "JobManager workers" as Workers
     component "yt-dlp Python API" as YTDLP
@@ -32,7 +32,7 @@ node "User workstation" as Workstation {
 
 cloud "YouTube" as YouTube
 
-UI --> API : HTTP + SSE\n127.0.0.1:8000
+UI --> API : HTTP + SSE\n127.0.0.1, port from YTDL_API_PORT
 API --> Workers : enqueue/control
 API --> SQLite : jobs/settings/events
 Workers --> SQLite : progress/status

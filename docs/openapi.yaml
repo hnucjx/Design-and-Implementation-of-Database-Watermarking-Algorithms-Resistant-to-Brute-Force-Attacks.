@@ -10,10 +10,18 @@ info:
 
     Operational notes that are not expressible in the schema:
 
-    * The service binds `127.0.0.1:8000` and is meant for a single local user.
+    * The service listens on `127.0.0.1` and is meant for a single local user.
       There is no authentication, no multi-user isolation and no rate limiting.
+      Do not widen the bind address.
+    * The port is **configurable, not fixed**: it comes from the `YTDL_API_PORT`
+      environment variable (repo-root `.env`) and defaults to `8000`, and
+      `python -m app --port` overrides it for a single run. `python -m app` prints
+      the address it actually bound at startup. The `servers` entry below is
+      therefore the *default* origin only — adjust it if you changed the port.
     * When `frontend/dist` exists, the same process also serves the built UI at
-      `/` and `/assets/*`. Otherwise those routes are not registered at all.
+      `/` and `/assets/*`. Otherwise those routes are not registered at all. In
+      Vite dev mode the browser talks to `http://127.0.0.1:5173` instead, and Vite
+      proxies `/api` to this origin.
     * `GET /api/events` is a plain SSE stream used only as a refresh signal: the
       frontend re-reads `GET /api/jobs` after each message.
     * Only download content you own or are allowed to download. This project
@@ -25,9 +33,10 @@ info:
     name: See repository
 servers:
   - url: http://127.0.0.1:8000
-    description: Default single-port deployment (API and built frontend together)
-  - url: http://127.0.0.1:8000
-    description: Vite dev mode proxies /api from http://127.0.0.1:5173 to this origin
+    description: >-
+      Default port. Change it with YTDL_API_PORT (repo-root .env), or per run with
+      `python -m app --port <port>`; the startup log line "服务地址：..." always
+      shows the address in use.
 tags:
   - name: health
     description: Liveness and dependency diagnostics.
@@ -1131,7 +1140,8 @@ paths:
         Registered only when `frontend/dist/index.html` and
         `frontend/dist/assets/` exist, which is the normal single-port
         deployment. In Vite dev mode this route does not exist and the UI is
-        served by the dev server on port 5173.
+        served by the Vite dev server instead (its port is whatever the dev
+        command was given, conventionally 5173).
       responses:
         "200":
           description: The built `index.html`.

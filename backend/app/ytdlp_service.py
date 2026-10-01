@@ -2,6 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import importlib.metadata
 import logging
+import os
 from pathlib import Path
 import re
 import shutil
@@ -72,7 +73,42 @@ COOKIE_REQUIRED_AUTH_HINTS = (
     "age-restricted",
 )
 MIN_AUTO_FALLBACK_HEIGHT = DEFAULT_MIN_AUTO_FALLBACK_HEIGHT
+# Chromium 内核浏览器：yt-dlp-getpot-wpc 靠它启动一个带 WebPoClient 的页面来铸 PO token。
+CHROMIUM_EXECUTABLE_NAMES = ("msedge", "chrome", "chromium", "brave", "vivaldi")
+# (Windows 安装根目录下的相对路径, 可执行文件名)，按「优先 Edge」的顺序探测。
+_CHROMIUM_INSTALL_SUBPATHS = (
+    ("Microsoft", "Edge", "Application", "msedge.exe"),
+    ("Google", "Chrome", "Application", "chrome.exe"),
+)
 logger = logging.getLogger(__name__)
+
+
+def detect_chromium_executable() -> str | None:
+    """定位一个可用的 Chromium 内核浏览器可执行文件（Edge / Chrome）。
+
+    为什么必须自动探测：``yt-dlp-getpot-wpc`` 的 ``is_available()`` 要求
+    ``browser_path`` 指向一个**存在**的文件，否则 provider 直接不可用
+    （verbose 日志里显示 ``PO Token Providers: ... (external, unavailable)``），
+    于是 ``pyproject.toml`` 里声明的依赖等于白装。让用户去配一个绝对路径
+    是不现实的默认值，所以这里按「PATH → 常见安装目录」的顺序探测。
+    """
+    for name in CHROMIUM_EXECUTABLE_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    roots = (
+        os.environ.get("ProgramFiles(x86)"),
+        os.environ.get("ProgramFiles"),
+        os.environ.get("LOCALAPPDATA"),
+    )
+    for root in roots:
+        if not root:
+            continue
+        for parts in _CHROMIUM_INSTALL_SUBPATHS:
+            candidate = Path(root).joinpath(*parts)
+            if candidate.exists():
+                return str(candidate)
+    return None
 
 
 class DownloadCancelled(RuntimeError):
@@ -134,6 +170,9 @@ class YtDlpService:
             "po_token_provider": POT_PROVIDER_DISTRIBUTION if provider_version else None,
             "po_token_provider_version": provider_version,
             "youtube_po_browser_path_configured": bool(self.youtube_po_browser_path),
+            # provider 实际拿到的浏览器路径（显式配置或自动探测）。为 None 时
+            # yt-dlp 会把它列为 unavailable，PO token 铸不出来。
+            "po_token_browser_path": self._po_token_browser_path(),
             "youtube_po_token_configured": bool(self.youtube_po_token),
             "youtube_visitor_data_configured": bool(self.youtube_visitor_data),
             "js_runtime": runtime is not None,
@@ -621,10 +660,22 @@ class YtDlpService:
             args["visitor_data"] = [self.youtube_visitor_data]
         return args
 
+    def _po_token_browser_path(self) -> str | None:
+        """wpc provider 要用的浏览器路径：显式配置优先，否则自动探测 Edge/Chrome。"""
+        if self.youtube_po_browser_path:
+            return self.youtube_po_browser_path
+        return self._detect_chromium_executable()
+
+    def _detect_chromium_executable(self) -> str | None:
+        return detect_chromium_executable()
+
     def _po_token_provider_args(self, youtube_profile: str) -> dict[str, list[str]]:
-        if youtube_profile != "mweb_pot_chrome" or not self.youtube_po_browser_path:
+        if youtube_profile != "mweb_pot_chrome":
             return {}
-        return {"browser_path": [self.youtube_po_browser_path]}
+        browser_path = self._po_token_browser_path()
+        if not browser_path:
+            return {}
+        return {"browser_path": [browser_path]}
 
     def _impersonation_target(self, youtube_profile: str) -> str | None:
         if youtube_profile in {"mweb_pot_chrome", "chrome_default"}:

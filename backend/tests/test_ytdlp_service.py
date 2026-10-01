@@ -11,6 +11,7 @@ from yt_dlp.networking.impersonate import ImpersonateTarget
 
 from app.config import AppSettings
 from app.schemas import DownloadOptions, FormatOption
+from app import ytdlp_service
 from app.ytdlp_service import BrowserCookieImportError, YtDlpService
 
 
@@ -195,6 +196,64 @@ def test_mweb_pot_chrome_download_options_use_provider_and_stability_profile(mon
     assert opts["http_chunk_size"] == 16 * 1024 * 1024
     with yt_dlp.YoutubeDL(opts):
         pass
+
+
+def test_po_token_browser_path_prefers_configured_over_detected(monkeypatch, tmp_path: Path) -> None:
+    configured = str(tmp_path / "chrome.exe")
+    service = YtDlpService(download_dir=tmp_path, youtube_po_browser_path=configured)
+    monkeypatch.setattr(service, "_detect_chromium_executable", lambda: str(tmp_path / "msedge.exe"))
+
+    assert service._po_token_browser_path() == configured
+
+
+def test_po_token_provider_args_fall_back_to_detected_chromium(monkeypatch, tmp_path: Path) -> None:
+    """未显式配置时也必须把探测到的浏览器交给 wpc，否则 provider 是 unavailable。"""
+
+    detected = str(tmp_path / "msedge.exe")
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+    monkeypatch.setattr(service, "_detect_chromium_executable", lambda: detected)
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+        youtube_profile="mweb_pot_chrome",
+    )
+
+    assert opts["extractor_args"]["youtubepot-wpc"]["browser_path"] == [detected]
+
+
+def test_po_token_provider_args_absent_when_no_browser_is_found(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+    monkeypatch.setattr(service, "_detect_chromium_executable", lambda: None)
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+        youtube_profile="mweb_pot_chrome",
+    )
+
+    assert "youtubepot-wpc" not in opts["extractor_args"]
+
+
+def test_detect_chromium_executable_prefers_path_then_install_dirs(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        ytdlp_service.shutil,
+        "which",
+        lambda name: f"C:/found/{name}.exe" if name == "chrome" else None,
+    )
+    assert ytdlp_service.detect_chromium_executable() == "C:/found/chrome.exe"
+
+    monkeypatch.setattr(ytdlp_service.shutil, "which", lambda name: None)
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
+    monkeypatch.delenv("ProgramFiles", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    edge = tmp_path / "Microsoft" / "Edge" / "Application" / "msedge.exe"
+    edge.parent.mkdir(parents=True)
+    edge.write_bytes(b"")
+
+    assert ytdlp_service.detect_chromium_executable() == str(edge)
 
 
 def test_safari_hls_download_options_use_safari_profile_accepted_by_ytdlp(monkeypatch, tmp_path: Path) -> None:
@@ -456,6 +515,7 @@ def test_dependency_status_reports_po_token_provider_without_secret_values(monke
     assert status["po_token_provider"] == "yt-dlp-getpot-wpc"
     assert status["po_token_provider_version"] == "1.2.3"
     assert status["youtube_po_browser_path_configured"] is True
+    assert status["po_token_browser_path"] == str(tmp_path / "chrome.exe")
     assert status["youtube_po_token_configured"] is True
     assert status["youtube_visitor_data_configured"] is True
     assert "SECRET_TOKEN" not in str(status)

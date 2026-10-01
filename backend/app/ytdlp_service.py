@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 import importlib.metadata
 import logging
@@ -51,6 +51,10 @@ DEFAULT_ANTI403_HTTP_CHUNK_SIZE_MB = 16
 # （ReExtractInfo 子类），被其无计数重提取循环接住，表现为每约 5 秒中断重启一次。
 DEFAULT_THROTTLED_RATE_KBPS = 0
 DEFAULT_STALL_TIMEOUT_SECONDS = 90.0
+# 字幕语言为空时的兜底。**不能**用 yt-dlp 的 ["all"]：那会去拉该视频的全部字幕轨
+# （人工 + 自动，常见 20+ 条），密集请求立刻触发 HTTP 429，而 429 会让整个 item 判失败，
+# 连视频本体都不会被下载（真实验收里实测到过）。所以兜底必须是有界的小集合。
+FALLBACK_SUBTITLE_LANGUAGES = ("en",)
 DEFAULT_ARIA2C_CONNECTIONS = 2
 DEFAULT_ARIA2C_MIN_SPLIT_SIZE_MB = 16
 DEFAULT_ARIA2C_RETRY_WAIT_SECONDS = 5
@@ -187,6 +191,7 @@ class YtDlpService:
         aria2c_path: str | None = None,
         aria2c_connections: int = DEFAULT_ARIA2C_CONNECTIONS,
         js_runtime_path: str | None = None,
+        default_subtitle_languages: Sequence[str] | None = None,
     ) -> None:
         self.download_dir = download_dir
         self.youtube_po_token = youtube_po_token
@@ -200,6 +205,8 @@ class YtDlpService:
         self.aria2c_connections = max(1, min(4, aria2c_connections))
         # 显式指定的 JS 运行时路径（YTDL_JS_RUNTIME_PATH）；为空时自动探测。
         self.js_runtime_path = js_runtime_path
+        # 请求没指定字幕语言时的兜底集合（永远有界，绝不使用 yt-dlp 的 ["all"]）。
+        self.default_subtitle_languages = list(default_subtitle_languages or FALLBACK_SUBTITLE_LANGUAGES)
 
     def get_ffmpeg_status(self) -> dict[str, bool]:
         return {"ffmpeg": self._ffmpeg_executable() is not None, "ffprobe": shutil.which("ffprobe") is not None}
@@ -850,8 +857,22 @@ class YtDlpService:
         major = normalized.split(".", 1)[0]
         return major.isdigit() and int(major) >= 20
 
+    def _subtitle_languages(self, options: DownloadOptions) -> list[str]:
+        """决定本次下载要拉哪些字幕语言。
+
+        空列表**绝不能**退化成 yt-dlp 的 ``["all"]``：那会让 yt-dlp 去拉该视频的
+        **全部**字幕轨（人工 + 自动，常见 20+ 条），密集请求立刻触发 HTTP 429，
+        而 429 会让整个 item 判定失败——连视频本体都不会被下载（真实验收里实测到）。
+        所以空列表改为回退到**有界**默认值（设置里的 ``default_subtitle_languages``）。
+        """
+        if options.subtitle_languages:
+            return list(options.subtitle_languages)
+        if self.default_subtitle_languages:
+            return list(self.default_subtitle_languages)
+        return list(FALLBACK_SUBTITLE_LANGUAGES)
+
     def _subtitle_options(self, options: DownloadOptions) -> dict[str, Any]:
-        languages = options.subtitle_languages or ["all"]
+        languages = self._subtitle_languages(options)
         subtitle_opts: dict[str, Any] = {
             "writesubtitles": options.subtitle_source in {"human", "both"},
             "writeautomaticsub": options.subtitle_source in {"auto", "both"},

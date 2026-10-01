@@ -723,6 +723,40 @@ def test_subtitle_only_options_skip_video_and_include_languages(tmp_path: Path) 
     assert opts["cookiefile"] == str(tmp_path / "cookies.txt")
 
 
+def test_empty_subtitle_languages_fall_back_to_bounded_default(tmp_path: Path) -> None:
+    """空列表必须回退到有界默认；变成 yt-dlp 的 ["all"] 会拉全部字幕轨并触发 429。"""
+
+    service = YtDlpService(download_dir=tmp_path, default_subtitle_languages=["en"])
+    opts = service.build_download_options(DownloadOptions(mode="video_subtitles"), cookies_path=None)
+
+    assert opts["subtitleslangs"] == ["en"]
+    assert "all" not in opts["subtitleslangs"]
+
+
+def test_empty_subtitle_languages_honour_configured_default(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path, default_subtitle_languages=["en", "zh-Hans"])
+    opts = service.build_download_options(DownloadOptions(mode="video_subtitles"), cookies_path=None)
+
+    assert opts["subtitleslangs"] == ["en", "zh-Hans"]
+
+
+def test_empty_subtitle_languages_still_bounded_when_default_is_blank(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path, default_subtitle_languages=[])
+    opts = service.build_download_options(DownloadOptions(mode="video_subtitles"), cookies_path=None)
+
+    assert opts["subtitleslangs"] == ["en"]
+
+
+def test_explicit_subtitle_languages_win_over_default(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path, default_subtitle_languages=["en"])
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", subtitle_languages=["ja"]),
+        cookies_path=None,
+    )
+
+    assert opts["subtitleslangs"] == ["ja"]
+
+
 def test_download_options_default_to_1440p_and_both_subtitle_sources(tmp_path: Path) -> None:
     options = DownloadOptions()
     service = YtDlpService(download_dir=tmp_path)

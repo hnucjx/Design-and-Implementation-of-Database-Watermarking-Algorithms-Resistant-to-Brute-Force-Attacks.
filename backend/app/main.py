@@ -62,6 +62,7 @@ def create_app(
         aria2c_path=app_settings.aria2c_path,
         aria2c_connections=app_settings.aria2c_connections,
         js_runtime_path=app_settings.js_runtime_path,
+        default_subtitle_languages=app_settings.default_subtitle_languages,
     )
     with Session(engine) as session:
         _apply_stored_settings(session, app_settings, service)
@@ -327,6 +328,8 @@ def create_app(
             await manager.set_concurrency(update.default_concurrency)
         if update.default_subtitle_languages is not None:
             app_settings.default_subtitle_languages = update.default_subtitle_languages
+            # 同时也是「请求没带语言」时的兜底，必须同步给服务。
+            service.default_subtitle_languages = update.default_subtitle_languages
             _set_setting(session, "default_subtitle_languages", ",".join(update.default_subtitle_languages))
         if update.default_resolution is not None:
             app_settings.default_resolution = update.default_resolution
@@ -591,6 +594,8 @@ def _apply_stored_settings(session: Session, settings: AppSettings, service: YtD
         settings.default_subtitle_languages = [
             lang for lang in stored["default_subtitle_languages"].split(",") if lang
         ]
+        # 同步给服务：它是「请求未指定语言」时的兜底集合，必须跟着设置走。
+        service.default_subtitle_languages = settings.default_subtitle_languages
     if stored.get("aria2c_connections"):
         settings.aria2c_connections = int(stored["aria2c_connections"])
         service.aria2c_connections = settings.aria2c_connections

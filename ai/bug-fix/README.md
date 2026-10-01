@@ -32,6 +32,7 @@
 | [006](006-proxy-is-not-configurable.md) | 应用没有代理配置项 | `d779b52` | 环境变量静默顶掉 Windows 系统代理（实测：坏变量 → 502；修好 → HTTP 200），且界面上看不到也改不了 |
 | [007](007-js-challenge-fails-only-when-cookies-are-on.md) | 带 cookies 反而失败：n challenge 被宿主环境打坏 | `5e556f9` | `NODE_OPTIONS=--require=` 让 yt-dlp 启动的 node 在权限模型下 `ERR_ACCESS_DENIED` 退出，报出「The page needs to be reloaded.」；而应用当时**根本不写日志**，连查都没法查 |
 | [008](008-return-in-finally-swallows-the-real-error.md) | 收尾阶段出的错被静默吞掉 | `—` | `finally` 里的 `return` 丢弃正在传播的异常，而 `_worker` 又没有兜底 → 删除/重启竞态下要么条目永久停在 `running`、要么队列静默少一个消费口，两者都不留一行日志 |
+| [009](009-local-dev-port-is-occupied-and-unconfigurable.md) | 8000 被 IncrediBuild 长期占用，启动失败而报错指着「权限」 | `—` | `Manager.exe` 以 `0.0.0.0:8000` **独占**监听 → 绑 `127.0.0.1:8000` 得到 `WinError 10013`（权限）而不是 10048（地址已用）；端口值散落多处、Vite 代理还硬编码，换端口会让 `/api` 静默打到 IncrediBuild 上 |
 
 ## 本轮（2026-10-01）背景
 

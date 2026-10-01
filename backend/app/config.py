@@ -17,8 +17,16 @@ def default_download_concurrency() -> int:
 
 
 class AppSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="YTDL_", env_file=".env", extra="ignore")
+    # env_file 用**绝对路径**指向仓库根的 `.env`：相对路径是按「当前工作目录」解析的，
+    # 而文档让用户 `cd backend` 再启动 —— 那样写，仓库根的 `.env` 根本不会被读到
+    # （文档却一直说会读），也是「改了一个地方、另一个地方没生效」的经典来源。
+    model_config = SettingsConfigDict(env_prefix="YTDL_", env_file=REPO_ROOT / ".env", extra="ignore")
 
+    # 本机 API 端口。由 `python -m app` 启动时生效，`--port` 可临时覆盖。
+    # 前端 Vite 开发模式读的是**同一个** `.env`（见 frontend/vite.config.ts）：
+    # 端口只有一个来源，才不会出现「后端换了端口、前端还代理旧端口」这种静默错配
+    # —— 那种情况下 /api 会打到别人的程序上，报出来的错和真实病因毫无关系。
+    api_port: int = Field(default=8000, ge=1, le=65535)
     data_dir: Path = Field(default_factory=lambda: REPO_ROOT / "data")
     download_dir: Path = Field(default_factory=lambda: REPO_ROOT / "downloads")
     database_path: Path = Field(default_factory=lambda: REPO_ROOT / "data" / "app.sqlite3")

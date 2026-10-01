@@ -89,6 +89,80 @@ def test_media_stream_blocked_detection_handles_connection_reset(tmp_path: Path)
     assert not service.is_media_stream_blocked_error(RuntimeError("Requested format is not available."))
 
 
+def test_youtube_auth_blocked_detection_handles_bot_challenge(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    assert service.is_youtube_auth_blocked_error(
+        RuntimeError("ERROR: [youtube] Nbwv5wHQoj0: Sign in to confirm you're not a bot.")
+    )
+    assert service.is_youtube_auth_blocked_error(
+        RuntimeError("ERROR: [youtube] Nbwv5wHQoj0: Sign in to confirm you’re not a bot.")
+    )
+    assert service.is_youtube_auth_blocked_error(
+        RuntimeError("ERROR: [youtube] Nbwv5wHQoj0: Sign in to confirm your age.")
+    )
+    # 提取阶段被要求登录，但消息里完全没有 "--cookies" 提示时也必须认出来
+    assert service.is_youtube_auth_blocked_error(RuntimeError("ERROR: [youtube] abc: LOGIN_REQUIRED"))
+    assert not service.is_youtube_auth_blocked_error(RuntimeError("Requested format is not available."))
+
+
+def test_should_try_next_profile_covers_blocked_stream_and_bot_challenge(tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+
+    assert service.should_try_next_profile(
+        RuntimeError("ERROR: unable to download video data: HTTP Error 403: Forbidden")
+    )
+    assert service.should_try_next_profile(
+        RuntimeError("ERROR: [youtube] abc: Sign in to confirm you're not a bot.")
+    )
+    assert not service.should_try_next_profile(RuntimeError("Requested format is not available."))
+    assert not service.should_try_next_profile(RuntimeError("unable to write file: permission denied"))
+
+
+def test_download_escalates_to_anti403_profile_on_bot_challenge(monkeypatch, tmp_path: Path) -> None:
+    """bot 校验不是 403，但同样应该触发 profile 阶梯（否则永远用不到 PO token）。"""
+
+    service = YtDlpService(download_dir=tmp_path)
+    attempts: list[str] = []
+
+    def fake_download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, youtube_profile):
+        attempts.append(youtube_profile)
+        if youtube_profile != "mweb_pot_chrome":
+            raise RuntimeError("ERROR: [youtube] abc: Sign in to confirm you're not a bot.")
+
+    monkeypatch.setattr(service, "_download_once", fake_download_once)
+
+    service.download(
+        "https://youtu.be/botcheck",
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        progress_hook=lambda payload: None,
+        should_cancel=lambda: False,
+    )
+
+    assert attempts == ["default", "mweb_pot_chrome"]
+
+
+def test_download_still_fails_fast_on_unrelated_error(monkeypatch, tmp_path: Path) -> None:
+    service = YtDlpService(download_dir=tmp_path)
+    attempts: list[str] = []
+
+    def fake_download_once(url, options, progress_hook, should_cancel, cookies_path, download_dir, youtube_profile):
+        attempts.append(youtube_profile)
+        raise RuntimeError("Requested format is not available.")
+
+    monkeypatch.setattr(service, "_download_once", fake_download_once)
+
+    with pytest.raises(RuntimeError):
+        service.download(
+            "https://youtu.be/missing-format",
+            DownloadOptions(mode="video_subtitles", resolution="720p"),
+            progress_hook=lambda payload: None,
+            should_cancel=lambda: False,
+        )
+
+    assert attempts == ["default"]
+
+
 def test_default_download_options_do_not_force_anti403_profile(monkeypatch, tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
     monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))

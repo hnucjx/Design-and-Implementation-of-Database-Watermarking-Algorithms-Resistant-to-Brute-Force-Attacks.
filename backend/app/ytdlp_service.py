@@ -64,6 +64,9 @@ COOKIE_REQUIRED_AUTH_HINTS = (
     "confirm you’re not a bot",
     "not a bot",
     "login required",
+    # yt-dlp 在部分路径上直接透出 playability status 原文（LOGIN_REQUIRED），
+    # 小写化后是 login_required，与 "login required" 并不等价。
+    "login_required",
     "only available for registered users",
     "confirm your age",
     "age-restricted",
@@ -351,7 +354,7 @@ class YtDlpService:
                     type(exc).__name__,
                     sanitize_log_message(self.readable_error_message(exc)),
                 )
-                if youtube_profile == "default" and not self.is_media_stream_blocked_error(exc):
+                if youtube_profile == "default" and not self.should_try_next_profile(exc):
                     raise
                 if first_retryable_error is None:
                     first_retryable_error = exc
@@ -469,6 +472,30 @@ class YtDlpService:
     @staticmethod
     def is_media_stream_blocked_error(exc: BaseException) -> bool:
         return YtDlpService.is_http_403_error(exc) or YtDlpService.is_connection_reset_error(exc)
+
+    @staticmethod
+    def is_youtube_auth_blocked_error(exc: BaseException) -> bool:
+        """YouTube 在提取阶段要求登录 / 过人机校验。
+
+        这类错误发生在媒体流开始之前（``Sign in to confirm you're not a bot.``、
+        ``LOGIN_REQUIRED``、年龄门槛等），既不是 403 也不是连接重置，但换一个
+        player_client 组合（web_safari / mweb + PO token）往往就能过，所以必须
+        让它继续走 anti403 profile 阶梯，而不是在 ``default`` 档直接放弃。
+        """
+        return any(
+            any(hint in str(current).lower() for hint in COOKIE_REQUIRED_AUTH_HINTS)
+            for current in YtDlpService._exception_chain(exc)
+        )
+
+    @classmethod
+    def should_try_next_profile(cls, exc: BaseException) -> bool:
+        """判断当前 profile 失败后是否值得再换一个 profile 重试。
+
+        覆盖两类可自愈的失败：媒体流被挡（403 / 连接重置）与提取阶段被要求登录
+        （bot 校验）。其余错误（格式不可用、参数非法、文件系统问题）换 profile
+        无意义，应尽快把真实原因暴露给用户。
+        """
+        return cls.is_media_stream_blocked_error(exc) or cls.is_youtube_auth_blocked_error(exc)
 
     @staticmethod
     def is_connection_reset_error(exc: BaseException) -> bool:

@@ -49,7 +49,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L53) 创建，启动时：
 - `_item_claim_lock` 只包住「刷新状态 → 检查 queued → 置 running → commit」，不覆盖下载过程。
 - `_cookie_import_lock` 只在 403 触发的 cookies 刷新导入期间短暂持有。
 
-事件有两份记录：内存中的 `EventBroker`（SSE 推送）和持久化的 `JobEvent` 行。worker 线程通过 [_publish_threadsafe](../backend/app/job_manager.py#L1132) 写库，再用 `loop.call_soon_threadsafe` 把推送调度回事件循环；纯异步路径直接用 [_publish](../backend/app/job_manager.py#L1119)。
+事件有两份记录：内存中的 `EventBroker`（SSE 推送）和持久化的 `JobEvent` 行。worker 线程通过 [_publish_threadsafe](../backend/app/job_manager.py#L1154) 写库，再用 `loop.call_soon_threadsafe` 把推送调度回事件循环；纯异步路径直接用 [_publish](../backend/app/job_manager.py#L1141)。
 
 ## yt-dlp 封装
 
@@ -57,8 +57,8 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L53) 创建，启动时：
 
 - 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L355)。
 - 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L393)。
-- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L428)。
-- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L508)。
+- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L447)。
+- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L527)。
 - 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L287)。
 - 错误分类：cookies、403、连接重置、JS challenge 和格式不可用。
 
@@ -70,7 +70,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L53) 创建，启动时：
 
 ### JS 运行时
 
-[_detect_js_runtime](../backend/app/ytdlp_service.py#L934) 的探测结果是记忆化的，且**真的用与 yt-dlp 相同的权限模型跑一次**候选运行时，而不是只看文件是否存在；失败原因通过 `js_runtime_error` / `js_runtime_candidates_rejected` 暴露给诊断。[reset_js_runtime_cache](../backend/app/ytdlp_service.py#L264) 供「重新自检」清缓存，见 `POST /api/diagnostics/runtime`。
+[_detect_js_runtime](../backend/app/ytdlp_service.py#L953) 的探测结果是记忆化的，且**真的用与 yt-dlp 相同的权限模型跑一次**候选运行时，而不是只看文件是否存在；失败原因通过 `js_runtime_error` / `js_runtime_candidates_rejected` 暴露给诊断。[reset_js_runtime_cache](../backend/app/ytdlp_service.py#L264) 供「重新自检」清缓存，见 `POST /api/diagnostics/runtime`。
 
 启动时 [runtime_env.sanitize_environment](../backend/app/runtime_env.py#L58) 会摘掉会打坏 JS 运行时的宿主环境变量（`NODE_OPTIONS` 命中强加载开关），并返回记录用于日志与诊断。理由见 [技术文档](technical.md#js-运行时与-n-challenge)。
 
@@ -78,23 +78,25 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L53) 创建，启动时：
 
 [error_advice.advise](../backend/app/error_advice.py#L116) 把异常链上的文本翻成「code + 结论 + 下一步」，判定顺序是 JS challenge → cookies → 代理 → 媒体流。`YtDlpService._exception_chain` 直接委托给它的 `exception_chain()`（BFS 展开 `__cause__` / `__context__`，去重防环）。
 
-调用点有两处，**都被 `try/except` 保护**（诊断本身出错绝不能改变重试与失败行为，测试里的 fake service 也没有这个方法）：profile 失败处与任务失败处，后者见 [_log_item_failure](../backend/app/job_manager.py#L1069)。
+调用点有两处，**都被 `try/except` 保护**（诊断本身出错绝不能改变重试与失败行为，测试里的 fake service 也没有这个方法）：profile 失败处与任务失败处，后者见 [_log_item_failure](../backend/app/job_manager.py#L1091)。
 
-profile 顺序由 [_download_profiles](../backend/app/ytdlp_service.py#L796) 决定：`default`、`default_aria2c`（仅当 aria2c 启用且可执行文件存在）、`mweb_pot_chrome`、`safari_hls`、`chrome_default`。`default` profile 如果不是媒体流阻断错误会立即抛出（不换 profile），其余错误才继续下一个 profile。`DownloadCancelled` 与 `DownloadStalled` 都会跳出重试链直接上抛，见 [download](../backend/app/ytdlp_service.py#L508)。
+profile 顺序由 [_download_profiles](../backend/app/ytdlp_service.py#L815) 决定：`default`、`default_aria2c`（仅当 aria2c 启用且可执行文件存在）、`mweb_pot_chrome`、`safari_hls`、`chrome_default`。`default` profile 如果不是媒体流阻断错误会立即抛出（不换 profile），其余错误才继续下一个 profile。`DownloadCancelled` 与 `DownloadStalled` 都会跳出重试链直接上抛，见 [download](../backend/app/ytdlp_service.py#L527)。
 
 ## 停滞看门狗
 
-[StallGuard](../backend/app/stall_guard.py#L32) 在 [_download_once](../backend/app/ytdlp_service.py#L569) 的 progress hook 里被调用：每次回调先检查取消标志，再 `observe()` 一次，最后才交给任务管理器的进度 hook。
+[StallGuard](../backend/app/stall_guard.py#L32) 在 [_download_once](../backend/app/ytdlp_service.py#L588) 的 progress hook 里被调用：每次回调先检查取消标志，再 `observe()` 一次，最后才交给任务管理器的进度 hook。
 
-判据是「历史最大已下载字节是否被刷新」（`best_bytes` + 达成时间），而不是「本轮是否增长」——这样才能区分节流振荡与正常断点续传。`status == "finished"` 会重置基线，因为合并格式在视频流与音频流之间会重新从 0 计数。超时后抛出 `DownloadStalled`，文案固定为「下载停滞：N 秒内没有新增字节」，不含 `timed out` / `reset` / `403` 等词，避免被 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L673) 误分类。`YTDL_STALL_TIMEOUT_SECONDS=0` 表示关闭。
+判据是「历史最大已下载字节是否被刷新」（`best_bytes` + 达成时间），而不是「本轮是否增长」——这样才能区分节流振荡与正常断点续传。`status == "finished"` 会重置基线，因为合并格式在视频流与音频流之间会重新从 0 计数。超时后抛出 `DownloadStalled`，文案固定为「下载停滞：N 秒内没有新增字节」，不含 `timed out` / `reset` / `403` 等词，避免被 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L692) 误分类。`YTDL_STALL_TIMEOUT_SECONDS=0` 表示关闭。
 
 ## 清晰度与降级
 
 格式选择和分辨率工具位于 [ytdlp_formats.py](../backend/app/ytdlp_formats.py)。降级消息集中在 [fallback_policy.py](../backend/app/fallback_policy.py)。
 
-下载前先调用 [_prepare_download](../backend/app/job_manager.py#L903)。源视频有目标清晰度且 selector 能选出组合时，不再额外调用 `extract_metadata`。只有 `prepare_download` 报告不可选时，才会再解析一次元数据，区分 `requested_resolution_missing`、`source_below_720_only` 和 `requested_resolution_unselectable`，然后用降级清晰度再 `prepare_download`。
+下载前先调用 [_probe_preparation](../backend/app/job_manager.py#L903) 探测目标清晰度能否选出可下载组合。能选出就直接用这批 options 下载，不再额外调用 `extract_metadata`（上一轮性能修复的成果）。探针报「不可选」时 —— 无论是返回 `is_selectable=False`，还是抛 yt-dlp 的 `Requested format is not available` —— 才再解析一次元数据，区分 `requested_resolution_missing`、`source_below_720_only` 和 `requested_resolution_unselectable`，然后用降级清晰度**再探一次**；通过才把降级后的 options 交给下载步骤。
 
-媒体流 403/连接重置只标注 `media_stream_blocked` 并给重启建议，不自动降清晰度重下，相关逻辑见 [_annotate_media_stream_fallback](../backend/app/job_manager.py#L996)。
+探针的两种失败表现必须都算否定结论，否则降级分支会变成死代码（症状：提示「已自动降级」却不下载），见 [010](../ai/bug-fix/010-unselectable-probe-raise-skips-the-fallback.md)。与之相对，网络 / JS challenge / cookies 失效等异常要原样抛出，不能被降级吞掉。
+
+媒体流 403/连接重置只标注 `media_stream_blocked` 并给重启建议，不自动降清晰度重下，相关逻辑见 [_annotate_media_stream_fallback](../backend/app/job_manager.py#L1018)。
 
 ## 进度与平均速度
 
@@ -143,7 +145,7 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 ## 日志安全
 
-下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L1069)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。
+下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L1091)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。
 
 ## 日志落盘
 

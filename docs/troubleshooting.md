@@ -22,6 +22,7 @@
 | **服务根本起不来**，报 `[WinError 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试` | **不是权限问题。** 端口已被别的程序以独占方式监听着（本机常见：IncrediBuild 的 `Manager.exe` 长期占 `8000`），Windows 返回的是它而不是「地址已在使用」 | 用 `python -m app` 启动：它会指名占用者并给出下一步。见下方 [端口被占用](#启动就失败端口被占用) |
 | 报 `Sign in to confirm you're not a bot.` / `Login required` / 年龄限制 / 会员视频 | 请求是匿名的 | 「校验 cookies」→ 按结论重新导出。见 [cookies](#cookies-篇) |
 | 下载报 HTTP 403 / 连接被重置 | YouTube 拒绝了媒体流 | 重新导入 cookies（登录态过期最常见）；并发降到 1；关掉 aria2c；确认代理没有中途换 IP |
+| 提示「已自动降级到 1080p」，任务却紧接着失败、**根本没有开始下载** | 降级只被**标注**、没被**执行**：yt-dlp 把「选不出格式」实现成**抛异常**，而当时的降级分支只认返回值，整段逻辑被跳过 | 升级到含 [010](../ai/bug-fix/010-unselectable-probe-raise-skips-the-fallback.md) 的版本。临时办法：把清晰度调低一档再重启该任务。见下方 [提示已降级却没有开始下载](#提示已降级却没有开始下载) |
 | 解析直接超时、或 `[WinError 10061] 由于目标计算机积极拒绝` | 连不上 YouTube，且形态指向代理 | 「检测代理」。**浏览器能打开不代表应用能**，见 [代理篇](#代理篇) |
 | `Tunnel connection failed: 502` | 代理地址存在但连不通（或是一个已经不存在的端口） | 「检测代理」→ 换成正确的端口，或临时填 `direct` 立刻失败而不是等超时 |
 | 名单里显示 `cookies` 状态为未配置 | 没有 `data/cookies.txt` | 导入 cookies，见 [cookies 篇](#cookies-篇) |
@@ -59,6 +60,41 @@
 **不要**为了腾出 `8000` 去杀 IncrediBuild：它是编译加速工具，约束见
 [PLAN.md 全局约束](../ai/plan.md)。也**不要**只改后端端口就让前端照旧跑 ——
 Vite 的代理如果还指着旧端口，`/api` 会静默打到别的程序上，报出来的错与真实病因毫无关系。
+
+## 提示已降级却没有开始下载
+
+### 症状
+
+任务行先出现一句「检测到 1440p 清晰度，但该清晰度当前没有可下载的视频/音频组合，已自动降级到 1080p。」
+（或「当前没有 1440p 的视频，低于选定分辨率的最高可用分辨率是 1080p。」），随后该条目直接变成 `failed`，
+`实际分辨率` 与 `视频大小` 一直是空的，`downloads/` 里连 `.part` 文件都没有。
+
+```text
+2026-10-01 22:29:09 WARNING app.job_manager | download item failed: job_id=... item_id=... title='On Vibe Coding' resolution=1440p category=format_unavailable error_class=DownloadError error=ERROR: [youtube] hTdSU7q5WCo: Requested format is not available. Use --list-formats for a list of available formats
+```
+
+### 真正发生了什么
+
+这句话里有两个错误信息：
+
+1. **「检测到 1440p 清晰度」是错的** —— 该视频根本没有 1440p，最高只有 1080p。
+2. **「已自动降级到 1080p」也是错的** —— 降级只被写进了状态字段，没有任何代码真的去下载 1080p。
+
+根因是 yt-dlp 的**接口形状与预期不符**：它的格式选择发生在 `extract_info` 内部，选不出来时
+**直接抛 `DownloadError`**，而不是返回一个空结果。而 `_prepare_download` 里的降级分支写在
+「`prepare_download` **返回** `is_selectable=False`」这一条件下，于是这段代码在真实故障下从未被执行。
+异常一路逃到 `_run_item` 的兜底 `except`，被当成「格式不可用」记了 `format_unavailable` 并标注降级说明，
+任务随即失败。完整取证见 [010](../ai/bug-fix/010-unselectable-probe-raise-skips-the-fallback.md)。
+
+### 现在做什么
+
+1. **升级**到含 010 的版本即可，无需改设置。修复后同一视频会正常降级到 1080p 并开始下载，
+   提示也会变成正确的那句「视频本来没有 1440p，已自动降级到 1080p。」。
+2. **临时绕过**：在下载选项里把清晰度手动调到 1080p 或更低，再重启该任务 —— 只要第一次预检就能选出组合，
+   就不会走到这条失效路径上。
+
+> 注意它与「媒体流 403」不是一回事：403 发生在**下载开始之后**，会有 `.part` 文件和进度；
+> 这里的症状是**下载从未开始**，`downloaded_bytes` 始终为空。
 
 ## 日志长什么样
 

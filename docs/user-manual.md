@@ -197,7 +197,7 @@ YouTube 把登录态与出口 IP 绑定。导出 cookies 时走代理 A、下载
 
 默认下载根目录是 `downloads/`，数据库和 cookies 默认在 `data/`，配置默认值见 [AppSettings](../backend/app/config.py#L19)。Playlist 会在下载根目录下创建同名子文件夹；目录选择和保存逻辑见 [main.py](../backend/app/main.py#L453)。
 
-产物命名模板固定为 `<标题(最多200字节)> [<YouTube id>].<扩展名>`，见 [build_download_options](../backend/app/ytdlp_service.py#L428)。因此即使数据库里的 `output_path` 丢失，后端仍能按文件名中的 id 找回同名视频与 sidecar。
+产物命名模板固定为 `<标题(最多200字节)> [<YouTube id>].<扩展名>`，见 [build_download_options](../backend/app/ytdlp_service.py#L447)。因此即使数据库里的 `output_path` 丢失，后端仍能按文件名中的 id 找回同名视频与 sidecar。
 
 ## 常见问题入口
 
@@ -209,6 +209,7 @@ YouTube 把登录态与出口 IP 绑定。导出 cookies 时走代理 A、下载
 - 媒体流 403 或连接重置：查看 [稳定下载策略](technical.md#稳定下载策略)。若 403 变多，把并发降为 1，并确认没有开启 aria2c 多连接，而不是恢复单个视频内部的文件间隔睡眠。
 - 任务卡在「下载中」但进度不动：正常情况下停滞看门狗会在 90 秒内把它变成可见失败；如果长时间仍无变化，检查是否用 `YTDL_STALL_TIMEOUT_SECONDS=0` 关闭了看门狗，或进程是否被强制结束。
 - 高分辨率下载失败：查看 [清晰度与格式选择](technical.md#清晰度与格式选择) 和 [分辨率降级原因](technical.md#分辨率降级原因)。
+- 提示「已自动降级到 XXX」但任务随即失败、没有开始下载：见 [排障手册](troubleshooting.md#提示已降级却没有开始下载)。
 - 想直接看证据：`data/logs/app.log`，见 [自检与日志](#自检与日志)。
 - API 字段含义不清楚：查看 [API 文档](api.md)。
 - 本地依赖或环境问题：查看 [开发文档](development.md)。

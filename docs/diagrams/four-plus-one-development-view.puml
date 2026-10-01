@@ -6,6 +6,8 @@ skinparam shadowing false
 package "frontend/src" {
   [App.tsx] as App
   [components/JobQueue.tsx] as JobQueue
+  [components/ProxySection.tsx] as ProxySection
+  [components/CookieSection.tsx] as CookieSection
   [api.ts] as ApiClient
   [types.ts] as FrontendTypes
   [quality.ts] as Quality
@@ -29,6 +31,12 @@ package "backend/app" {
   [progress_persist.py] as PersistGate
   [transfer_stats.py] as TransferStats
   [browser_cookies.py] as BrowserCookies
+  [cookie_health.py] as CookieHealth
+  [proxy.py] as ProxyResolver
+  [connectivity.py] as Connectivity
+  [error_advice.py] as ErrorAdvice
+  [runtime_env.py] as RuntimeEnv
+  [logging_setup.py] as LoggingSetup
   [output_paths.py] as OutputPaths
   [paths.py] as Paths
   [log_safety.py] as LogSafety
@@ -42,16 +50,22 @@ package "tests" {
 
 package "scripts" {
   [docs.py] as DocsScript
+  [check_doc_anchors.py] as AnchorScript
+  [acceptance_network.py] as AcceptanceNetwork
   [bench_concurrency.py] as BenchConcurrency
   [bench_throttle_guard.py] as BenchThrottle
 }
 
 App --> JobQueue
+App --> ProxySection
+App --> CookieSection
 App --> ApiClient
 App --> Quality
 App --> Formatting
 ApiClient --> FrontendTypes
 JobQueue --> FrontendTypes
+ProxySection --> ApiClient
+CookieSection --> ApiClient
 
 Main --> Config
 Main --> Schemas
@@ -59,6 +73,10 @@ Main --> Manager
 Main --> ReadModel
 Main --> Service
 Main --> DB
+Main --> CookieHealth
+Main --> Connectivity
+Main --> RuntimeEnv
+Main --> LoggingSetup
 Manager --> Models
 Manager --> Service
 Manager --> Broker
@@ -70,20 +88,33 @@ Manager --> OutputPaths
 Manager --> Paths
 Manager --> LogSafety
 Manager --> SystemOpen
+Manager --> ErrorAdvice
 ReadModel --> Models
 ReadModel --> Fallback
 ReadModel --> OutputPaths
 Service --> FormatHelpers
 Service --> BrowserCookies
+Service --> ProxyResolver
+Service --> ErrorAdvice
 Service --> StallGuard
 Service --> SystemOpen
+CookieHealth --> Connectivity
+CookieHealth --> ProxyResolver
+Connectivity --> ProxyResolver
+ErrorAdvice --> LogSafety
 DB --> Models
 
 BackendTests ..> Main
 BackendTests ..> Manager
 BackendTests ..> Service
+BackendTests ..> CookieHealth
+BackendTests ..> ErrorAdvice
 FrontendTests ..> App
+AcceptanceNetwork ..> Service
+AcceptanceNetwork ..> Connectivity
+AcceptanceNetwork ..> CookieHealth
 BenchConcurrency ..> Manager
 BenchThrottle ..> Service
 DocsScript ..> Main : doc checks only
+AnchorScript ..> Main : doc anchor checks only
 @enduml

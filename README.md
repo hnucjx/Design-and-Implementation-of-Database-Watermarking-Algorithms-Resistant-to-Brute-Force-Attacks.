@@ -31,7 +31,8 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 | 文档 | 用途 |
 | --- | --- |
 | [文档总入口](docs/index.md) | 按读者角色选择阅读路径。 |
-| [用户手册](docs/user-manual.md) | 启动入口、下载操作、cookies 和常见排障入口。 |
+| [用户手册](docs/user-manual.md) | 启动入口、下载操作、代理与网络、cookies、自检与日志。 |
+| [排障手册](docs/troubleshooting.md) | 按「你看到的那句话」查该点哪里：代理、cookies、JS 运行时与日志阅读。 |
 | [需求分析](docs/requirements.md) | 项目目标、功能需求、非功能需求和边界。 |
 | [架构设计](docs/architecture.md) | 前后端、SQLite、yt-dlp、ffmpeg、SSE 和外部依赖关系。 |
 | [设计文档](docs/design.md) | 模块职责与依赖分层、运行时并发模型、关键数据流、扩展点和已知限制。 |

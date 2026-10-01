@@ -6,7 +6,7 @@
 
 | 读者 | 建议阅读 |
 | --- | --- |
-| 普通用户 | 从 [用户手册](user-manual.md) 开始，再按需要查看 [技术文档](technical.md) 的排障说明。 |
+| 普通用户 | 从 [用户手册](user-manual.md) 开始；遇到具体报错直接查 [排障手册](troubleshooting.md)。 |
 | 后端开发者 | 先读 [架构设计](architecture.md)，再读 [API 文档](api.md)（需要导入工具链时直接取 [openapi.yaml](openapi.yaml)）和 [实现文档](implementation.md)。 |
 | 前端开发者 | 先读 [用户手册](user-manual.md) 理解工作流，再读 [API 文档](api.md) 和 [开发文档](development.md)。 |
 | 架构评审者 | 先读 [4+1 架构视图](4-plus-1-view.md)，再进入 [架构设计](architecture.md) 和 [设计文档](design.md)。 |
@@ -17,14 +17,15 @@
 
 ## 文档职责
 
-- [用户手册](user-manual.md)：面向最终使用者，说明启动入口、下载、cookies、任务中心和排障入口。
+- [用户手册](user-manual.md)：面向最终使用者，说明启动入口、下载、代理与网络、cookies、任务中心、自检与日志。
+- [排障手册](troubleshooting.md)：面向「应用用不起来的人」，按症状（原始报错原文）查该点哪里，含代理、cookies、JS 运行时三篇与日志阅读方法。
 - [需求分析](requirements.md)：描述项目要解决的问题、功能需求、非功能需求和明确不支持的边界。
 - [架构设计](architecture.md)：说明系统组成、模块边界、数据流和关键架构图。
 - [设计文档](design.md)：模块职责矩阵、依赖方向与分层规则、运行时并发模型、关键数据流、状态机与持久化设计取舍、扩展点与已知限制。
 - [4+1 架构视图](4-plus-1-view.md)：按逻辑、开发、进程、物理和场景视图组织架构审查入口。
 - [开发文档](development.md)：说明本地开发环境、依赖、命令、目录、第三方工具和配置项。
 - [文档写作与生成环境](documentation-workflow.md)：说明仓库内文档工具的初始化、UML 渲染、一致性检查和推荐写作流程。
-- [API 文档](api.md)：记录后端 HTTP API、请求/响应模型、任务状态和错误语义；配套的机器可读规范见 [openapi.yaml](openapi.yaml)（OpenAPI 3.1.0，覆盖全部 25 个操作）。
+- [API 文档](api.md)：记录后端 HTTP API、请求/响应模型、任务状态和错误语义；配套的机器可读规范见 [openapi.yaml](openapi.yaml)（OpenAPI 3.1.0，覆盖全部 28 个操作）。
 - [技术文档](technical.md)：集中解释下载策略、分辨率、格式、cookies、PO token、aria2c 和稳定性策略。
 - [实现文档](implementation.md)：面向维护者解释关键代码模块、类、函数和数据持久化方式。
 - [测试文档](testing.md)：记录自动测试、手动验收和高风险回归场景。

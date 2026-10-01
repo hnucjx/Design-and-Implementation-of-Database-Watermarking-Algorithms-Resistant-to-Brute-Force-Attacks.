@@ -12,13 +12,13 @@
 python -m compileall backend\app
 ```
 
-后端测试（当前基线：**147 passed**）：
+后端测试（当前基线：**255 passed**）：
 
 ```powershell
 python -m pytest backend\tests -q
 ```
 
-前端测试和构建（当前基线：**52 passed** + `tsc && vite build` 通过）：
+前端测试和构建（当前基线：**63 passed** + `tsc && vite build` 通过）：
 
 ```powershell
 cd frontend
@@ -37,6 +37,15 @@ git diff --check
 ```powershell
 python scripts\docs.py check
 ```
+
+文档里的代码行锚点（Markdown 链接里带 `#Lnn` 的那些）会随代码漂移，可用脚本核对：
+
+```powershell
+python scripts\check_doc_anchors.py          # 只报告，有漂移时退出码 1
+python scripts\check_doc_anchors.py --fix    # 能唯一确定符号的锚点直接重算
+```
+
+它只改「标签就是符号名」的锚点；标签是文件名或散文的（例如 `[main.py](../backend/app/main.py#L500)`）会列进「待人工复核」。
 
 首次执行前如尚未初始化文档工具，请先阅读 [文档写作与生成环境](documentation-workflow.md)。用例数会随功能变化，本文档记录的是当前基线值；改动测试后请同步更新这里。
 
@@ -62,11 +71,28 @@ python scripts\acceptance_real.py --items 1-12 --concurrency 1,3,5 --mode subtit
 python scripts\acceptance_real.py --mode video_only --items 1-6    # 需要 data/cookies.txt，否则媒体流 403
 ```
 
+`scripts/acceptance_network.py` 是**网络与账号链路**的专项验收（代理 / cookies / 环境变量），
+它对着真实 `YtDlpService` 跑，并把每一步的原始证据写成 JSON：
+
+```powershell
+python scripts\acceptance_network.py                          # 报告写到 tmp_acceptance/network-acceptance.json
+python scripts\acceptance_network.py --skip-end-to-end        # 只跑连通性矩阵与 cookies 体检
+python scripts\acceptance_network.py --skip-env-experiment    # 跳过 NODE_OPTIONS A/B（不想动环境变量时）
+python scripts\acceptance_network.py --video <url> --timeout 30
+```
+
+它包含四段：启动环境快照、代理探测矩阵（自动 / 强制直连 / 显式 / 指向不存在的端口）、
+cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 cookies），
+以及一段**环境净化 A/B**：注入 `NODE_OPTIONS=--require=<空补丁>` 后跑一次（预期失败），
+再摘除该变量跑一次（预期成功）——这条 A/B 就是 JS challenge 那个缺陷的复现条件。
+退出码 0 表示全部通过。
+
 注意事项：
 
 - 无 cookies 时 YouTube 媒体流一律 403，视频本体无法下载；字幕与元数据路径不受影响。
 - 不要用 `--subtitles all`：空语言列表会被解释为下载**全部**字幕轨，触发 HTTP 429 并使整个 item 失败。
 - 本地基准走 127.0.0.1，脚本已强制设置 `NO_PROXY`，避免被系统代理的 `<-loopback>` 规则拦截。
+- 代理探测矩阵**故意包含两个失败用例**（强制直连、指向 `127.0.0.1:1`）：它们失败才说明代理参数真的被应用了。
 
 最近一次执行结果与口径说明见 [PLAN.md](../PLAN.md) 第 9.1 节。
 
@@ -76,15 +102,20 @@ python scripts\acceptance_real.py --mode video_only --items 1-6    # 需要 data
 
 | 文件 | 重点 |
 | --- | --- |
-| [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置、诊断，合集子视频按并发并行下载，以及 happy-path 不再二次 extract_metadata。 |
+| [test_api.py](../backend/tests/test_api.py) | API 行为、任务创建、重启、删除、cookies、设置、诊断、代理自检、cookies 体检、运行环境自检刷新，合集子视频按并发并行下载，以及 happy-path 不再二次 extract_metadata。 |
 | [test_db.py](../backend/tests/test_db.py) | SQLite WAL、`busy_timeout`、`synchronous=NORMAL` 与 WAL checkpoint。 |
-| [test_ytdlp_service.py](../backend/tests/test_ytdlp_service.py) | yt-dlp 参数、profile、PO token、aria2c、格式选择和错误识别。 |
+| [test_ytdlp_service.py](../backend/tests/test_ytdlp_service.py) | yt-dlp 参数、profile、PO token、aria2c、格式选择和错误识别；JS 运行时探测（跳过坏候选、原样报错、探测本身不抛异常、诊断暴露失败原因）。 |
 | [test_download_progress.py](../backend/tests/test_download_progress.py) | 多子流进度聚合：字幕/chunk 不锁死在 99.9%，分离音视频不把已下载字节重置为 0。 |
 | [test_progress_persist.py](../backend/tests/test_progress_persist.py) | 进度 SQLite/SSE 写入节流：首次、终态、时间间隔和进度跳变。 |
 | [test_transfer_stats.py](../backend/tests/test_transfer_stats.py) | 平均速度计算。 |
 | [test_stall_guard.py](../backend/tests/test_stall_guard.py) | 停滞看门狗：字节推进不触发、零增长超时触发、节流振荡（峰值不刷新）触发、合并格式的流切换不被误判。 |
 | [test_paths.py](../backend/tests/test_paths.py) | 安全路径名。 |
 | [test_log_safety.py](../backend/tests/test_log_safety.py) | 日志敏感信息清洗。 |
+| [test_logging_setup.py](../backend/tests/test_logging_setup.py) | 日志落盘：文件被创建、格式含时间/级别/模块、重复调用不叠加 handler、只读目录降级不抛异常、uvicorn logger 也被接上。 |
+| [test_runtime_env.py](../backend/tests/test_runtime_env.py) | 宿主环境净化：只摘命中强加载开关的 `NODE_OPTIONS`、其它值原样保留、返回值可用于留痕、幂等。 |
+| [test_error_advice.py](../backend/tests/test_error_advice.py) | 异常翻译层：JS challenge / cookies / 代理 / 媒体流四类分类顺序、异常链展开不因环状引用死循环、无法归类时返回 `None` 而不硬凑。 |
+| [test_connectivity.py](../backend/tests/test_connectivity.py) | 代理探针：直连与走代理分别构造正确的 opener、HTTP 错误与网络异常都变成可展示证据、失败必带 `next_steps`、`direct` 失败文案说明「可能预期」。 |
+| [test_cookie_health.py](../backend/tests/test_cookie_health.py) | cookies 体检：格式、域名分布、鉴权项命中/缺失、过期、`LOGGED_IN` 三态（真/假/未知）、结论与下一步。 |
 | [fakes.py](../backend/tests/fakes.py) | API 测试的 fake service 和辅助对象。 |
 
 默认自动测试不依赖真实 YouTube 下载，避免网络、地区、cookies 和 YouTube 风控导致不稳定。
@@ -103,6 +134,11 @@ python scripts\acceptance_real.py --mode video_only --items 1-6    # 需要 data
 - Playlist 子视频单个删除、多选删除和删除文件确认。
 - 旧的全局“删除任务时同时删除已下载视频”复选框应不存在。
 - 分辨率降级提示和重启按钮。
+- 代理自检：检测失败时显示下一步建议、行内给出代理来源与耗时、以及「先试输入框里的地址」**不会**把地址写进设置。
+- 代理预设表：点表格里的端口会填进输入框（而不是立刻保存）。
+- 运行环境自检：JS 运行时不可用时显示原始报错与「The page needs to be reloaded.」的关联说明、日志文件路径可复制、「重新自检」会打到刷新接口。
+- cookies 校验：联网校验、离线体检、以及「域名不对，等于没配」与「google.com-only」两档结论的解释文案。
+- cookies 获取方式文档（三种方式与「不要做什么」）在界面上可展开可读。
 
 ## 手动验收
 
@@ -124,6 +160,11 @@ python scripts\acceptance_real.py --mode video_only --items 1-6    # 需要 data
 14. 点击外链按钮，确认单视频、playlist 和子视频会打开对应 YouTube 页面。
 15. 清除 cookies 后在受限视频上触发媒体流失败，确认错误文案以「当前 cookies 状态：未配置」开头，并给出重试建议。
 16. 修改设置面板的 aria2c 连接数，确认保存成功且 `/api/diagnostics` 的 `aria2c_connections` 同步变化；确认未设置 `YTDL_ARIA2C_ENABLED=true` 时下载链路不会使用 aria2c。
+17. 设置面板点「检测代理」：通过时应看到 HTTP 200 与耗时；把端口改成 `1` 再点，应看到「积极拒绝」并给出下一步建议。随后在输入框里填一个地址后点「先试输入框里的地址」，确认**没有**触发 `PUT /api/settings`（试地址不等于保存）。
+18. 展开「不知道填什么？常见代理软件的本地端口」，点一行端口，确认它只填进输入框、不立即保存。
+19. 把 `cookies_enabled=false`（清除 cookies）后点「校验 cookies」，确认结论是「未配置」并给出三种获取方式；导入 cookies 后再点一次，确认结论与「域上条数 / 命中的鉴权项 / 联网校验」三行证据一致。
+20. 检查 `data/logs/app.log`：启动时应有 `proxy resolved` / `js runtime ready`（或 `js runtime unavailable`）/ `dependencies ready` 三行；故意制造一次失败后，应有 `category=` 结构与紧随其后的 `诊断 / 原因 / 建议N` 块。
+21. 设置面板点「重新自检」，确认 JS 运行时状态会被重新探测（装上 Node/Deno 后无需重启应用）。
 
 ## 高风险回归点
 
@@ -134,9 +175,13 @@ python scripts\acceptance_real.py --mode video_only --items 1-6    # 需要 data
 - 720p 自动降级底线失效。
 - 单视频失败原因被任务级聚合错误覆盖。
 - `throttledratelimit` 被重新默认打开，导致「每约 5 秒中断并重新 extract」的性能回退，见 [PLAN.md](../PLAN.md) §3.1。
-- 停滞看门狗的文案被改动后误命中 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L470)，把停滞误分类成媒体流阻塞。
+- 停滞看门狗的文案被改动后误命中 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L673)，把停滞误分类成媒体流阻塞。
 - aria2c 多连接在默认配置下被启用，推高 403 率。
 - Cookies 导入暴露敏感信息或擅自关闭浏览器。
+- JS 运行时探测退化成「只看文件是否存在」：那样「检测到 node 却解不出 n challenge」会重新变成不可诊断的状态。
+- 宿主环境变量净化被扩大化：只应摘掉会强加载外部脚本的 `NODE_OPTIONS`，而不是顺手清掉用户的其它环境变量。
+- 日志重新退回「只往 stderr 打」：`data/logs/app.log` 消失会让用户失去唯一的取证手段。
+- 「先试输入框里的地址」重新变成「先保存再试」：一个填错的端口会被落盘。
 - README 与 `docs/` 重复，导致后续维护分叉。
 
 ## 文档验收

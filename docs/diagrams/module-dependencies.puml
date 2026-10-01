@@ -26,6 +26,10 @@ package "L3 domain and policy" {
   [stall_guard.py\nstall watchdog] as Stall
   [fallback_policy.py\nreason and message] as Fallback
   [browser_cookies.py\ncookie import] as Cookies
+  [cookie_health.py\ncookie verification] as CookieHealth
+  [proxy.py\nproxy resolution] as Proxy
+  [connectivity.py\nproxy probe] as Connectivity
+  [error_advice.py\nexception to advice] as Advice
   [download_progress.py\nsubstream aggregation] as Progress
   [progress_persist.py\npersist gate] as Gate
   [transfer_stats.py\naverage speed] as Stats
@@ -35,11 +39,13 @@ package "L3 domain and policy" {
 
 package "L4 infrastructure" {
   [db.py\nengine, pragmas, migrations] as DB
+  [logging_setup.py\nroot logger, rotating file] as Logging
 }
 
 package "L5 pure helpers" {
   [paths.py\nsafe path names] as Paths
   [log_safety.py\nlog scrubbing] as LogSafe
+  [runtime_env.py\nhostile env scrubbing] as RuntimeEnv
 }
 
 Main --> Config
@@ -48,8 +54,13 @@ Main --> Manager
 Main --> ReadModel
 Main --> Service
 Main --> DB
+Main --> CookieHealth
+Main --> Connectivity
+Main --> Logging
+Main --> RuntimeEnv
 Manager --> Models
 Manager --> Service
+Manager --> Advice
 Manager --> Progress
 Manager --> Gate
 Manager --> Stats
@@ -64,8 +75,14 @@ ReadModel --> Fallback
 ReadModel --> Outputs
 Service --> Formats
 Service --> Cookies
+Service --> Proxy
+Service --> Advice
 Service --> Stall
 Service --> LogSafe
+CookieHealth --> Connectivity
+CookieHealth --> Proxy
+Connectivity --> Proxy
+Advice --> LogSafe
 DB --> Models
 Broker --> Schemas : JSON payloads
 
@@ -73,6 +90,10 @@ note bottom
 Dependency rule: arrows only point downwards.
 L5 has no project imports; L3 never imports L2 or L0;
 infrastructure (L4) knows tables but not job logic.
+Two deliberate separations: parsing the proxy (proxy.py)
+is apart from proving it works (connectivity.py), and
+producing a cookie report (cookie_health.py) is apart from
+importing cookies (browser_cookies.py).
 Violations to watch: importing job_manager from
 ytdlp_service, or importing yt-dlp types into schemas.
 end note

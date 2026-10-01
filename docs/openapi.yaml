@@ -43,6 +43,12 @@ tags:
     description: Netscape cookie file upload, browser import and removal.
   - name: events
     description: Server-Sent Events stream used as a refresh signal.
+  - name: diagnostics
+    description: |
+      Self-check endpoints. Unlike `/api/diagnostics` they actively touch the
+      network or the filesystem: they prove that the resolved proxy really
+      works and that the local cookie jar really logs in. All of them are
+      read-only - none of them writes settings or cookies.
 
 paths:
   /health:
@@ -106,6 +112,180 @@ paths:
                   youtube_max_parallel_downloads: 5
                   anti403_http_chunk_size_mb: 16
                   throttled_rate_kbps: 0
+                log_file: D:\code-repo\cascade\data\logs\app.log
+                sanitized_environment: []
+
+  /api/diagnostics/runtime:
+    post:
+      tags: [diagnostics]
+      operationId: refreshRuntimeDiagnostics
+      summary: Re-run the JS runtime probe and return diagnostics
+      description: |
+        Same response as `GET /api/diagnostics`, but the memoised JS runtime
+        probe is dropped first. Use it after installing Node/Deno so the app
+        does not have to be restarted. No request body.
+      responses:
+        "200":
+          description: Diagnostics computed with a fresh JS runtime probe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiagnosticsRead"
+              example:
+                cookies_enabled: true
+                dependencies:
+                  ffmpeg: true
+                  js_runtime: true
+                  js_runtime_name: node
+                  js_runtime_version: v22.22.2
+                  js_runtime_path: C:\Program Files\nodejs\node.exe
+                  js_runtime_error: null
+                log_file: D:\code-repo\cascade\data\logs\app.log
+                sanitized_environment: []
+
+  /api/proxy/test:
+    post:
+      tags: [diagnostics]
+      operationId: testProxyConnection
+      summary: Probe the resolved proxy with one HTTPS request
+      description: |
+        Requests `https://www.youtube.com/robots.txt` through the resolved proxy
+        and reports the raw evidence: status code, elapsed time, bytes read and
+        the original exception. It never writes settings and never touches a
+        running download.
+
+        A **failure can be the expected result**: `proxy=direct` on a machine
+        that needs a proxy is supposed to fail, and that failure is what proves
+        the proxy option is actually applied.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProxyTestRequest"
+            examples:
+              saved:
+                summary: Probe the currently effective proxy
+                value: {}
+              draft:
+                summary: Try an address without saving it
+                value:
+                  proxy: http://127.0.0.1:7890
+              forceDirect:
+                summary: Probe with proxying disabled
+                value:
+                  proxy: direct
+      responses:
+        "200":
+          description: Probe finished. `ok=false` is a valid outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProxyTestRead"
+              examples:
+                success:
+                  value:
+                    ok: true
+                    source: system
+                    proxy: http://127.0.0.1:7890
+                    probe_url: https://www.youtube.com/robots.txt
+                    http_status: 200
+                    elapsed_ms: 190
+                    bytes_read: 792
+                    error: null
+                    summary: "连通：https://www.youtube.com/robots.txt 返回 HTTP 200，用时 190 ms（代理来源：system，代理：http://127.0.0.1:7890）"
+                    next_steps: []
+                failure:
+                  value:
+                    ok: false
+                    source: setting
+                    proxy: http://127.0.0.1:7890
+                    probe_url: https://www.youtube.com/robots.txt
+                    http_status: null
+                    elapsed_ms: 2008
+                    bytes_read: 0
+                    error: "URLError: <urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+                    summary: "通过代理 http://127.0.0.1:7890 访问失败：URLError。"
+                    next_steps:
+                      - 确认代理软件正在运行、端口一致；改完回到这里重新检测
+                      - 若代理软件实际没开，把设置改成 direct 以强制直连，避免所有请求都在等超时
+                      - 浏览器能打开 youtube.com 不代表应用能：浏览器可能走系统代理，而这里用的是设置里的地址
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/cookies/verify:
+    post:
+      tags: [diagnostics]
+      operationId: verifyCookies
+      summary: Inspect the local cookie jar, optionally by logging in
+      description: |
+        Offline inspection (format, domains, auth cookie names, expiry) and,
+        when `deep=true`, one real request to `https://www.youtube.com/` to read
+        `"LOGGED_IN"` out of the returned page. This is the only way to tell
+        "the login is valid" apart from "the cookies are stale but still on
+        disk". The file itself is never echoed back and never modified.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CookieVerifyRequest"
+            examples:
+              deep:
+                value:
+                  deep: true
+              offline:
+                value:
+                  deep: false
+      responses:
+        "200":
+          description: Cookie health report.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CookieHealthRead"
+              examples:
+                valid:
+                  value:
+                    present: true
+                    path: D:\code-repo\cascade\data\cookies.txt
+                    filename: cookies.txt
+                    size_bytes: 6534
+                    format_ok: true
+                    format_note: Netscape 格式（Tab 分隔 7 列）
+                    cookie_count: 44
+                    domains:
+                      youtube.com: 23
+                      google.com: 13
+                      accounts.google.com: 6
+                    youtube_domain_count: 23
+                    auth_cookie_names: [SID, HSID, SAPISID, LOGIN_INFO]
+                    missing_auth_cookie_names: [SSID]
+                    anonymous_only: false
+                    expired_count: 0
+                    verdict: 登录态有效：YouTube 已识别为已登录
+                    next_steps: []
+                    logged_in: true
+                    logged_in_detail: 'YouTube 返回的页面里出现了 "LOGGED_IN":true'
+                    checked_at: 1790000000.0
+                wrongDomain:
+                  value:
+                    present: true
+                    path: D:\code-repo\cascade\data\cookies.txt
+                    cookie_count: 9
+                    domains:
+                      google.com: 9
+                    youtube_domain_count: 0
+                    auth_cookie_names: [SID, HSID]
+                    anonymous_only: false
+                    verdict: 登录态无效：cookie 没有落在 youtube.com 域上，所以请求被当成匿名
+                    next_steps:
+                      - 这是「只导出到 .google.com」的典型症状：SID 虽然存在，但 .google.com 的 cookie 不会发给 youtube.com
+                      - 用 python scripts/export_cookies_via_cdp.py 重新导出（它会校验域名，拿不到就拒绝写文件）
+                    logged_in: false
+                    logged_in_detail: 'YouTube 返回的页面里是 "LOGGED_IN":false —— 请求被当成匿名'
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /api/analyze:
     post:
@@ -1618,6 +1798,148 @@ components:
           description: Let the backend close the browser to release a locked
             cookie database (Edge only).
 
+    ProxyTestRequest:
+      type: object
+      description: |
+        `proxy` follows the exact semantics of `SettingsUpdate.proxy` but is
+        never persisted. Omit it (or send `null`) to probe whatever is
+        currently effective.
+      properties:
+        proxy:
+          type: [string, "null"]
+          description: |
+            Absent/null - use the resolved proxy (setting > system > environment).
+            A URL - probe that address only.
+            `direct` / `none` / `off` / `-` - probe without any proxy.
+          example: http://127.0.0.1:7890
+
+    ProxyTestRead:
+      type: object
+      required: [ok, source, probe_url]
+      description: Raw evidence of a single proxy probe.
+      properties:
+        ok:
+          type: boolean
+          description: True only when the status is 200 and the body is non-empty.
+        source:
+          type: string
+          enum: [setting, system, environment, direct, none]
+          description: Where the proxy came from (same vocabulary as SettingsRead.proxy_source).
+          example: system
+        proxy:
+          type: [string, "null"]
+          description: Proxy actually used, credentials redacted. `null` means direct.
+          example: http://127.0.0.1:7890
+        probe_url:
+          type: string
+          example: https://www.youtube.com/robots.txt
+        http_status:
+          type: [integer, "null"]
+          example: 200
+        elapsed_ms:
+          type: integer
+          example: 190
+        bytes_read:
+          type: integer
+          example: 792
+        error:
+          type: [string, "null"]
+          description: Original exception text, kept verbatim for the log.
+          example: "URLError: <urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>"
+        summary:
+          type: string
+          description: One-sentence human conclusion.
+        next_steps:
+          type: array
+          items:
+            type: string
+          description: Actionable advice. Failure responses always carry at least one.
+
+    CookieVerifyRequest:
+      type: object
+      properties:
+        deep:
+          type: boolean
+          default: true
+          description: |
+            true - also send the cookie jar to https://www.youtube.com/ and read
+            `"LOGGED_IN"` (needs network).
+            false - offline inspection only.
+
+    CookieHealthRead:
+      type: object
+      required: [present, path]
+      description: |
+        Three layers: file (format), content (domains and auth cookie names),
+        and verdict (what to do). `youtube_domain_count == 0` is the most
+        dangerous state - the file may contain `SID` yet every request is
+        anonymous, because `.google.com` cookies are never sent to
+        `www.youtube.com`.
+      properties:
+        present:
+          type: boolean
+        path:
+          type: string
+          example: D:\code-repo\cascade\data\cookies.txt
+        filename:
+          type: [string, "null"]
+          example: cookies.txt
+        size_bytes:
+          type: integer
+          example: 6534
+        format_ok:
+          type: boolean
+        format_note:
+          type: string
+          example: Netscape 格式（Tab 分隔 7 列）
+        cookie_count:
+          type: integer
+          example: 44
+        domains:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            youtube.com: 23
+            google.com: 13
+        youtube_domain_count:
+          type: integer
+          example: 23
+        auth_cookie_names:
+          type: array
+          items:
+            type: string
+          description: Recognised auth cookie names that are present.
+          example: [SID, HSID, SAPISID, LOGIN_INFO]
+        missing_auth_cookie_names:
+          type: array
+          items:
+            type: string
+          example: [SSID]
+        anonymous_only:
+          type: boolean
+        expired_count:
+          type: integer
+          example: 0
+        verdict:
+          type: string
+          example: 登录态有效：YouTube 已识别为已登录
+        next_steps:
+          type: array
+          items:
+            type: string
+        logged_in:
+          type: [boolean, "null"]
+          description: null when the network check was skipped or inconclusive.
+        logged_in_detail:
+          type: [string, "null"]
+          description: The raw observation behind `logged_in`.
+          example: 'YouTube 返回的页面里出现了 "LOGGED_IN":true'
+        checked_at:
+          type: number
+          format: double
+          example: 1790000000.0
+
     DiagnosticsRead:
       type: object
       required: [cookies_enabled, dependencies]
@@ -1642,9 +1964,38 @@ components:
             aria2c_connections, po_token_provider_available, po_token_provider,
             po_token_provider_version, youtube_po_browser_path_configured,
             youtube_po_token_configured, youtube_visitor_data_configured,
-            js_runtime, js_runtime_name, js_runtime_version, yt_dlp_version,
-            youtube_max_parallel_downloads, anti403_http_chunk_size_mb,
-            throttled_rate_kbps.
+            js_runtime, js_runtime_name, js_runtime_version, js_runtime_error,
+            js_runtime_candidates_rejected, proxy, proxy_source,
+            proxy_writes_ydl_option, system_proxy, environment_proxy,
+            yt_dlp_version, youtube_max_parallel_downloads,
+            anti403_http_chunk_size_mb, throttled_rate_kbps.
+        log_file:
+          type: [string, "null"]
+          description: |
+            Absolute path of the log file being written. `null` when the
+            directory is not writable (console-only logging). The file content
+            is never exposed through the API.
+          example: D:\code-repo\cascade\data\logs\app.log
+        sanitized_environment:
+          type: array
+          description: |
+            Host environment variables removed at startup because they break the
+            JS runtime (for example `NODE_OPTIONS=--require=...`, which Node
+            refuses to load under yt-dlp's `--experimental-permission`). This is
+            an audit trail of an action the app took - nothing is hidden.
+          items:
+            type: object
+            required: [name, value, reason]
+            properties:
+              name:
+                type: string
+                example: NODE_OPTIONS
+              value:
+                type: string
+                example: '--require="C:\tools\shim.cjs"'
+              reason:
+                type: string
+          example: []
 
     JobStatus:
       type: string

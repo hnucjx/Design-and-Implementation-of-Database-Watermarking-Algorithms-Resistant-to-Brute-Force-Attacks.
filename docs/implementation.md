@@ -4,7 +4,7 @@
 
 ## 后端入口
 
-FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
+FastAPI 应用由 [create_app](../backend/app/main.py#L53) 创建，启动时：
 
 - 创建配置和目录。
 - 初始化 SQLite engine 和表结构。
@@ -29,7 +29,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 
 ## 任务调度
 
-[JobManager](../backend/app/job_manager.py#L33) 负责队列、worker、暂停、重启、删除、任务状态和事件发布。
+[JobManager](../backend/app/job_manager.py#L35) 负责队列、worker、暂停、重启、删除、任务状态和事件发布。
 
 关键流程：
 
@@ -48,28 +48,44 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L41) 创建，启动时：
 - `_item_claim_lock` 只包住「刷新状态 → 检查 queued → 置 running → commit」，不覆盖下载过程。
 - `_cookie_import_lock` 只在 403 触发的 cookies 刷新导入期间短暂持有。
 
-事件有两份记录：内存中的 `EventBroker`（SSE 推送）和持久化的 `JobEvent` 行。worker 线程通过 [_publish_threadsafe](../backend/app/job_manager.py#L1060) 写库，再用 `loop.call_soon_threadsafe` 把推送调度回事件循环；纯异步路径直接用 [_publish](../backend/app/job_manager.py#L1047)。
+事件有两份记录：内存中的 `EventBroker`（SSE 推送）和持久化的 `JobEvent` 行。worker 线程通过 [_publish_threadsafe](../backend/app/job_manager.py#L1078) 写库，再用 `loop.call_soon_threadsafe` 把推送调度回事件循环；纯异步路径直接用 [_publish](../backend/app/job_manager.py#L1065)。
 
 ## yt-dlp 封装
 
-[YtDlpService](../backend/app/ytdlp_service.py#L88) 是 yt-dlp 的边界层。它负责：
+[YtDlpService](../backend/app/ytdlp_service.py#L187) 是 yt-dlp 的边界层。它负责：
 
-- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L167)。
-- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L204)。
-- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L239)。
-- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L318)。
-- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L116)。
-- 错误分类：cookies、403、连接重置和格式不可用。
+- 解析元数据：[extract_metadata](../backend/app/ytdlp_service.py#L355)。
+- 下载前选择计划格式：[prepare_download](../backend/app/ytdlp_service.py#L393)。
+- 构建下载参数：[build_download_options](../backend/app/ytdlp_service.py#L428)。
+- 同清晰度 profile 重试：[download](../backend/app/ytdlp_service.py#L508)。
+- 依赖诊断：[get_dependency_status](../backend/app/ytdlp_service.py#L287)。
+- 错误分类：cookies、403、连接重置、JS challenge 和格式不可用。
 
 `YtDlpService` 不把任意 yt-dlp 参数暴露给 API，只接受项目定义的 `DownloadOptions`。
 
-profile 顺序由 [_download_profiles](../backend/app/ytdlp_service.py#L539) 决定：`default`、`default_aria2c`（仅当 aria2c 启用且可执行文件存在）、`mweb_pot_chrome`、`safari_hls`、`chrome_default`。`default` profile 如果不是媒体流阻断错误会立即抛出（不换 profile），其余错误才继续下一个 profile。`DownloadCancelled` 与 `DownloadStalled` 都会跳出重试链直接上抛，见 [download](../backend/app/ytdlp_service.py#L318)。
+### 代理
+
+代理**解析**在 [proxy.py](../backend/app/proxy.py#L169)（纯函数、优先级：显式 > Windows 系统代理 > 环境变量），**验证**在 [connectivity.py](../backend/app/connectivity.py#L73)（一次朴素 HTTPS 探针）。`YtDlpService` 在元数据提取与下载两条路径上写入 `ydl_opts['proxy']`，**只有**来源是 `setting` / `system` / `direct` 时才写（来源是环境变量时留给 yt-dlp 自己解析，以保留 `NO_PROXY` 语义）。职责划分与取值语义见 [技术文档](technical.md#代理与网络出口)。
+
+### JS 运行时
+
+[_detect_js_runtime](../backend/app/ytdlp_service.py#L934) 的探测结果是记忆化的，且**真的用与 yt-dlp 相同的权限模型跑一次**候选运行时，而不是只看文件是否存在；失败原因通过 `js_runtime_error` / `js_runtime_candidates_rejected` 暴露给诊断。[reset_js_runtime_cache](../backend/app/ytdlp_service.py#L264) 供「重新自检」清缓存，见 `POST /api/diagnostics/runtime`。
+
+启动时 [runtime_env.sanitize_environment](../backend/app/runtime_env.py#L58) 会摘掉会打坏 JS 运行时的宿主环境变量（`NODE_OPTIONS` 命中强加载开关），并返回记录用于日志与诊断。理由见 [技术文档](technical.md#js-运行时与-n-challenge)。
+
+### 错误翻译
+
+[error_advice.advise](../backend/app/error_advice.py#L116) 把异常链上的文本翻成「code + 结论 + 下一步」，判定顺序是 JS challenge → cookies → 代理 → 媒体流。`YtDlpService._exception_chain` 直接委托给它的 `exception_chain()`（BFS 展开 `__cause__` / `__context__`，去重防环）。
+
+调用点有两处，**都被 `try/except` 保护**（诊断本身出错绝不能改变重试与失败行为，测试里的 fake service 也没有这个方法）：profile 失败处与任务失败处，后者见 [_log_item_failure](../backend/app/job_manager.py#L1015)。
+
+profile 顺序由 [_download_profiles](../backend/app/ytdlp_service.py#L796) 决定：`default`、`default_aria2c`（仅当 aria2c 启用且可执行文件存在）、`mweb_pot_chrome`、`safari_hls`、`chrome_default`。`default` profile 如果不是媒体流阻断错误会立即抛出（不换 profile），其余错误才继续下一个 profile。`DownloadCancelled` 与 `DownloadStalled` 都会跳出重试链直接上抛，见 [download](../backend/app/ytdlp_service.py#L508)。
 
 ## 停滞看门狗
 
-[StallGuard](../backend/app/stall_guard.py#L32) 在 [_download_once](../backend/app/ytdlp_service.py#L366) 的 progress hook 里被调用：每次回调先检查取消标志，再 `observe()` 一次，最后才交给任务管理器的进度 hook。
+[StallGuard](../backend/app/stall_guard.py#L32) 在 [_download_once](../backend/app/ytdlp_service.py#L569) 的 progress hook 里被调用：每次回调先检查取消标志，再 `observe()` 一次，最后才交给任务管理器的进度 hook。
 
-判据是「历史最大已下载字节是否被刷新」（`best_bytes` + 达成时间），而不是「本轮是否增长」——这样才能区分节流振荡与正常断点续传。`status == "finished"` 会重置基线，因为合并格式在视频流与音频流之间会重新从 0 计数。超时后抛出 `DownloadStalled`，文案固定为「下载停滞：N 秒内没有新增字节」，不含 `timed out` / `reset` / `403` 等词，避免被 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L470) 误分类。`YTDL_STALL_TIMEOUT_SECONDS=0` 表示关闭。
+判据是「历史最大已下载字节是否被刷新」（`best_bytes` + 达成时间），而不是「本轮是否增长」——这样才能区分节流振荡与正常断点续传。`status == "finished"` 会重置基线，因为合并格式在视频流与音频流之间会重新从 0 计数。超时后抛出 `DownloadStalled`，文案固定为「下载停滞：N 秒内没有新增字节」，不含 `timed out` / `reset` / `403` 等词，避免被 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L673) 误分类。`YTDL_STALL_TIMEOUT_SECONDS=0` 表示关闭。
 
 ## 清晰度与降级
 
@@ -101,7 +117,7 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 ## 前端实现
 
-前端 API 调用集中在 [api.ts](../frontend/src/api.ts#L24)。共享类型集中在 [types.ts](../frontend/src/types.ts)。任务中心展示组件是 [JobQueue](../frontend/src/components/JobQueue.tsx#L13)。
+前端 API 调用集中在 [api.ts](../frontend/src/api.ts#L27)。共享类型集中在 [types.ts](../frontend/src/types.ts)。任务中心展示组件是 [JobQueue](../frontend/src/components/JobQueue.tsx#L16)。
 
 辅助函数职责：
 
@@ -126,4 +142,16 @@ API 返回不直接暴露 SQLModel，而由 [read_job](../backend/app/job_read_m
 
 ## 日志安全
 
-下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L1013)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。
+下载失败日志会记录 job id、item id、标题、清晰度、错误分类和清洗后的错误文本，见 [_log_item_failure](../backend/app/job_manager.py#L1015)。日志清洗工具位于 [log_safety.py](../backend/app/log_safety.py#L11)，用于避免敏感 query、cookies 或 token 进入日志。
+
+## 日志落盘
+
+[configure_logging](../backend/app/logging_setup.py#L48) 在 `create_app()` 一开始就被调用，把 root logger 配成「控制台 + 文件」：`<data_dir>/logs/app.log`，UTF-8，`时间 级别 模块 | 消息`，2 MiB × 3 轮转。
+
+三个容易踩的点：
+
+- **以前根本没有配置过 logging**：`logger.info("proxy resolved: ...")` 只会冒泡到 root，而 root 没有 handler，于是 `logging.lastResort`（WARNING、无格式）接手 —— INFO 被静默丢弃、WARNING 只剩裸消息。「代理明明没生效，日志里却什么都看不到」就是这么来的。
+- **uvicorn 的 logger 默认 `propagate=False`**，所以同一个文件 handler 也显式挂到 `uvicorn` / `uvicorn.error` / `uvicorn.access` 上，否则启动与访问日志会漏掉。
+- **`create_app()` 会被反复调用**（测试里尤其多），模块级 `_configured` 保证幂等；目录不可写时降级成「仅控制台」并 `root.warning`，不让应用起不来。
+
+日志级别可用 `YTDL_LOG_LEVEL` 覆盖（默认 INFO）。路径通过 `/api/diagnostics.log_file` 暴露给界面。

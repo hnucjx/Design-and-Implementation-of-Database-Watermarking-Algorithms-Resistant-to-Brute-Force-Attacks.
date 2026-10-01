@@ -4,7 +4,7 @@
 
 ## 机器可读规范
 
-[openapi.yaml](openapi.yaml) 是本 API 的 OpenAPI 3.1.0 描述，覆盖全部 25 个操作、24 个 schema、复用的路径参数/错误响应组件与逐接口请求/响应示例。它由人工从 [main.py](../backend/app/main.py)（路由与状态码）与 [schemas.py](../backend/app/schemas.py)（字段与必填性）编写；**这两个文件仍是唯一事实来源**，规范只做投影。
+[openapi.yaml](openapi.yaml) 是本 API 的 OpenAPI 3.1.0 描述，覆盖全部 28 个操作、28 个 schema、复用的路径参数/错误响应组件与逐接口请求/响应示例。它由人工从 [main.py](../backend/app/main.py)（路由与状态码）与 [schemas.py](../backend/app/schemas.py)（字段与必填性）编写；**这两个文件仍是唯一事实来源**，规范只做投影。
 
 可直接用于：
 
@@ -22,17 +22,20 @@
 
 ## 基本约定
 
-- 后端应用由 [create_app](../backend/app/main.py#L41) 创建；API 默认绑定 `127.0.0.1:8000`，单端口模式下同时托管 `frontend/dist`。
+- 后端应用由 [create_app](../backend/app/main.py#L53) 创建；API 默认绑定 `127.0.0.1:8000`，单端口模式下同时托管 `frontend/dist`。
 - API 返回 JSON；`DELETE /api/jobs/{id}` 与四个本地打开接口成功时返回 `204`。
-- 前端统一请求封装在 [request](../frontend/src/api.ts#L24)，非 2xx 响应会抛出 `ApiError`，并保留结构化 `detail`。
-- Cookies 导入锁库错误使用结构化 `detail`，字段见 [BrowserCookieImportError.to_detail](../backend/app/browser_cookies.py#L46)。
+- 前端统一请求封装在 [request](../frontend/src/api.ts#L27)，非 2xx 响应会抛出 `ApiError`，并保留结构化 `detail`。
+- Cookies 导入锁库错误使用结构化 `detail`，字段见 [BrowserCookieImportError.to_detail](../backend/app/browser_cookies.py#L58)。
 
 ## Endpoint
 
 | 方法 | 路径 | 用途 | 主要模型 |
 | --- | --- | --- | --- |
 | `GET` | `/health` | 健康检查。 | `dict[str, bool]` |
-| `GET` | `/api/diagnostics` | 依赖和运行状态诊断。 | [`DiagnosticsRead`](../backend/app/schemas.py#L199) |
+| `GET` | `/api/diagnostics` | 依赖和运行状态诊断。 | [`DiagnosticsRead`](../backend/app/schemas.py#L250) |
+| `POST` | `/api/diagnostics/runtime` | 清掉 JS 运行时探测缓存后重新自检，返回同一份诊断。 | [`DiagnosticsRead`](../backend/app/schemas.py#L250) |
+| `POST` | `/api/proxy/test` | 检测代理连通性，可临时试一个**未保存**的地址。 | [`ProxyTestRequest`](../backend/app/schemas.py#L206)、[`ProxyTestRead`](../backend/app/schemas.py#L211) |
+| `POST` | `/api/cookies/verify` | cookies 体检（离线格式/域名/鉴权项，可联网确认登录态）。 | [`CookieVerifyRequest`](../backend/app/schemas.py#L224)、[`CookieHealthRead`](../backend/app/schemas.py#L229) |
 | `POST` | `/api/analyze` | 解析单视频或 playlist。 | [`AnalyzeRequest`](../backend/app/schemas.py#L14)、[`AnalyzeResponse`](../backend/app/schemas.py#L43) |
 | `POST` | `/api/jobs` | 创建下载任务并入队。 | [`CreateJobRequest`](../backend/app/schemas.py#L72)、[`JobRead`](../backend/app/schemas.py#L128) |
 | `GET` | `/api/jobs` | 获取任务列表。 | `list[JobRead]` |
@@ -50,19 +53,19 @@
 | `DELETE` | `/api/jobs/{job_id}` | 删除任务，可选删除输出视频及字幕、metadata、缩略图、description 等相关文件。 | 查询参数 `delete_files` |
 | `GET` | `/api/events` | SSE 任务事件流。 | `text/event-stream` |
 | `GET` | `/api/settings` | 获取设置。 | [`SettingsRead`](../backend/app/schemas.py#L164) |
-| `PUT` | `/api/settings` | 更新设置。 | [`SettingsUpdate`](../backend/app/schemas.py#L175) |
+| `PUT` | `/api/settings` | 更新设置。 | [`SettingsUpdate`](../backend/app/schemas.py#L182) |
 | `POST` | `/api/settings/download-dir/select` | 打开本机目录选择对话框。 | `SettingsRead` |
-| `POST` | `/api/cookies` | 上传 cookies 文件。 | [`CookieStatus`](../backend/app/schemas.py#L186) |
-| `POST` | `/api/cookies/from-browser` | 从浏览器导入 cookies。 | [`BrowserCookieImportRequest`](../backend/app/schemas.py#L194) |
+| `POST` | `/api/cookies` | 上传 cookies 文件。 | [`CookieStatus`](../backend/app/schemas.py#L193) |
+| `POST` | `/api/cookies/from-browser` | 从浏览器导入 cookies。 | [`BrowserCookieImportRequest`](../backend/app/schemas.py#L201) |
 | `DELETE` | `/api/cookies` | 清除本地 cookies。 | `CookieStatus` |
 
-路由实现集中在 [main.py](../backend/app/main.py#L111)。`POST /api/jobs` 成功时返回 `201`，其余返回模型或 `204`。
+路由实现集中在 [main.py](../backend/app/main.py#L135)。`POST /api/jobs` 成功时返回 `201`，其余返回模型或 `204`。
 
 ## 关键请求模型
 
 ### AnalyzeRequest
 
-`url` 是待解析链接；`cookies_enabled` 控制解析时是否使用本地 cookies。前端默认传 `true`，见 [analyzeUrl](../frontend/src/api.ts#L57)。
+`url` 是待解析链接；`cookies_enabled` 控制解析时是否使用本地 cookies。前端默认传 `true`，见 [analyzeUrl](../frontend/src/api.ts#L61)。
 
 ### DownloadOptions
 
@@ -96,13 +99,28 @@
 
 `PUT /api/settings` 采用局部更新语义：只有显式提交的字段才会被改写。`default_speed_limit_kbps` 通过 `model_fields_set` 判断，因此显式提交 `null` 表示取消限速；`aria2c_connections` 只更新设置与 `YtDlpService`，不会打断正在下载的任务。
 
-更新并发会即时调整后台 worker 数量。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。保存后的值写入 `Setting` 表并在下次启动时恢复，见 [_apply_stored_settings](../backend/app/main.py#L576)。
+更新并发会即时调整后台 worker 数量。更新限速或重试次数后，后端会同步 queued/running/paused 任务的 `DownloadOptions`；如果当前有视频正在下载，会取消当前 yt-dlp 实例、保留 `.part` 文件，并重新入队以断点续传方式应用新设置。保存后的值写入 `Setting` 表并在下次启动时恢复，见 [_apply_stored_settings](../backend/app/main.py#L675)。
 
 `POST /api/settings/download-dir/select` 会在服务端弹出本机目录选择对话框；无图形环境时返回 `400`（`Folder dialog is unavailable in this environment.`），此时应改用 `PUT /api/settings` 直接提交 `download_dir`。
 
+### ProxyTestRequest / CookieVerifyRequest
+
+`POST /api/proxy/test` 的 `proxy` 语义与 `PUT /api/settings` 完全一致，但**不写库**：
+
+| 值 | 行为 |
+| --- | --- |
+| 不传 / `null` | 用当前生效的解析结果（显式设置 → 系统代理 → 环境变量）去探测 |
+| 代理地址字符串 | 只试这个地址 |
+| `direct` / `none` / `off` / `-` | 这次探测强制直连 |
+
+它不修改设置，也不影响正在下载的任务；界面上的「先试输入框里的地址」用的就是它。
+
+`POST /api/cookies/verify` 的 `deep` 默认为 `true`：为 `true` 时会拿这份 cookies 真的请求一次
+`https://www.youtube.com/`，读返回页面里的 `"LOGGED_IN"`；为 `false` 时只做离线体检。两者都不修改 cookies 文件。
+
 ### CookieStatus
 
-`POST /api/cookies` 与 `POST /api/cookies/from-browser` 返回 [`CookieStatus`](../backend/app/schemas.py#L186)：`enabled`、`filename`、`source`（`none` / `file` / `browser`）、`browser`、`imported_count`。诊断与设置接口只返回 `cookies_enabled` 布尔值，不返回 cookies 内容。
+`POST /api/cookies` 与 `POST /api/cookies/from-browser` 返回 [`CookieStatus`](../backend/app/schemas.py#L193)：`enabled`、`filename`、`source`（`none` / `file` / `browser`）、`browser`、`imported_count`。诊断与设置接口只返回 `cookies_enabled` 布尔值，不返回 cookies 内容。
 
 ### DeleteJobItemsRequest
 
@@ -118,9 +136,9 @@
 
 ### AnalyzeResponse
 
-包含标题、是否 playlist、条目、格式列表、字幕列表、自动字幕列表和 ffmpeg 状态。格式和字幕映射逻辑见 [extract_metadata](../backend/app/ytdlp_service.py#L167)。
+包含标题、是否 playlist、条目、格式列表、字幕列表、自动字幕列表和 ffmpeg 状态。格式和字幕映射逻辑见 [extract_metadata](../backend/app/ytdlp_service.py#L355)。
 
-`entries` 只在 playlist 场景非空；`formats` 已过滤掉纯 storyboard/图片格式，见 [_map_formats](../backend/app/ytdlp_service.py#L741)。
+`entries` 只在 playlist 场景非空；`formats` 已过滤掉纯 storyboard/图片格式，见 [_map_formats](../backend/app/ytdlp_service.py#L1120)。
 
 ### JobRead 与 JobItemRead
 
@@ -135,6 +153,31 @@
 - `speed`：运行中是瞬时速度；终态是平均速度。
 
 本地文件操作 endpoint 不接收前端传入的任意路径，只使用数据库中的 `output_path` 或 `download_dir`。播放视频时后端会选择可用播放器；找不到可确认能解码当前格式的播放器时返回 `409`，错误内容包含当前格式和建议安装的播放器。打开文件夹时 Windows 会新开 Explorer 窗口并尽量置前。
+
+### ProxyTestRead
+
+一次探针的**原始证据**，不做二次加工：`ok`、`source`（`setting` / `system` / `environment` / `direct`）、
+`proxy`（脱敏后；直连时为 `null`）、`probe_url`（默认 `https://www.youtube.com/robots.txt`）、
+`http_status`、`elapsed_ms`、`bytes_read`、`error`（原始异常字符串）、
+`summary`（一句人话结论）、`next_steps`（可执行建议数组）。
+
+判定成功要求 `http_status == 200` 且读到非空响应体；失败一律带上 `next_steps`，不给「光秃秃的失败」。
+
+注意「强制直连失败」是**可能的正常结果**：`source=direct` 时 summary 会明确写「如果本机直连本来就被拦，这是预期结果」。
+
+### CookieHealthRead
+
+cookies 体检结果。字段分三层：
+
+- **文件层**：`present`、`path`、`filename`、`size_bytes`、`format_ok`、`format_note`（是否为 Tab 分隔 7 列的 Netscape 格式）。
+- **内容层**：`cookie_count`、`domains`（域名 → 条数）、`youtube_domain_count`、`auth_cookie_names`、
+  `missing_auth_cookie_names`、`anonymous_only`、`expired_count`。
+- **结论层**：`verdict`（一句中文结论）、`next_steps`、`logged_in`（`true` / `false` / `null`）、
+  `logged_in_detail`（原始证据，例如页面里出现了什么）、`checked_at`。
+
+`youtube_domain_count == 0` 是最值得警惕的一档：文件里可能有 `SID`，但 `.google.com` 域的 cookie
+**永远不会**发给 `www.youtube.com`，请求实则匿名。这也是必须联网校验 `logged_in` 的原因 ——
+只看文件内容区分不出「登录态有效」与「cookie 还在但已失效」。
 
 ### ResolutionFallback
 
@@ -156,7 +199,7 @@
 | `409` | 浏览器 cookies 数据库被占用；单视频专用接口被用于合集；输出文件/目录尚不可用或缺失；找不到可解码播放器。 | `Edge 正在运行，cookies 数据库被锁定。…`、`合集任务请打开具体视频。`、`视频文件尚不可用。`、`找不到可确认能解码当前视频的播放器。…` |
 | `422` | 请求体未通过 Pydantic 校验（缺字段、越界、未知枚举值）。 | FastAPI 校验错误数组。 |
 
-对应实现见 [main.py](../backend/app/main.py#L428)（锁库错误映射为 `409`）与各路由内的 `HTTPException`。
+对应实现见 [main.py](../backend/app/main.py#L527)（锁库错误映射为 `409`）与各路由内的 `HTTPException`。
 
 ## 任务状态
 
@@ -173,11 +216,14 @@
 
 ## 诊断字段
 
-`GET /api/diagnostics` 返回 `{"cookies_enabled": bool, "dependencies": {...}}`，其中 `dependencies` 是 `YtDlpService.get_dependency_status()` 与配置值的合并结果，见 [main.py](../backend/app/main.py#L115)。常见字段：
+`GET /api/diagnostics` 返回 `{"cookies_enabled": bool, "dependencies": {...}, "log_file": str|null, "sanitized_environment": [...]}`，其中 `dependencies` 是 `YtDlpService.get_dependency_status()` 与配置值的合并结果，见 [main.py](../backend/app/main.py#L139)。常见字段：
 
 - `ffmpeg`、`ffprobe`
 - `yt_dlp_version`
 - `js_runtime`、`js_runtime_name`、`js_runtime_version`
+- `js_runtime_error`、`js_runtime_candidates_rejected`：**「检测到 node 却解不出 n challenge」唯一能查清楚的地方**。
+  前者是候选运行时的原始报错（例如 `ERR_ACCESS_DENIED`），后者是逐个候选被拒的原因。
+- `proxy`、`proxy_source`、`proxy_writes_ydl_option`、`system_proxy`、`environment_proxy`（`user:pass@` 已脱敏）
 - `impersonation_available`、`impersonation_targets`
 - `po_token_provider_available`、`po_token_provider`、`po_token_provider_version`
 - `youtube_po_token_configured`、`youtube_visitor_data_configured`、`youtube_po_browser_path_configured`
@@ -186,4 +232,14 @@
 - `throttled_rate_kbps`
 - `aria2c_available`、`aria2c_enabled`、`aria2c_path`、`aria2c_connections`
 
-诊断响应不返回 token 原文，只返回是否已配置的布尔值。
+顶层另外两个字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `log_file` | 应用正在写入的日志文件绝对路径；目录不可写时为 `null`（此时只有控制台日志）。界面把它做成可一键复制的「日志文件」。 |
+| `sanitized_environment` | 启动时被摘掉的、会打坏 JS 运行时的宿主环境变量，每项为 `{name, value, reason}`。**它是一份动作记录**：应用不会静默修改环境。 |
+
+`POST /api/diagnostics/runtime` 返回同一结构，但会先清掉 JS 运行时的探测缓存重新跑一遍，
+用于「刚装完 Node/Deno，不想重启应用」的场景。
+
+诊断响应不返回 token 原文，不返回 cookies 内容，只返回是否已配置的布尔值；日志文件内容也不经 API 暴露。

@@ -20,7 +20,7 @@
 
 | 模块 | 层 | 职责 | 不负责 |
 | --- | --- | --- | --- |
-| [main.py](../backend/app/main.py#L41) | L0 入口 | 装配应用与依赖、声明路由、错误状态码映射、静态资源托管、lifespan 启停。 | 不写业务规则，不做状态转换，不构造 yt-dlp 参数。 |
+| [main.py](../backend/app/main.py#L53) | L0 入口 | 装配应用与依赖、声明路由、错误状态码映射、静态资源托管、lifespan 启停。 | 不写业务规则，不做状态转换，不构造 yt-dlp 参数。 |
 | [config.py](../backend/app/config.py#L19) | L1 契约 | 声明全部设置字段、默认值与约束、目录准备。 | 不读数据库（`Setting` 覆盖在 `main.py` 里做）。 |
 | [schemas.py](../backend/app/schemas.py#L14) | L1 契约 | 定义 HTTP 线上模型与枚举。 | 不引用 yt-dlp 类型，不含业务逻辑。 |
 | [models.py](../backend/app/models.py#L27) | L1 契约 | 定义持久化表结构与 `JobStatus`。 | 不做读写编排。 |
@@ -35,9 +35,15 @@
 | [progress_persist.py](../backend/app/progress_persist.py#L5) | L3 领域 | 决定某个进度快照是否值得落库。 | 不执行写库。 |
 | [transfer_stats.py](../backend/app/transfer_stats.py#L5) | L3 领域 | 由字节增量累加平均速度。 | 不处理瞬时速度（瞬时速度直接取 payload）。 |
 | [browser_cookies.py](../backend/app/browser_cookies.py#L55) | L3 领域 | 浏览器 cookies 提取、域名过滤、锁库与 CDP fallback。 | 不决定何时刷新（决策在 `job_manager`/`main`）。 |
+| [cookie_health.py](../backend/app/cookie_health.py#L234) | L3 领域 | cookies **体检**：格式/域名/鉴权项/过期 + 一次 `LOGGED_IN` 探针合成结论。 | 不修改 cookies 文件，不决定解析用哪份（决策在 `main`）。 |
+| [proxy.py](../backend/app/proxy.py#L169) | L3 领域 | 代理**解析**：显式 > 系统 > 环境，归一化与凭据脱敏。 | 不验证通不通（那是 `connectivity`），不发请求。 |
+| [connectivity.py](../backend/app/connectivity.py#L73) | L3 领域 | 代理**验证**：一次朴素 HTTPS 探针，返回状态码/耗时/原始异常。 | 不解析代理来源，不复用 yt-dlp（避免混淆病因）。 |
+| [error_advice.py](../backend/app/error_advice.py#L116) | L3 领域 | 异常链 → 可执行诊断（JS challenge / cookies / 代理 / 媒体流四类）。 | 纯字符串判定，不联网、不读库、不改变重试行为。 |
+| [runtime_env.py](../backend/app/runtime_env.py#L58) | L5 纯工具 | 摘除会打坏 JS 运行时的宿主环境变量，并返回可留痕的记录。 | 只动本进程 `os.environ`，不改系统设置。 |
 | [output_paths.py](../backend/app/output_paths.py#L13) | L3 领域 | 输出文件、中间文件与 sidecar 的候选路径解析与发现。 | 不删除文件（删除由 `job_manager` 在受限根目录内执行）。 |
 | [system_open.py](../backend/app/system_open.py#L23) | L3 领域 | 选择可解码播放器、打开目录、窗口置前。 | 不校验文件是否存在（调用方先解析路径）。 |
 | [db.py](../backend/app/db.py#L27) | L4 基础设施 | engine 创建、SQLite pragma、补列、WAL checkpoint、session 依赖。 | 不知道业务表语义。 |
+| [logging_setup.py](../backend/app/logging_setup.py#L48) | L4 基础设施 | 配置 root/uvicorn logger，落盘 `data/logs/app.log` 并轮转。 | 不决定打什么日志，不解析业务语义。 |
 | [paths.py](../backend/app/paths.py#L7) / [log_safety.py](../backend/app/log_safety.py#L11) | L5 纯工具 | 文件名安全化、日志敏感信息清洗。 | 无项目内依赖，可单独测试。 |
 
 ## 依赖方向与分层规则
@@ -68,7 +74,7 @@ PlantUML 源文件：[runtime-concurrency.puml](diagrams/runtime-concurrency.pum
 由此推出三条必须遵守的约定：
 
 1. **进度 hook 在工作线程上执行**，所以它使用自己的 `Session` 写库，不能复用请求级 session。
-2. **从线程发布事件要跨回事件循环**：[_publish_threadsafe](../backend/app/job_manager.py#L1060) 先写 `JobEvent` 行，再 `loop.call_soon_threadsafe` 调度 `broker.publish`。异步路径直接用 [_publish](../backend/app/job_manager.py#L1047)。
+2. **从线程发布事件要跨回事件循环**：[_publish_threadsafe](../backend/app/job_manager.py#L1078) 先写 `JobEvent` 行，再 `loop.call_soon_threadsafe` 调度 `broker.publish`。异步路径直接用 [_publish](../backend/app/job_manager.py#L1065)。
 3. **锁只保护状态转换，不保护下载**：`_item_claim_lock` 只覆盖"刷新 → 校验 queued → 置 running → commit"；`_cookie_import_lock` 只在 403 后的 cookies 刷新导入期间持有。下载本身靠 `should_cancel` 回调协作取消，而不是靠锁。
 
 并发度语义：并发是**视频级**的——worker 数等于当前并发设置，队列里流动的是 `JobItem` id。单视频任务只有 1 个 `JobItem`，因此并发设置对它无效；`set_concurrency()` 通过新增 worker 任务或投放 `None` 哨兵来调整规模。
@@ -81,11 +87,11 @@ PlantUML 源文件：[download-data-flow.puml](diagrams/download-data-flow.puml)
 
 ### 解析链接
 
-`POST /api/analyze` → `YtDlpService.extract_metadata()`（`extract_flat="in_playlist"`，带 cookies）→ `AnalyzeResponse`。若 yt-dlp 抛出的错误同时命中 cookies 提示词，则自动导入浏览器 cookies 后**重试一次**，见 [_extract_metadata_with_cookies](../backend/app/main.py#L96)。
+`POST /api/analyze` → `YtDlpService.extract_metadata()`（`extract_flat="in_playlist"`，带 cookies）→ `AnalyzeResponse`。若 yt-dlp 抛出的错误同时命中 cookies 提示词，则自动导入浏览器 cookies 后**重试一次**，见 [_extract_metadata_with_cookies](../backend/app/main.py#L120)。
 
 ### 建任务与入队
 
-`POST /api/jobs` → 解析 → 选条目（单视频合成 1 条 `VideoEntry`）→ 写 `Job` + N 个 `JobItem` → `enqueue()` 把 queued item id 放进队列。playlist 任务会额外在下载根目录下按安全化标题创建子目录，见 [_job_download_dir](../backend/app/main.py#L545)。
+`POST /api/jobs` → 解析 → 选条目（单视频合成 1 条 `VideoEntry`）→ 写 `Job` + N 个 `JobItem` → `enqueue()` 把 queued item id 放进队列。playlist 任务会额外在下载根目录下按安全化标题创建子目录，见 [_job_download_dir](../backend/app/main.py#L644)。
 
 ### 下载与进度
 
@@ -125,11 +131,11 @@ worker 领取 item → 声明式预检测（`prepare_download`，命中则不再
 
 | 分类 | 判定依据 | 处理 |
 | --- | --- | --- |
-| cookies 缺失/需登录 | 错误链中出现 cookies 提示词 + 登录/bot 关键词，见 [is_cookie_required_error](../backend/app/ytdlp_service.py#L519)。 | 刷新浏览器 cookies 后重试一次；仍失败则给出两条可操作建议。 |
-| 媒体流阻断 | 403/`forbidden` 或连接重置族关键词，见 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L470)。 | 在同清晰度下换 profile 重试；终态文案前置 cookies 状态，并给出降清晰度重启建议。 |
+| cookies 缺失/需登录 | 错误链中出现 cookies 提示词 + 登录/bot 关键词，见 [is_cookie_required_error](../backend/app/ytdlp_service.py#L776)。 | 刷新浏览器 cookies 后重试一次；仍失败则给出两条可操作建议。 |
+| 媒体流阻断 | 403/`forbidden` 或连接重置族关键词，见 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L673)。 | 在同清晰度下换 profile 重试；终态文案前置 cookies 状态，并给出降清晰度重启建议。 |
 | 目标格式不可用 | 错误文本含 `requested format is not available`。 | 标注 `requested_resolution_unselectable` 并把错误替换成降级说明。 |
 | 停滞 | 看门狗判定字节峰值超时未刷新。 | 直接失败，不换 profile、不重试。 |
-| 其他 | 兜底。 | 透传清洗后的错误文本，见 [readable_error_message](../backend/app/ytdlp_service.py#L499)。 |
+| 其他 | 兜底。 | 透传清洗后的错误文本，见 [readable_error_message](../backend/app/ytdlp_service.py#L747)。 |
 
 可观测性由三处构成：任务中心读模型（进度/速度/大小/实际分辨率/格式/错误）、`/api/diagnostics`（依赖与稳定性参数，且不回显 token 原文）、以及 `JobEvent` 表（事件审计，可与 SSE 推送交叉核对）。
 

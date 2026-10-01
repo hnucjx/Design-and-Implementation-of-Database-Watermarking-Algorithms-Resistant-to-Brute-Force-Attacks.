@@ -38,7 +38,7 @@
 详情：
 
 - 文件删除在 [_delete_output_files](../backend/app/job_manager.py#L342) 中执行，所有候选路径通过 [_is_under_allowed_root](../backend/app/job_manager.py#L364) 验证，仅允许在下载根目录或任务下载子目录下操作
-- 本地播放/打开文件夹接口（[main.py](../backend/app/main.py#L249) 起）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
+- 本地播放/打开文件夹接口（[main.py](../backend/app/main.py#L342) 起）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
 - [safe_path_name](../backend/app/paths.py#L7) 为 playlist 目录名移除 `<>:"/\|?*` 等不安全字符，并限制长度为 120 字符
 - [discover_output_file_candidates](../backend/app/output_paths.py#L30) 仅在给定的 `job_download_dir` 内按 YouTube video ID 匹配文件，不遍历上级目录
 
@@ -93,10 +93,16 @@
 
 详情：
 
-- [GET /api/diagnostics](../backend/app/main.py#L115) 仅返回 PO token / visitor data 的"是否已配置"布尔值，不返回原文（[get_dependency_status](../backend/app/ytdlp_service.py#L133)）
+- [GET /api/diagnostics](../backend/app/main.py#L139) 仅返回 PO token / visitor data 的"是否已配置"布尔值，不返回原文（[get_dependency_status](../backend/app/ytdlp_service.py#L287)）
 - [sanitize_log_message](../backend/app/log_safety.py#L11) 在写入日志前通过正则替换移除 URL query string（包含 cookie、token、authorization 等参数）
+- 代理 URL 在日志与 API 响应里都先经 [redact_proxy_credentials](../backend/app/proxy.py#L62) 脱敏（`user:pass@` → `***`）
 - cookies 文件（`data/cookies.txt`）和 `.env` 文件均在 `.gitignore` 中排除，不会进入 Git
 - 浏览器 cookie 导入只提取 YouTube/Google 域名（`YOUTUBE_COOKIE_DOMAIN_SUFFIXES`，[browser_cookies.py](../backend/app/browser_cookies.py#L20)）
+
+新增的两处暴露面（均为本机、且是排障必需，见第 18 节的复核项）：
+
+- `GET /api/diagnostics` 的 `log_file` 会返回日志文件的**本地绝对路径**。它不返回文件内容，作用只是让用户能找到证据。
+- `GET /api/diagnostics` 的 `sanitized_environment` 会返回被摘除环境变量的**原值**（例如注入的 `NODE_OPTIONS=--require="C:\...\某补丁.cjs"`）。原值可能包含本地路径，可能暴露宿主工具链的位置，但不包含凭据。
 
 ## 8. Cookie 安全
 
@@ -106,10 +112,10 @@
 
 详情：
 
-- 浏览器 cookie 导入使用 [BrowserCookieImporter](../backend/app/browser_cookies.py#L55)，支持 Edge/Chrome/Firefox/Brave/Chromium 等
+- 浏览器 cookie 导入使用 [BrowserCookieImporter](../backend/app/browser_cookies.py#L67)，支持 Edge/Chrome/Firefox/Brave/Chromium 等
 - 导入的 cookies 过滤为仅 youtube.com 和 google.com 域名
 - Edge cookies 数据库被锁时，提供提示并支持关闭浏览器重试
-- CDP fallback（[_extract_edge_cookies_via_cdp](../backend/app/browser_cookies.py#L157)）使用临时 headless Edge 实例，完成后立即终止进程
+- CDP fallback（[_extract_edge_cookies_via_cdp](../backend/app/browser_cookies.py#L176)）使用临时 headless Edge 实例，完成后立即终止进程
 - Cookie 导入由 `threading.Lock`（[job_manager.py](../backend/app/job_manager.py#L49)）保护，防止并发导入导致的资源竞争
 
 **注意**：CDP fallback 启动 Edge 时使用了 `--remote-allow-origins=*`。虽然使用了随机空闲端口且进程在获取 cookies 后立即终止（超时 15 秒 + 10 秒），且仅绑定 `127.0.0.1`，但在 Headless Edge 短暂运行期间，同机的其他本地进程理论上可以连接到调试端口。攻击面极小（需要本机已存在恶意进程），且 YouTube cookies 在 Edge 中通常已在登录态下。
@@ -234,3 +240,14 @@
 | SQLite 补列 | [db.py](../backend/app/db.py#L43) | 仍是硬编码列名字典 + f-string，未引入外部输入。 | 无新增风险。 |
 
 复核方式：按第 1–15 节的分类逐项走查上述模块，通过后把结论并入对应章节，并把本文档顶部的基线改为复核时点的 commit。
+
+## 18. 自检 / 日志相关新增（`d779b52` 之后，同样待复核）
+
+为降低排障门槛新增的代码。它们的共同点是**主动发起网络请求**或**读取本地路径**，因此必须显式登记：
+
+| 变更 | 位置 | 初步判断 | 需要复核的点 |
+| --- | --- | --- | --- |
+| 代理连通性自检 | [connectivity.py](../backend/app/connectivity.py#L73)、`POST /api/proxy/test` | 用 `urllib` 请求**固定的** `https://www.youtube.com/robots.txt`，URL 不可由请求体控制；代理地址来自本机设置或请求体，只作用于这一次请求，不写库、不落盘。响应回显的代理 URL 已脱敏。 | 请求体可控的代理地址等于「本机发起任意代理连接」的原语；本工具本来就允许配置代理，但需确认没有把它暴露成可被网页驱动（无认证 + `127.0.0.1` 绑定下，浏览器侧仍有 CSRF 面）。 |
+| cookies 登录态校验 | [cookie_health.py](../backend/app/cookie_health.py#L234)、`POST /api/cookies/verify` | 只读 `data/cookies.txt`，用 `MozillaCookieJar` 发一次 `https://www.youtube.com/`。**不返回 cookie 内容**，只返回条数、域名分布、命中的 cookie **名字**与 `LOGGED_IN` 判定。 | 返回的 cookie 名字集合（如 `SID`/`HSID`）本身是低敏信息；确认没有路径能把文件内容带出来。`deep=false` 时完全不联网。 |
+| 日志落盘 | [logging_setup.py](../backend/app/logging_setup.py#L48) | 写 `<data_dir>/logs/app.log`，UTF-8、2 MiB × 3 轮转。目录不可写时降级为「仅控制台」而不是启动失败。写入前统一过 [sanitize_log_message](../backend/app/log_safety.py#L11)。**已确认 `data/` 与 `*.log` 都在 `.gitignore` 内**，日志不会入库。 | 日志是**新增的持久化面**：确认所有进日志的字符串都过了清洗（尤其是来自 yt-dlp 的原始错误与代理 URL）。 |
+| 宿主环境变量摘除 | [runtime_env.py](../backend/app/runtime_env.py#L58) | 只在自己的进程内 `os.environ.pop("NODE_OPTIONS")`，且**只在命中 `--require`/`--import`/`--loader`/`--experimental-loader` 时**；不写系统环境、不改注册表；动作记进日志与诊断。 | 这是一处「应用会修改自身环境」的行为，需要确认它不会被误用成静默隐藏宿主配置的手段（当前实现只针对会破坏 JS 运行时的强加载开关，且必定留痕）。 |

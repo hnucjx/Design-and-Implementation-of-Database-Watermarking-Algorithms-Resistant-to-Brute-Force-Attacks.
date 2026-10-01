@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-YouTube Downloader 是本机单用户工具。前端提供链接解析、下载选项和任务中心，后端通过 `yt-dlp` 下载媒体并用 SQLite 保存任务状态。系统入口由 [FastAPI 应用](../backend/app/main.py#L41) 和 [React 应用](../frontend/src/App.tsx) 组成。
+YouTube Downloader 是本机单用户工具。前端提供链接解析、下载选项和任务中心，后端通过 `yt-dlp` 下载媒体并用 SQLite 保存任务状态。系统入口由 [FastAPI 应用](../backend/app/main.py#L53) 和 [React 应用](../frontend/src/App.tsx) 组成。
 
 请只下载你拥有权利或已获得许可的内容。本项目不绕过 DRM、会员、地区、年龄、私有视频等权限限制。
 
@@ -24,7 +24,7 @@ YouTube Downloader 是本机单用户工具。前端提供链接解析、下载�
 2. Playlist 会展示条目列表，可选择要下载的子视频；后端会根据选择生成 `JobItem`，见 [创建任务路由](../backend/app/main.py#L139)。
 3. 在下载选项中选择下载模式、清晰度、字幕语言、字幕来源、字幕格式、metadata、缩略图、限速、重试和通知；默认清晰度为 `1440p`，默认字幕来源为“两者都要”。
 4. 点击加入下载队列，在任务中心观察进度、速度、预计剩余时间、实际分辨率和实际格式。
-5. 对任务执行暂停、重启、仅删除任务，或删除任务并删除已下载文件；前端 API 调用见 [api.ts](../frontend/src/api.ts#L69)。
+5. 对任务执行暂停、重启、仅删除任务，或删除任务并删除已下载文件；前端 API 调用见 [api.ts](../frontend/src/api.ts#L46)。
 
 ## 下载选项
 
@@ -48,7 +48,7 @@ YouTube Downloader 是本机单用户工具。前端提供链接解析、下载�
 
 ## 任务中心
 
-任务中心展示任务级和子视频级状态。后端 API 返回的字段见 [JobRead](../backend/app/schemas.py#L128) 和 [JobItemRead](../backend/app/schemas.py#L100)，前端展示组件见 [JobQueue](../frontend/src/components/JobQueue.tsx#L13)。
+任务中心展示任务级和子视频级状态。后端 API 返回的字段见 [JobRead](../backend/app/schemas.py#L128) 和 [JobItemRead](../backend/app/schemas.py#L100)，前端展示组件见 [JobQueue](../frontend/src/components/JobQueue.tsx#L16)。
 Playlist 展开后会用浅色分组背景承载子视频列表，便于区分合集任务行和单个视频任务。
 
 | 信息 | 说明 |
@@ -69,28 +69,144 @@ Playlist 展开后会用浅色分组背景承载子视频列表，便于区分�
 
 对于旧任务或下载中任务，如果数据库还没有记录最终 `output_path`，后端会按 YouTube 视频 id 在任务下载目录中查找已存在的视频、部分下载文件和 sidecar 文件。找到最终视频时，播放按钮会恢复可用；只有部分下载文件时，打开文件夹和删除文件仍可工作。
 
+## 代理与网络
+
+**先分清三件事**，很多「网络问题」其实不是同一个问题：
+
+| 问题 | 界面上的抓手 |
+| --- | --- |
+| 当前**用的是哪个**代理？ | 设置面板里那行 `当前生效：…（来源：…）` |
+| 用了之后**通不通**？ | 设置面板的「检测代理」按钮 |
+| 我填的地址**为什么没生效**？ | 看「来源」：`你手动填写的地址` / `Windows 系统代理` / `环境变量（HTTP_PROXY / HTTPS_PROXY）` / `强制直连` |
+
+代理输入框在「设置」面板，语义有三类：
+
+| 填什么 | 含义 |
+| --- | --- |
+| 留空 | **自动**：优先用 Windows 系统代理，其次用环境变量。留空**不等于**直连。 |
+| `direct`（也可写 `none` / `off` / `-`） | 强制直连。适合本机本来就该直连的场景：让请求立刻失败，而不是干等 30 秒超时。 |
+| 代理地址 | 直接用它；缺 scheme 会自动补 `http://`，所以 `127.0.0.1:7890` 这样填也行。 |
+
+输入框**离开时自动保存**。如果只想先确认地址对不对，点「先试输入框里的地址」：
+这个按钮会拦住点击造成的失焦，因此**只发一次连通性探针、不写设置**；确认能通之后再离开输入框保存。
+
+不知道填什么时，展开「不知道填什么？常见代理软件的本地端口」，里面是一张可直接点击填入的对照表：
+
+| 软件 | 通常填这个 | 说明 |
+| --- | --- | --- |
+| Clash / Clash Verge / Mihomo | `127.0.0.1:7890` | 混合端口（HTTP + SOCKS 同一个口） |
+| v2rayN | `127.0.0.1:10809` | HTTP 代理端口；SOCKS 端口通常是 10808 |
+| Shadowsocks / SS 客户端 | `127.0.0.1:1080` | 本地 SOCKS5 端口，本应用同样支持 |
+| Surge / Quantumult 等 | `127.0.0.1:6152` | HTTP 代理端口 |
+
+「检测代理」会真的请求一次 `https://www.youtube.com/robots.txt`（几百字节、必然存在），并把结果原样给出：
+HTTP 状态码、耗时、收到多少字节、原始异常，以及下一步建议。**只报「失败」不给证据的检测没有意义**，
+所以这里刻意不复用 yt-dlp（它自带重试、cookie、profile 逻辑，失败时分不清是代理坏了还是提取器坏了）。
+
+两个高频误判：
+
+- **浏览器能打开 YouTube ≠ 应用能。** 浏览器可能走系统代理或它自己的插件代理，应用用的是设置里那一份，
+  是两条独立路径。反过来也一样。
+- **「强制直连失败」不一定是故障。** 如果本机其实需要代理，直连失败是预期结果——它反而证明了代理参数确实在起作用。
+
 ## Cookies
 
-当 YouTube 要求登录、年龄验证或 bot 校验时，可以在解析面板中导入 cookies：
+当 YouTube 要求登录、年龄验证或人机校验时，需要导入 cookies。**先看一件事：文件存在不等于能用。**
 
-- 点击“选择 / cookies”上传 Netscape 格式 `cookies.txt`。
-- 从浏览器导入时可选择“自动检测浏览器”或指定 Edge、Chrome、Firefox、Brave、Chromium 等，见 [browser_cookies.py](../backend/app/browser_cookies.py#L19)。
-- Edge 正在运行导致 cookies 数据库锁定时，应用会提示用户确认后再关闭 Edge 并重试，错误结构见 [BrowserCookieImportError](../backend/app/browser_cookies.py#L30)。
-- Edge DPAPI 解密失败时，后端会尝试临时 headless Edge DevTools fallback，流程见 [browser_cookies.py](../backend/app/browser_cookies.py#L157)。
+### 三种获取方式
+
+1. **仓库里的脚本（推荐）**：`python scripts/export_cookies_via_cdp.py`。它会开一个**独立配置**的浏览器窗口，
+   不影响你正在使用的浏览器；第一次在弹出的窗口里登录一次 Google 账号，之后自动导出到 `data/cookies.txt`。
+   窗口必须**有头**（看得见的窗口）——无头模式下 YouTube 不会签发 `.youtube.com` 的鉴权 cookie，
+   导出的文件看着正常但每个请求都是匿名的。脚本会先校验域名，拿不到 `.youtube.com` 就**拒绝写文件**（退出码 2），
+   所以它不会用一份废文件覆盖掉你原来能用的那份。
+2. **浏览器扩展**：安装 *Get cookies.txt LOCALLY* 之类的扩展，在 `youtube.com` 页面导出 Netscape 格式，
+   另存为 `data/cookies.txt`。注意选 **Netscape / cookies.txt**，不要 JSON。
+3. **直接拖进来**：用解析面板里的「选择 cookies」上传，格式必须是 Tab 分隔的 7 列。
+
+### 校验 cookies
+
+解析面板里的三个按钮分别对应三种强度：
+
+| 按钮 | 做什么 |
+| --- | --- |
+| 校验 cookies（联网确认登录态） | 离线体检 + 真的拿这份 cookies 访问一次 `https://www.youtube.com/`，读页面里的 `"LOGGED_IN"` |
+| 只做离线体检 | 只看格式、域名、鉴权项、过期时间，不联网 |
+| 重新校验 | 换过文件之后再跑一次 |
+
+结论对照：
+
+| 结论 | 含义 | 怎么办 |
+| --- | --- | --- |
+| 未配置 | 没有 `data/cookies.txt` | 用上面三种方式之一导入 |
+| 域名不对，等于没配 | cookie 全落在 `.google.com` 上 | 重新导出。`.google.com` 的 cookie **永远不会**发给 `www.youtube.com` |
+| 只有匿名 cookie | 只有 `VISITOR_INFO1_LIVE` / `YSC` / `PREF` 之类 | 在导出窗口里真正登录后再导一次 |
+| 登录态无效 | 域名与鉴权项都对，但 YouTube 仍认为你是匿名 | 多为登录态过期，或导出后换了出口 IP；重新导出 |
+| 登录态有效 | 页面里出现 `"LOGGED_IN":true` | 正常，下载时 403 会明显变少 |
+
+为什么必须校验：实测过一份 9 条 cookie 的文件，`SID`、`HSID` 都在，yt-dlp 也不报错，
+但每个请求都是匿名的——因为那 9 条全部落在 `.google.com`。只看「文件存在」永远发现不了这件事。
+
+### 其它导入入口与边界
+
+- 从浏览器导入可选择「自动检测浏览器」或指定 Edge、Chrome、Firefox、Brave、Chromium 等，见 [browser_cookies.py](../backend/app/browser_cookies.py#L19)。
+- Edge 正在运行导致数据库锁定时会返回结构化错误，见 [BrowserCookieImportError](../backend/app/browser_cookies.py#L23)。
+  界面上的「关闭 Edge 并导入」会 `taskkill /IM msedge.exe /F /T`，**会关掉你所有 Edge 窗口（含未保存的标签页）**，
+  需要你显式点击；能自己先关掉浏览器的话，优先手动关。
+- **不要**让应用去读取你正在使用的 Edge/Chrome 配置目录：Edge 的 cookie 是 v20 app-bound 加密，
+  密钥绑定正在运行的浏览器进程，离线程序解不开；挂载真实配置目录的变通做法会**破坏浏览器的 cookie 库**
+  （实测过 53 条变 0 条），这条路径已从应用中彻底移除。
 
 Cookies 会保存到本地 `data/cookies.txt`，该目录不进入 Git。
 
+### 换网络会让登录态失效
+
+YouTube 把登录态与出口 IP 绑定。导出 cookies 时走代理 A、下载时走代理 B，就会出现
+「校验通过但下载 403」。保持导出与下载用同一条出口。
+
+## 自检与日志
+
+设置面板里有一个「运行环境」区块，回答「这台机器到底能不能干活」：
+
+| 显示 | 含义 |
+| --- | --- |
+| JS 运行时：可用 | 解析 YouTube 的 `n` 参数需要它，**登录状态下是必须项** |
+| JS 运行时：不可用 | 会附上原始报错（例如 `ERR_ACCESS_DENIED`）。最典型的症状是下载报 `The page needs to be reloaded.`，而这句话完全指不到病因 |
+| 启动时已自动摘除… | 宿主环境往 `NODE_OPTIONS` 里塞了 `--require` 之类会打坏 JS 运行时的变量；应用启动时已摘掉并记录在此 |
+| 日志文件：`…\data\logs\app.log` | 出问题时先看这个文件的最后几十行，可以一键复制路径 |
+
+「重新自检」会清掉 JS 运行时的探测缓存重新跑一遍——装完 Node/Deno 之后点它即可，不必重启应用。
+
+日志是 UTF-8、`时间 级别 模块 | 消息` 格式，2 MiB 轮转、保留 3 份备份，**应用启动时就开始写**。
+失败时日志里会同时出现一行结构化事实和一行可执行诊断：
+
+```text
+2026-10-01 12:01:33 WARNING job_manager | download item failed: job_id=... category=js_challenge_failed error_class=DownloadError error=ERROR: [youtube] aqz-KE-bpKQ: The page needs to be reloaded.
+2026-10-01 12:01:33 WARNING job_manager | download item failed advice: job_id=... item_id=...
+      诊断: js_runtime_challenge_failed —— YouTube 的 JS challenge（n 参数）解不出来，登录态下的可用格式被判定为空
+      原因: ... 当前 JS 运行时自检失败：... ERR_ACCESS_DENIED
+      建议1: 按诊断里的提示修复 JS 运行时（Deno 或 Node），修复后在设置里显式填写路径并重新自检
+      建议2: ...
+```
+
+想要更细的过程用 `YTDL_LOG_LEVEL=DEBUG` 启动。完整的「按症状查」清单见 [排障手册](troubleshooting.md)。
+
 ## 下载目录与产物
 
-默认下载根目录是 `downloads/`，数据库和 cookies 默认在 `data/`，配置默认值见 [AppSettings](../backend/app/config.py#L19)。Playlist 会在下载根目录下创建同名子文件夹；目录选择和保存逻辑见 [main.py](../backend/app/main.py#L353)。
+默认下载根目录是 `downloads/`，数据库和 cookies 默认在 `data/`，配置默认值见 [AppSettings](../backend/app/config.py#L19)。Playlist 会在下载根目录下创建同名子文件夹；目录选择和保存逻辑见 [main.py](../backend/app/main.py#L453)。
 
-产物命名模板固定为 `<标题(最多200字节)> [<YouTube id>].<扩展名>`，见 [build_download_options](../backend/app/ytdlp_service.py#L263)。因此即使数据库里的 `output_path` 丢失，后端仍能按文件名中的 id 找回同名视频与 sidecar。
+产物命名模板固定为 `<标题(最多200字节)> [<YouTube id>].<扩展名>`，见 [build_download_options](../backend/app/ytdlp_service.py#L428)。因此即使数据库里的 `output_path` 丢失，后端仍能按文件名中的 id 找回同名视频与 sidecar。
 
 ## 常见问题入口
 
+**完整清单见 [排障手册](troubleshooting.md)**（按「你看到的那句话」查，直接给到该点哪里）。下面是最常见的几条：
+
+- 解析/下载报 `The page needs to be reloaded.`：几乎总是 JS 运行时的问题，不是网络也不是 cookies。先点「重新自检」，见 [排障手册](troubleshooting.md#js-运行时与-n-challenge)。
 - 分析失败或提示 bot 校验：先重新导入 cookies，详见 [技术文档](technical.md#cookies-与登录态)。
+- 连不上、超时、`Tunnel connection failed`：先点「检测代理」，见 [代理与网络](#代理与网络)。
 - 媒体流 403 或连接重置：查看 [稳定下载策略](technical.md#稳定下载策略)。若 403 变多，把并发降为 1，并确认没有开启 aria2c 多连接，而不是恢复单个视频内部的文件间隔睡眠。
 - 任务卡在「下载中」但进度不动：正常情况下停滞看门狗会在 90 秒内把它变成可见失败；如果长时间仍无变化，检查是否用 `YTDL_STALL_TIMEOUT_SECONDS=0` 关闭了看门狗，或进程是否被强制结束。
 - 高分辨率下载失败：查看 [清晰度与格式选择](technical.md#清晰度与格式选择) 和 [分辨率降级原因](technical.md#分辨率降级原因)。
+- 想直接看证据：`data/logs/app.log`，见 [自检与日志](#自检与日志)。
 - API 字段含义不清楚：查看 [API 文档](api.md)。
 - 本地依赖或环境问题：查看 [开发文档](development.md)。

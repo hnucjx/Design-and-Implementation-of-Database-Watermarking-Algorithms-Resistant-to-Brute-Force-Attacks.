@@ -1,6 +1,8 @@
 # 技术文档
 
-适用读者：需要理解下载策略、清晰度、cookies、PO token 和稳定性排障的开发者与高级用户。
+适用读者：需要理解代理与网络出口、下载策略、清晰度、cookies、JS 运行时、PO token 和稳定性排障的开发者与高级用户。
+
+> 本文解释「为什么这么设计」；只想解决眼前问题请看 [排障手册](troubleshooting.md)。
 
 ## 清晰度与格式选择
 
@@ -14,11 +16,11 @@
 4. 同高度 HLS 单文件。
 5. 同高度单文件。
 
-`safari_hls` profile 会把同高度 HLS 单文件放到最前，见 [format_selector](../backend/app/ytdlp_formats.py#L9)。如果 ffmpeg 可用，后端允许 video+audio 合并并设置 `merge_output_format=mp4`；ffmpeg 不可用时会退化为单文件选择器，而需要合并的清晰度直接报错，见 [build_download_options](../backend/app/ytdlp_service.py#L239)。
+`safari_hls` profile 会把同高度 HLS 单文件放到最前，见 [format_selector](../backend/app/ytdlp_formats.py#L9)。如果 ffmpeg 可用，后端允许 video+audio 合并并设置 `merge_output_format=mp4`；ffmpeg 不可用时会退化为单文件选择器，而需要合并的清晰度直接报错，见 [build_download_options](../backend/app/ytdlp_service.py#L428)。
 
 ## 下载前预检测
 
-在实际下载前，`JobManager` 先调用 [prepare_download](../backend/app/ytdlp_service.py#L204) 让 yt-dlp 按当前 selector 选择计划下载格式。源视频清晰度匹配时不再额外 `extract_metadata`——这是上一轮性能修复的成果，见 [PLAN.md](../PLAN.md)。只有计划格式不可选时，才会再解析元数据并按降级原因分类。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L907) 写入：
+在实际下载前，`JobManager` 先调用 [prepare_download](../backend/app/ytdlp_service.py#L393) 让 yt-dlp 按当前 selector 选择计划下载格式。源视频清晰度匹配时不再额外 `extract_metadata`——这是上一轮性能修复的成果，见 [PLAN.md](../PLAN.md)。只有计划格式不可选时，才会再解析元数据并按降级原因分类。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L907) 写入：
 
 - `actual_width`
 - `actual_height`
@@ -46,7 +48,7 @@
 
 ## 稳定下载策略
 
-默认策略是稳定优先，而不是并发优先。核心参数在 [ytdlp_service.py](../backend/app/ytdlp_service.py#L42) 和 [build_download_options](../backend/app/ytdlp_service.py#L239)：
+默认策略是稳定优先，而不是并发优先。核心参数在 [ytdlp_service.py](../backend/app/ytdlp_service.py#L42) 和 [build_download_options](../backend/app/ytdlp_service.py#L428)：
 
 - `continuedl=True`，保留 `.part` 断点续传。
 - `fragment_retries=20`、`file_access_retries=5`、`extractor_retries=5`。
@@ -70,7 +72,7 @@ python scripts\bench_throttle_guard.py <临时目录> 64    # 节流守卫开启
 python scripts\bench_throttle_guard.py <临时目录> 0     # 关闭后的连续下载
 ```
 
-YouTube 媒体流 403 或连接中断时，`YtDlpService.download()` 会在同一清晰度下依次尝试 profile，见 [download](../backend/app/ytdlp_service.py#L318)：
+YouTube 媒体流 403 或连接中断时，`YtDlpService.download()` 会在同一清晰度下依次尝试 profile，见 [download](../backend/app/ytdlp_service.py#L508)：
 
 1. `default`
 2. `default_aria2c`，仅当显式启用 aria2c 且可执行文件存在
@@ -78,13 +80,55 @@ YouTube 媒体流 403 或连接中断时，`YtDlpService.download()` 会在同�
 4. `safari_hls`
 5. `chrome_default`
 
-媒体流阻断判断见 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L470)。这类失败不会在下载中途自动降清晰度重下，任务中心会给出中文原因和可重启建议。
+媒体流阻断判断见 [is_media_stream_blocked_error](../backend/app/ytdlp_service.py#L673)。这类失败不会在下载中途自动降清晰度重下，任务中心会给出中文原因和可重启建议。
+
+## 代理与网络出口
+
+代理的**解析**与**验证**是两个独立模块，这个划分是刻意的：解析是纯函数、可离线单测；验证必须联网、结果必须是原始证据。
+
+优先级（`app/proxy.py`）：
+
+```
+显式设置  >  Windows 系统代理（WinINet 注册表 ProxyEnable/ProxyServer）  >  环境变量
+```
+
+系统代理排在环境变量之前：桌面应用应当和浏览器一致，而环境变量极易被宿主 shell / IDE 无意注入（实测过一次 `HTTPS_PROXY` 指向一个不存在的端口，把系统代理顶掉并导致 `502 Bad Gateway`，详见 [006](../ai/bug-fix/006-proxy-is-not-configurable.md)）。
+
+取值语义：
+
+| 填什么 | `source` | 是否写进 `ydl_opts['proxy']` |
+| --- | --- | --- |
+| 留空 / `auto` | `system` / `environment` / `none` | 取决于来源：`system` 写、`environment` **不写** |
+| `direct` / `none` / `off` / `no` / `-` | `direct` | 写（空串，等价 yt-dlp 的 `--proxy ""`） |
+| 代理地址（缺 scheme 补 `http://`） | `setting` | 写 |
+
+**为什么「来源=环境变量」时不写：** yt-dlp 的 `proxy` 参数是单个 URL、不带绕过列表 —— `utils/networking.select_proxy()` 只在 proxy map 里存在 `no` 键时才做 `NO_PROXY` 绕过判断，而 `{'all': url}` 没有这个键。不写才能保留用户环境里的 `NO_PROXY` 语义。
+
+注意「空值 ≠ 直连」：表单清空、`YTDL_PROXY=` 都表示**自动**（仍会用到系统代理与环境变量），强制直连必须显式写 `direct`。
+
+验证走 [connectivity.py](../backend/app/connectivity.py#L73)：向固定的 `https://www.youtube.com/robots.txt` 发一次普通 HTTPS 请求，返回状态码、耗时、字节数与原始异常。刻意不复用 yt-dlp —— 它自带重试、cookies、profile 逻辑，失败时分不清是代理坏了还是提取器坏了。一个容易写错的实现细节：**关闭代理必须用 `ProxyHandler({})`**，不传 handler 会让 urllib 自己去读环境变量，那样探测结果就不再等于产品实际使用的设置。
+
+## JS 运行时与 n challenge
+
+YouTube 的 `n` 参数（nsig）需要跑 JS 才能解出来，这是**登录态取数路径的必需项**。相关实现在 [ytdlp_service.py](../backend/app/ytdlp_service.py#L187) 的运行时探测，以及 [runtime_env.py](../backend/app/runtime_env.py#L58) 的环境净化。
+
+探测顺序是「显式 `js_runtime_path` → Deno → Node」，且**不只判断文件存在，而是真的用与 yt-dlp 相同的权限模型跑一次**：
+
+```
+node --experimental-permission --no-warnings=ExperimentalWarning -e <probe>
+```
+
+失败时原始报错会留在 `dependencies.js_runtime_error`，逐个候选被拒的原因留在 `js_runtime_candidates_rejected`。这两项是「检测到 node 却解不出 n challenge」唯一能查清楚的地方。
+
+**宿主环境变量会静默打坏这条链路**：`NODE_OPTIONS` 是每个 node 进程都会读的，宿主若塞进 `--require=<补丁>`，node 会在权限模型下拒绝加载它并以 `ERR_ACCESS_DENIED` 退出；n challenge 求解失败后，yt-dlp 抛出的却是完全指不到病因的 `ERROR: The page needs to be reloaded.`。因此 [sanitize_environment](../backend/app/runtime_env.py#L58) 在启动时摘掉命中 `--require` / `--import` / `--loader` / `--experimental-loader` 的 `NODE_OPTIONS`，并把动作记进日志与 `/api/diagnostics.sanitized_environment`。
+
+失败分类见 [error_advice.py](../backend/app/error_advice.py#L116)：它把异常链上的文本翻译成 `code + 结论 + 下一步` 四类之一（JS challenge / cookies / 代理 / 媒体流被挡），无法归类时返回 `None` 而不硬凑。`JobManager` 的失败日志会同时打一行结构化事实与一行 `诊断 / 原因 / 建议N`。
 
 ## Cookies 与登录态
 
-Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/main.py#L96)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L666)。
+Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/main.py#L120)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L666)。
 
-浏览器导入器只保存 YouTube/Google 相关 cookies，过滤规则见 [YOUTUBE_COOKIE_DOMAIN_SUFFIXES](../backend/app/browser_cookies.py#L20)。Edge 锁库和 DPAPI fallback 处理见 [browser_cookies.py](../backend/app/browser_cookies.py#L117)。
+浏览器导入器只保存 YouTube/Google 相关 cookies，过滤规则见 [YOUTUBE_COOKIE_DOMAIN_SUFFIXES](../backend/app/browser_cookies.py#L13)。Edge 锁库和 DPAPI fallback 处理见 [browser_cookies.py](../backend/app/browser_cookies.py#L117)。
 
 未配置 cookies 时，YouTube 媒体流 403 概率显著上升。任务中心的媒体流失败文案会前置「当前 cookies 状态：已配置 / 未配置」，见 [_media_stream_failure_message](../backend/app/job_manager.py#L1006)，便于先排除这个最常见的前置条件。
 
@@ -98,7 +142,7 @@ Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段�
 - `YTDL_YOUTUBE_VISITOR_DATA`
 - `YTDL_YOUTUBE_PO_BROWSER_PATH`
 
-这些值只传给 yt-dlp extractor 或 provider，不在诊断接口中回显原文。诊断只返回是否已配置，以及可用的 impersonation client 列表，见 [get_dependency_status](../backend/app/ytdlp_service.py#L116)。
+这些值只传给 yt-dlp extractor 或 provider，不在诊断接口中回显原文。诊断只返回是否已配置，以及可用的 impersonation client 列表，见 [get_dependency_status](../backend/app/ytdlp_service.py#L287)。
 
 ## aria2c fallback
 
@@ -107,16 +151,18 @@ Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段�
 - `YTDL_ARIA2C_ENABLED=true`
 - 系统 PATH 或 `YTDL_ARIA2C_PATH` 能找到 aria2c
 
-连接数参数来自 `aria2c_connections`（默认 2，上限 4，可在设置面板修改），参数拼装见 [_aria2c_args](../backend/app/ytdlp_service.py#L552)。该能力给单视频提供多连接下载，但多连接会显著提高 YouTube 风控面，因此默认关闭；诊断接口返回 `aria2c_available`、`aria2c_enabled`、`aria2c_path`、`aria2c_connections` 便于判断当前是否真的生效。
+连接数参数来自 `aria2c_connections`（默认 2，上限 4，可在设置面板修改），参数拼装见 [_aria2c_args](../backend/app/ytdlp_service.py#L809)。该能力给单视频提供多连接下载，但多连接会显著提高 YouTube 风控面，因此默认关闭；诊断接口返回 `aria2c_available`、`aria2c_enabled`、`aria2c_path`、`aria2c_connections` 便于判断当前是否真的生效。
 
 ## 失败排查顺序
 
+0. 先看 `data/logs/app.log`（路径见 `/api/diagnostics.log_file`）。启动三行快照 `proxy resolved` / `js runtime ...` / `dependencies ready` 能立刻排除环境问题；失败处有 `category=` 与紧随其后的 `诊断 / 原因 / 建议N`。
 1. 查看任务中心具体错误；单视频失败时 `Job.error` 会透传唯一失败 `JobItem.error`，见 [job_read_model.py](../backend/app/job_read_model.py#L122)。
-2. 查看 `/api/diagnostics`，确认 ffmpeg、JS runtime、impersonation、PO-token provider、cookies、aria2c 状态。
-3. 重新从浏览器导入 cookies。
+2. 查看 `/api/diagnostics`，确认 ffmpeg、JS runtime（含 `js_runtime_error`）、impersonation、PO-token provider、cookies、代理、aria2c 状态。代理通不通用 `POST /api/proxy/test`；cookies 是否真能登录用 `POST /api/cookies/verify`。
+3. 重新从浏览器导入 cookies，并用 `POST /api/cookies/verify` 确认结论（域名与鉴权项都可能是「文件存在但全是匿名」的假象）。
 4. 若浏览器可正常播放但应用仍遇到媒体流 403，配置 PO token、visitor data 或浏览器路径。
 5. 若看到「下载停滞：N 秒内没有新增字节」，说明该连接已不再产出数据；重试或换 profile 后仍失败时，把并发降为 1 并检查代理/网络。
 6. 若是连接不稳定，把并发设为 1，确认代理或网络能稳定访问 YouTube 媒体域名。
+7. 若报 `The page needs to be reloaded.`，不要再查网络与 cookies：这是 JS 运行时的症状，见 [JS 运行时与 n challenge](#js-运行时与-n-challenge)。
 
 ## 文件删除语义
 

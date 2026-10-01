@@ -56,7 +56,7 @@ npm install
 
 ### 普通单端口模式
 
-普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L392)。
+普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L500)。
 
 ### 前端热更新开发模式
 
@@ -117,7 +117,7 @@ npm run dev -- --port 5173
 | `YTDL_ARIA2C_PATH` | 空 | aria2c 可执行文件路径或命令名；为空时按 PATH 查找。 |
 | `YTDL_ARIA2C_CONNECTIONS` | `2` | aria2c 每文件连接数，取值范围 `1..4`。连接越多，403/限速风险越高。 |
 
-运行时可在设置面板修改的字段（下载目录、并发、默认清晰度、字幕语言、限速、重试次数、aria2c 连接数）会写入 `Setting` 表并在下次启动时覆盖环境变量，见 [_apply_stored_settings](../backend/app/main.py#L576)。
+运行时可在设置面板修改的字段（下载目录、并发、默认清晰度、字幕语言、限速、重试次数、aria2c 连接数）会写入 `Setting` 表并在下次启动时覆盖环境变量，见 [_apply_stored_settings](../backend/app/main.py#L675)。
 
 ## PlantUML 图更新
 

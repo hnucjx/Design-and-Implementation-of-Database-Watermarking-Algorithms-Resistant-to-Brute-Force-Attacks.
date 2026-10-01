@@ -19,6 +19,7 @@
 | 你看到的 | 真正发生了什么 | 现在做什么 |
 | --- | --- | --- |
 | 解析/下载报 `ERROR: ... The page needs to be reloaded.` | YouTube 的 `n` 参数（JS challenge）解不出来。这句话**不指向任何真实病因**，最典型的成因是 JS 运行时被宿主环境变量打坏 | 装一个 Node 18+ 或 Deno，然后点「重新自检」。见下方 [JS 运行时](#js-运行时与-n-challenge) |
+| **服务根本起不来**，报 `[WinError 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试` | **不是权限问题。** 端口已被别的程序以独占方式监听着（本机常见：IncrediBuild 的 `Manager.exe` 长期占 `8000`），Windows 返回的是它而不是「地址已在使用」 | 用 `python -m app` 启动：它会指名占用者并给出下一步。见下方 [端口被占用](#启动就失败端口被占用) |
 | 报 `Sign in to confirm you're not a bot.` / `Login required` / 年龄限制 / 会员视频 | 请求是匿名的 | 「校验 cookies」→ 按结论重新导出。见 [cookies](#cookies-篇) |
 | 下载报 HTTP 403 / 连接被重置 | YouTube 拒绝了媒体流 | 重新导入 cookies（登录态过期最常见）；并发降到 1；关掉 aria2c；确认代理没有中途换 IP |
 | 解析直接超时、或 `[WinError 10061] 由于目标计算机积极拒绝` | 连不上 YouTube，且形态指向代理 | 「检测代理」。**浏览器能打开不代表应用能**，见 [代理篇](#代理篇) |
@@ -28,6 +29,36 @@
 | 任务卡在下载中但进度不动 | 停滞看门狗被关掉了，或进程被强杀 | 检查是否设了 `YTDL_STALL_TIMEOUT_SECONDS=0`；正常情况下 90 秒内会变成可见失败 |
 | 「找不到可确认能解码当前视频的播放器」 | 本机播放器无法解码该格式 | 按任务行提示安装 VLC / mpv / PotPlayer / MPC，或直接打开文件夹手动播放 |
 | 「Edge 正在运行，cookies 数据库被锁定」 | 浏览器占用了 cookie 数据库 | 手动关闭 Edge 后重试；**不要**让应用去关（它会 `taskkill` 掉你所有 Edge 窗口，见 005 遗留风险） |
+
+## 启动就失败：端口被占用
+
+### 症状
+
+```text
+2026-10-01 14:35:09 ERROR uvicorn.error | [Errno 13] error while attempting to bind on address ('127.0.0.1', 8000):
+[winerror 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试。
+```
+
+注意这一行**不是权限问题** —— 和「以管理员身份运行」「关掉防火墙」「杀毒软件拦截」都无关。
+真实情况是端口已被别的程序占用，而 Windows 在这种情形下返回的是 `WSAEACCES(10013)` 而不是
+`WSAEADDRINUSE(10048)`。判据是「占用者是否以 `SO_EXCLUSIVEADDRUSE` 独占通配地址」——
+四种组合的实测矩阵与结论见 [009](../ai/bug-fix/009-local-dev-port-is-occupied-and-unconfigurable.md)。
+
+另外，这条错误出现在 `Application startup complete.` **之后**：应用初始化、依赖探测、日志全都正常，
+唯独端口拿不到。所以别去查 Node、ffmpeg、cookies —— 那些都不在这条路径上。
+
+### 现在做什么
+
+1. **用 `python -m app` 启动**（而不是裸 `uvicorn`）：它会直接打印占用者是谁，并给出三条下一步。
+   本机开发机上长期占着 `8000` 的是 IncrediBuild 的 `Manager.exe`（PID 通常每次开机都变）。
+2. **换端口**：把 `YTDL_API_PORT=8001` 写进仓库根 `.env`（前端 Vite 读的是同一个变量，会自动一致），
+   或临时 `python -m app --port 8001`。
+3. **立刻开工**：`python -m app --auto-port` —— 自动往后找一个可用端口，并把前端该设的值一并打印出来。
+4. **自己确认是谁占着**：`netstat -ano -p tcp | findstr :8000`，最后一列 PID 拿去任务管理器对号。
+
+**不要**为了腾出 `8000` 去杀 IncrediBuild：它是编译加速工具，约束见
+[PLAN.md 全局约束](../ai/plan.md)。也**不要**只改后端端口就让前端照旧跑 ——
+Vite 的代理如果还指着旧端口，`/api` 会静默打到别的程序上，报出来的错与真实病因毫无关系。
 
 ## 日志长什么样
 
@@ -188,7 +219,7 @@ n 解不出来就报那句天书；匿名路径碰巧绕开了它。
 ### 你可以做什么
 
 1. 点设置面板的「重新自检」，看 `JS 运行时（解析 YouTube 的 n 参数，登录状态下必须）：可用` 这一行。
-2. 不可用时：装 Node 18+ 或 Deno，或设置 `YTDL_JS_RUNTIME`（显式路径）。
+2. 不可用时：装 Node 18+ 或 Deno，或设置 `YTDL_JS_RUNTIME_PATH`（显式路径；字段是 `AppSettings.js_runtime_path`，见 [003](../ai/bug-fix/003-js-runtime-invisible-outside-path.md)）。
 3. 看日志里 `js runtime` 相关行，node/deno 的原始报错就在那里。
 
 ## 一份最小的事后复盘清单

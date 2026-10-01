@@ -58,13 +58,15 @@ npm install
 
 普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开 `http://127.0.0.1:8000`。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L500)。
 
+启动命令是 [`python -m app`](../backend/app/__main__.py)，它比裸 `python -m uvicorn app.main:app` 多做一件事：**启动前先检查端口**（见 [端口被占用时](#端口被占用时)）。
+
 ### 前端热更新开发模式
 
 需要修改 React UI 时，先启动后端 API：
 
 ```powershell
 cd backend
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python -m app --reload
 ```
 
 再启动 Vite dev server：
@@ -74,7 +76,28 @@ cd frontend
 npm run dev -- --port 5173
 ```
 
-开发时打开 `http://127.0.0.1:5173`。Vite 会热更新前端代码，并将 `/api` 请求代理到 `http://127.0.0.1:8000`，代理配置见 [vite.config.ts](../frontend/vite.config.ts)。
+开发时打开 `http://127.0.0.1:5173`。Vite 会热更新前端代码，并将 `/api` 请求代理到后端端口，代理配置见 [vite.config.ts](../frontend/vite.config.ts)。
+
+### 端口被占用时
+
+后端端口的**唯一来源**是仓库根 `.env` 里的 `YTDL_API_PORT`（默认 `8000`）。`frontend/vite.config.ts` 读的是同一个变量，所以前后端不会各说各话。
+
+被占用时 `python -m app` 会指名占用者并给出下一步：
+
+```text
+端口 8000 无法绑定，占用者：Manager.exe (PID 6948)。
+下一步（任选一条）：
+  1) 换个端口启动：       python -m app --port 8001
+  2) 写进仓库根 .env：    YTDL_API_PORT=8001   （前后端会自动一致）
+  3) 看是谁占着：         netstat -ano -p tcp | findstr :8000
+  也可以直接加 --auto-port，让本命令自己往后找一个可用端口。
+```
+
+三点需要知道的事：
+
+- **退出码是 2**，默认**不会**静默换端口。静默换端口会制造「后端在 8001、前端还代理 8000」这类前后端不一致的错配，而那种失败现象离病因很远。要自动换端口就显式加 `--auto-port`。
+- **`WinError 10013` 不是权限问题。** 它在「占用者以 `SO_EXCLUSIVEADDRUSE` 独占通配地址」时出现，见 [009](../ai/bug-fix/009-local-dev-port-is-occupied-and-unconfigurable.md)；本机开发机上长期占着 `8000` 的是 IncrediBuild 的 `Manager.exe`。
+- **别用裸 uvicorn 排查端口问题**：`python -m uvicorn app.main:app --port 8000` 只会给出那句 `WinError 10013`，没有占用者、没有下一步。
 
 ## 目录结构
 
@@ -93,10 +116,11 @@ npm run dev -- --port 5173
 
 ## 环境变量
 
-配置类定义见 [AppSettings](../backend/app/config.py#L19)，前缀为 `YTDL_`，并会读取仓库根目录的 `.env`（`env_file=".env"`，`.env` 已被 Git 忽略）。下表列出全部字段及其当前默认值。
+配置类定义见 [AppSettings](../backend/app/config.py#L19)，前缀为 `YTDL_`，并会读取仓库根目录的 `.env`。`env_file` 用的是**绝对路径**（`REPO_ROOT / ".env"`），所以与你从哪个目录启动无关 —— 相对路径会按当前工作目录解析，而文档里的命令都是 `cd backend` 之后执行的。`.env` 已被 Git 忽略。下表列出全部字段及其当前默认值（`js_runtime_path` 与 `proxy` 两个字段见上文说明，未重复列表）。
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
+| `YTDL_API_PORT` | `8000` | 本机 API 端口。`python -m app` 启动时生效，`--port` 可临时覆盖；前端 Vite 的 `/api` 代理读的是同一个变量。见 [端口被占用时](#端口被占用时)。 |
 | `YTDL_DATA_DIR` | `data/` | 数据库和 cookies 目录。 |
 | `YTDL_DOWNLOAD_DIR` | `downloads/` | 下载产物目录。 |
 | `YTDL_DATABASE_PATH` | `data/app.sqlite3` | SQLite 文件路径。WAL 模式下同目录还会出现 `*.sqlite3-wal` 和 `*.sqlite3-shm`，已由 `.gitignore` 忽略。 |

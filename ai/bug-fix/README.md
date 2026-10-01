@@ -31,8 +31,8 @@
 | [005](005-edge-cdp-fallback-touches-the-live-profile.md) | Edge CDP 回退挂载真实 profile | `a482a9e` | 既必然失败（Chromium 拒绝默认数据目录），又曾**清空真实 cookie 库（53 → 0）** |
 | [006](006-proxy-is-not-configurable.md) | 应用没有代理配置项 | `d779b52` | 环境变量静默顶掉 Windows 系统代理（实测：坏变量 → 502；修好 → HTTP 200），且界面上看不到也改不了 |
 | [007](007-js-challenge-fails-only-when-cookies-are-on.md) | 带 cookies 反而失败：n challenge 被宿主环境打坏 | `5e556f9` | `NODE_OPTIONS=--require=` 让 yt-dlp 启动的 node 在权限模型下 `ERR_ACCESS_DENIED` 退出，报出「The page needs to be reloaded.」；而应用当时**根本不写日志**，连查都没法查 |
-| [008](008-return-in-finally-swallows-the-real-error.md) | 收尾阶段出的错被静默吞掉 | `—` | `finally` 里的 `return` 丢弃正在传播的异常，而 `_worker` 又没有兜底 → 删除/重启竞态下要么条目永久停在 `running`、要么队列静默少一个消费口，两者都不留一行日志 |
-| [009](009-local-dev-port-is-occupied-and-unconfigurable.md) | 8000 被 IncrediBuild 长期占用，启动失败而报错指着「权限」 | `—` | `Manager.exe` 以 `0.0.0.0:8000` **独占**监听 → 绑 `127.0.0.1:8000` 得到 `WinError 10013`（权限）而不是 10048（地址已用）；端口值散落多处、Vite 代理还硬编码，换端口会让 `/api` 静默打到 IncrediBuild 上 |
+| [008](008-return-in-finally-swallows-the-real-error.md) | 收尾阶段出的错被静默吞掉 | `fd8b50e` | `finally` 里的 `return` 丢弃正在传播的异常，而 `_worker` 又没有兜底 → 删除/重启竞态下要么条目永久停在 `running`、要么队列静默少一个消费口，两者都不留一行日志 |
+| [009](009-local-dev-port-is-occupied-and-unconfigurable.md) | 8000 被 IncrediBuild 长期占用，启动失败而报错指着「权限」 | `b4f7aba` | `Manager.exe` 以 `0.0.0.0:8000` **独占**监听 → 绑 `127.0.0.1:8000` 得到 `WinError 10013`（权限）而不是 10048（地址已用）；端口值散落多处、Vite 代理还硬编码，换端口会让 `/api` 静默打到 IncrediBuild 上 |
 
 ## 本轮（2026-10-01）背景
 
@@ -62,6 +62,28 @@
 **日志落盘**（在此之前应用从不写日志，INFO 被静默丢弃）、**真跑一次的运行时探测**、
 **把异常翻译成下一步的建议**。三者缺一，同类问题还会再花一轮才能查清。
 
+## 本轮（2026-10-01 后续）背景：一次启动失败牵出的两处
+
+这一轮的输入只有**一份启动日志**，而日志的头和尾各躺着一个彼此无关的问题：
+
+```text
+backend\app\job_manager.py:630: SyntaxWarning: 'return' in a 'finally' block        ← 008（日志开头）
+backend\app\job_manager.py:647: SyntaxWarning: 'return' in a 'finally' block        ← 008
+...
+ERROR uvicorn.error | [Errno 13] error while attempting to bind on address
+('127.0.0.1', 8000): [winerror 10013] 以一种访问权限不允许的方式做了一个...尝试。   ← 009（日志结尾）
+```
+
+- [008](008-return-in-finally-swallows-the-real-error.md) 是**症状**：两条 `SyntaxWarning`。
+  真问题在语义层 —— `finally` 里的 `return` 会吞掉正在传播的异常，而 `_worker` 又没有兜底，
+  于是「条目卡在 running」和「队列静默少一个并发口」是同一件事的两种结局。
+- [009](009-local-dev-port-is-occupied-and-unconfigurable.md) 是**服务根本没起来**。
+  真因与「权限」无关：8000 被 IncrediBuild 的 Coordinator 长期独占，Windows 因此返回 10013；
+  而这条报错之所以把人引偏，正是因为此前没有任何地方能看出「谁占了它」。
+
+两者没有因果关系，各自独立提交、可独立回滚。共同点是同一个毛病：
+**报错文本指向的地方，和真正坏掉的地方不是同一处** —— 与 001~007 那一轮的主题一脉相承。
+
 ## 已知但**未处理**的问题（下一轮候选）
 
 1. ~~**应用没有代理配置项。**~~ → 已由 [006](006-proxy-is-not-configurable.md) 处理。
@@ -75,3 +97,14 @@
 4. 同一 item 内多条字幕轨仍是串行请求，若 YouTube 收紧限流可能还需请求间隔控制（见 004 关联）。
 5. **环境净化只覆盖 `NODE_OPTIONS`**（007 遗留）。其它同样能打坏子进程的宿主注入没有处理 ——
    只处理实测造成故障的那一个，不凭想象扩大范围。
+6. **`docs/development.md` 的环境变量表缺两个字段**：`YTDL_JS_RUNTIME_PATH` 与 `YTDL_PROXY`，
+   而表头写着「列出全部字段」。同一处还发现文档把 `YTDL_JS_RUNTIME_PATH` 误写成 `YTDL_JS_RUNTIME`
+   —— 实测那个名字设了**不生效**（`AppSettings().js_runtime_path` 仍为 `None`），本轮已在
+   `docs/troubleshooting.md` 顺手改正。是否反过来把字段改名成 `js_runtime` 属于产品决定，没有动。
+7. **端口预检只在 `python -m app` 这条入口生效**（009 遗留）。继续敲
+   `python -m uvicorn app.main:app --port 8000` 仍然是原始报错；`docs/openapi.yaml` 的 server URL
+   也仍是硬编码 `8000`，没有跟随 `YTDL_API_PORT`。
+8. **008 的触发路径没有在真实界面里出现过**：删除竞态 + 收尾出错这个组合只在测试里构造过，
+   没有真的在浏览器里删掉一个正在下载的条目来观察。
+9. **`port_available()` 存在「探测通过、随后被抢走」的竞态**（009 遗留），没有加锁也没有重试 ——
+   预检只负责把话说清楚，不构成占用保证。

@@ -37,7 +37,7 @@
 
 详情：
 
-- 文件删除在 [_delete_output_files](../backend/app/job_manager.py#L342) 中执行，所有候选路径通过 [_is_under_allowed_root](../backend/app/job_manager.py#L364) 验证，仅允许在下载根目录或任务下载子目录下操作
+- 文件删除在 [_delete_output_files](../backend/app/job_manager.py#L346) 中执行，所有候选路径通过 [_is_under_allowed_root](../backend/app/job_manager.py#L368) 验证，仅允许在下载根目录或任务下载子目录下操作
 - 本地播放/打开文件夹接口（[main.py](../backend/app/main.py#L342) 起）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
 - [safe_path_name](../backend/app/paths.py#L7) 为 playlist 目录名移除 `<>:"/\|?*` 等不安全字符，并限制长度为 120 字符
 - [discover_output_file_candidates](../backend/app/output_paths.py#L30) 仅在给定的 `job_download_dir` 内按 YouTube video ID 匹配文件，不遍历上级目录
@@ -116,7 +116,7 @@
 - 导入的 cookies 过滤为仅 youtube.com 和 google.com 域名
 - Edge cookies 数据库被锁时，提供提示并支持关闭浏览器重试
 - CDP fallback（[_extract_edge_cookies_via_cdp](../backend/app/browser_cookies.py#L176)）使用临时 headless Edge 实例，完成后立即终止进程
-- Cookie 导入由 `threading.Lock`（[job_manager.py](../backend/app/job_manager.py#L49)）保护，防止并发导入导致的资源竞争
+- Cookie 导入由 `threading.Lock`（[job_manager.py](../backend/app/job_manager.py#L53)）保护，防止并发导入导致的资源竞争
 
 **注意**：CDP fallback 启动 Edge 时使用了 `--remote-allow-origins=*`。虽然使用了随机空闲端口且进程在获取 cookies 后立即终止（超时 15 秒 + 10 秒），且仅绑定 `127.0.0.1`，但在 Headless Edge 短暂运行期间，同机的其他本地进程理论上可以连接到调试端口。攻击面极小（需要本机已存在恶意进程），且 YouTube cookies 在 Edge 中通常已在登录态下。
 
@@ -128,8 +128,8 @@
 
 详情：
 
-- 文件删除通过 [_is_under_allowed_root](../backend/app/job_manager.py#L364) 验证目标路径位于下载根目录或任务子目录内
-- 删除 playlist 子文件夹前检查文件夹确实在下载根目录下（[job_manager.py](../backend/app/job_manager.py#L361)）
+- 文件删除通过 [_is_under_allowed_root](../backend/app/job_manager.py#L368) 验证目标路径位于下载根目录或任务子目录内
+- 删除 playlist 子文件夹前检查文件夹确实在下载根目录下（[job_manager.py](../backend/app/job_manager.py#L365)）
 - 本地文件打开（[system_open.py](../backend/app/system_open.py#L23)）不涉及路径操作安全风险——仅打开已存在的文件
 - 输出路径解析（[output_paths.py](../backend/app/output_paths.py#L30)）仅在给定下载目录内进行，不访问外围文件系统
 
@@ -184,7 +184,7 @@
 
 详情：
 
-- Cookie 导入有 `threading.Lock` 保护（[job_manager.py](../backend/app/job_manager.py#L49)）
+- Cookie 导入有 `threading.Lock` 保护（[job_manager.py](../backend/app/job_manager.py#L53)）
 - 任务状态由 `_cancelled`、`_paused`、`_deleted`、`_runtime_restart_items` 等内存集合协调 worker 行为
 - `should_cancel` 回调在下载过程中定期检查，响应暂停/取消/删除请求
 - 数据库写入使用 SQLAlchemy session + commit，提供事务保护

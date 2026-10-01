@@ -12,6 +12,8 @@ YouTube Downloader 是本机单用户工具。前端提供链接解析、下载�
 
 普通用户按 [README 快速启动](../README.md#快速启动) 执行即可。该方式会先生成 `frontend/dist`，再由 FastAPI 托管静态页面，浏览器打开 `http://127.0.0.1:8000`。
 
+端口默认是 `8000`，可以用仓库根 `.env` 里的 `YTDL_API_PORT` 改成别的。如果启动时提示 `WinError 10013`，**那不是权限问题**，而是端口已被别的程序占着 —— 启动命令会直接告诉你占用者是谁，处置办法见 [排障手册](troubleshooting.md#启动就失败端口被占用)。
+
 打开后预期看到 YouTube Downloader 首页：左侧包含“解析链接”和“任务中心”，右侧包含“下载选项”，顶部状态条会显示 `ffmpeg` 和 `cookies` 状态。首页示例：
 
 ![YouTube Downloader 首页](assets/screenshots/home.png)

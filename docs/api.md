@@ -22,7 +22,7 @@
 
 ## 基本约定
 
-- 后端应用由 [create_app](../backend/app/main.py#L53) 创建；API 默认绑定 `127.0.0.1:8000`，单端口模式下同时托管 `frontend/dist`。
+- 后端应用由 [create_app](../backend/app/main.py#L53) 创建；API 默认绑定 `127.0.0.1:8000`（可用仓库根 `.env` 的 `YTDL_API_PORT` 或 `python -m app --port` 覆盖，见 [开发文档](development.md#端口被占用时)），单端口模式下同时托管 `frontend/dist`。
 - API 返回 JSON；`DELETE /api/jobs/{id}` 与四个本地打开接口成功时返回 `204`。
 - 前端统一请求封装在 [request](../frontend/src/api.ts#L27)，非 2xx 响应会抛出 `ApiError`，并保留结构化 `detail`。
 - Cookies 导入锁库错误使用结构化 `detail`，字段见 [BrowserCookieImportError.to_detail](../backend/app/browser_cookies.py#L58)。

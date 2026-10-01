@@ -17,7 +17,7 @@ npm run build
 ```powershell
 cd ..\backend
 python -m pip install -e .
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m app
 ```
 
 打开 `http://127.0.0.1:8000`，应看到 YouTube Downloader 首页：左侧是“解析链接”和“任务中心”，右侧是“下载选项”。截图如下：
@@ -25,6 +25,10 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ![YouTube Downloader 首页](docs/assets/screenshots/home.png)
 
 `http://127.0.0.1:5173` 只用于前端热更新开发模式，需要另外启动 Vite dev server。不同读者的运行方式见 [用户手册](docs/user-manual.md#启动应用) 和 [开发文档](docs/development.md#本地运行)。
+
+如果 `8000` 已被别的程序占用（开发机上很常见，例如 IncrediBuild 的 Coordinator 就长期监听它），
+`python -m app` 不会只丢一句 `WinError 10013` —— 它会指名占用者并给出下一步；换端口与前端代理如何保持一致见
+[开发文档：端口被占用时](docs/development.md#端口被占用时)。
 
 ## 文档导航
 

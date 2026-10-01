@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Copy, Loader2, PlugZap, RefreshCw, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Loader2, PlugZap, RefreshCw, XCircle } from "lucide-react";
 import { getDiagnostics, getSettings, refreshRuntimeDiagnostics, testProxy } from "../api";
+import { HelpPopover } from "./HelpPopover";
 import type { Diagnostics, ProxyTestResult, Settings } from "../types";
 
 /**
@@ -9,15 +10,15 @@ import type { Diagnostics, ProxyTestResult, Settings } from "../types";
  * 设计目标（用户视角）：
  * 1. **先给结论**：现在到底走没走代理、通不通、用了几毫秒，一眼看完；
  * 2. **再给动作**：一个「检测代理」按钮，和一个「先试这个地址再保存」的按钮；
- * 3. **最后给知识**：折叠起来的「不知道填什么」——常见代理软件端口、三步操作，
- *    以及最容易搞混的一条：浏览器能上网 ≠ 应用能上网。
+ * 3. **最后给知识**：收进浮层的两项说明——常用本地端口挂在代理输入框旁，
+ *    连通性排查顺序挂在这块结果区旁。两者都不占主功能区版面。
  *
  * 这里刻意**不**把失败只写成一行红字：每次失败都必须同时给出 next_steps，
  * 否则用户只能回来问「那我现在该干嘛」。
  */
 
 const PROXY_PRESETS = [
-  { software: "Clash / Clash Verge / Mihomo", address: "127.0.0.1:7890", note: "混合端口（HTTP + SOCKS 同一个口）" },
+  { software: "Clash / Clash Verge / Mihomo", address: "127.0.0.1:7890", note: "混合端口（HTTP 与 SOCKS 共用同一端口）" },
   { software: "v2rayN", address: "127.0.0.1:10809", note: "HTTP 代理端口；SOCKS 端口通常是 10808" },
   { software: "Shadowsocks / SS 客户端", address: "127.0.0.1:1080", note: "本地 SOCKS5 端口，本应用同样支持" },
   { software: "Surge / Quantumult 等", address: "127.0.0.1:6152", note: "HTTP 代理端口" }
@@ -70,16 +71,69 @@ function CopyableCommand({ command, label }: { command: string; label?: string }
   );
 }
 
-function Collapsible({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
+/** 挂在代理输入框旁：常见代理软件在本机监听的端口，点一下即可填入。 */
+export function ProxyPortsPopover({ onPick }: { onPick: (address: string) => void }) {
   return (
-    <div className="collapsible">
-      <button className="collapsible-head" type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}>
-        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-        {title}
-      </button>
-      {open && <div className="collapsible-body">{children}</div>}
-    </div>
+    <HelpPopover id="proxy-ports" label="常用端口" title="常见代理软件的本地端口">
+      <p>
+        本地端口指代理软件在本机 <code>127.0.0.1</code> 上监听的端口，以代理软件设置界面中显示的值为准。
+        下列为常见默认值，点击地址即可填入输入框。
+      </p>
+      <ul className="preset-list">
+        {PROXY_PRESETS.map((preset) => (
+          <li key={preset.software}>
+            <span className="preset-name">{preset.software}</span>
+            <button
+              className="link-button"
+              type="button"
+              onClick={() => onPick(preset.address)}
+              // 同「先试输入框里的地址」：不让这次点击把输入框弄失焦，
+              // 否则 onBlur 会把还没验证过的地址直接存进设置。
+              onMouseDown={(event) => event.preventDefault()}
+            >
+              {preset.address}
+            </button>
+            <span className="preset-note">{preset.note}</span>
+          </li>
+        ))}
+      </ul>
+      <p>
+        本应用同时支持 HTTP 与 SOCKS5（一种代理协议，通常用于 Shadowsocks 类客户端）。
+      </p>
+      <p>
+        填入后点「先试输入框里的地址」验证，通过后再离开输入框保存。留空表示自动（优先使用 Windows 系统代理）；
+        填 <code>direct</code> 表示强制直连。
+      </p>
+    </HelpPopover>
+  );
+}
+
+/** 挂在检测结果旁：浏览器可访问而应用不可访问时的定位顺序。 */
+export function ProxyTroubleshootingPopover() {
+  return (
+    <HelpPopover id="proxy-flow" label="排查顺序" title="浏览器可访问而应用不可访问时的排查顺序">
+      <ol className="help-list">
+        <li>
+          点「检测代理」确认出口连通性。返回非 200 的 HTTP 状态码或直接超时，
+          说明问题在代理链路本身，不在本应用。
+        </li>
+        <li>
+          确认代理软件处于运行状态。代理软件退出后，系统代理设置可能被清空，或仍指向一个没有进程监听的端口，
+          两种情形都会让请求等待至超时。
+        </li>
+        <li>
+          核对端口。Clash 常用 <code>7890</code>，v2rayN 常用 <code>10808</code> / <code>10809</code>，
+          Shadowsocks 常用 <code>1080</code>；端口填写错误是最常见的成因。
+        </li>
+        <li>
+          区分两条独立路径：浏览器可能使用系统代理或浏览器插件的代理，本应用使用设置面板中填写的地址。
+          因此浏览器可访问不能证明本应用可访问，反之亦然。
+        </li>
+        <li>
+          若本机确需直连（例如公司内网），填写 <code>direct</code>：请求会立即失败，而不是等待 30 秒超时。
+        </li>
+      </ol>
+    </HelpPopover>
   );
 }
 
@@ -189,46 +243,9 @@ export function ProxySection({
         </div>
       )}
 
-      <Collapsible title="不知道填什么？常见代理软件的本地端口">
-        <table className="preset-table">
-          <thead>
-            <tr>
-              <th>软件</th>
-              <th>通常填这个</th>
-              <th>说明</th>
-            </tr>
-          </thead>
-          <tbody>
-            {PROXY_PRESETS.map((preset) => (
-              <tr key={preset.software}>
-                <td>{preset.software}</td>
-                <td>
-                  <button className="link-button" type="button" onClick={() => onDraftProxyChange(preset.address)}>
-                    {preset.address}
-                  </button>
-                </td>
-                <td>{preset.note}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="hint">
-          填好后点「先试输入框里的地址」——通过再离开输入框保存。留空表示自动（优先用 Windows 系统代理）；填 <code>direct</code> 表示强制直连。
-        </p>
-      </Collapsible>
-
-      <Collapsible title="浏览器能打开 YouTube，应用却不能？按这个顺序查">
-        <ol className="diag-steps">
-          <li>先点「检测代理」：若显示 HTTP 404 以外的状态码或直接超时，问题就在代理本身，不在本应用。</li>
-          <li>确认代理软件在运行。代理软件关掉时，系统代理设置会被清空或仍指向一个没人监听的端口，两种都会让请求干等到超时。</li>
-          <li>核对端口。Clash 常见 7890、v2rayN 常见 10808/10809、SS 常见 1080，填错端口是最高频的原因。</li>
-          <li>
-            浏览器可能走的是「系统代理」或它自己的插件代理，而本应用用的是这里填的地址 —— 所以「浏览器行」不能证明「应用行」。
-            反之也一样：本应用用了设置里的地址，即使浏览器挂了代理插件也不受影响。
-          </li>
-          <li>如果本机确实需要走直连（例如公司内网），填 <code>direct</code>；这会让请求立刻失败而不是等 30 秒超时。</li>
-        </ol>
-      </Collapsible>
+      <div className="diag-help-row">
+        <ProxyTroubleshootingPopover />
+      </div>
 
       <div className={`runtime-block ${jsRuntimeReady ? "is-ok" : "is-warn"}`}>
         <span className="runtime-head">

@@ -1284,17 +1284,24 @@ describe("App", () => {
     expect(await screen.findByText(/返回 HTTP 200/)).toBeInTheDocument();
   });
 
-  test("offers a preset table when the user does not know what to fill in", async () => {
+  test("offers a preset table of local proxy ports next to the proxy field", async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const head = await screen.findByRole("button", { name: "不知道填什么？常见代理软件的本地端口" });
+    const head = await screen.findByRole("button", { name: "说明：常见代理软件的本地端口" });
+    // 说明默认收起，不占主功能区版面。
+    expect(head).toHaveAttribute("aria-expanded", "false");
     await ensureExpanded(head);
 
     expect(screen.getByText("Clash / Clash Verge / Mihomo")).toBeInTheDocument();
     expect(screen.getByText("v2rayN")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "127.0.0.1:10809" }));
     expect(screen.getByLabelText("代理（留空 = 自动；填 direct 强制直连）")).toHaveValue("127.0.0.1:10809");
+    // 只填进输入框，不立即保存。
+    expect(fetch).not.toHaveBeenCalledWith(
+      "/api/settings",
+      expect.objectContaining({ method: "PUT" })
+    );
   });
 
   test("surfaces a broken JS runtime with the raw reason and a refresh button", async () => {
@@ -1365,13 +1372,54 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const head = await screen.findByRole("button", { name: "怎么拿到 cookies？三种方式，从最省事开始" });
+    const head = await screen.findByRole("button", { name: "说明：Cookie 获取方式" });
     await ensureExpanded(head);
 
     expect(screen.getByText("python scripts/export_cookies_via_cdp.py")).toBeInTheDocument();
-    expect(screen.getByText(/方式一：用仓库里的脚本/)).toBeInTheDocument();
+    expect(screen.getByText(/导出脚本（推荐）/)).toBeInTheDocument();
     expect(screen.getByText(/Get cookies\.txt LOCALLY/)).toBeInTheDocument();
-    expect(screen.getByText(/不要做什么：/)).toBeInTheDocument();
+    expect(screen.getByText(/不支持的方式：/)).toBeInTheDocument();
     expect(screen.getByText(/破坏浏览器的 cookie 库/)).toBeInTheDocument();
+  });
+
+  test("keeps every help note collapsed until asked for, and closes it on demand", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const helpIds = [
+      "说明：Cookie 获取方式",
+      "说明：Cookie 校验结论解读",
+      "说明：常见代理软件的本地端口",
+      "说明：浏览器可访问而应用不可访问时的排查顺序"
+    ];
+    for (const name of helpIds) {
+      expect(await screen.findByRole("button", { name })).toHaveAttribute("aria-expanded", "false");
+    }
+    // 收起状态下，说明正文不在 DOM 里。
+    expect(screen.queryByText("Cookie 获取方式")).not.toBeInTheDocument();
+
+    const head = screen.getByRole("button", { name: "说明：Cookie 获取方式" });
+    await user.click(head);
+    expect(head).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("dialog", { name: "Cookie 获取方式" })).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    expect(head).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("dialog", { name: "Cookie 获取方式" })).not.toBeInTheDocument();
+  });
+
+  test("remembers an expanded help note across reloads", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const head = await screen.findByRole("button", { name: "说明：Cookie 获取方式" });
+    await user.click(head);
+    expect(head).toHaveAttribute("aria-expanded", "true");
+
+    cleanup();
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "说明：Cookie 获取方式" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("dialog", { name: "Cookie 获取方式" })).toBeInTheDocument();
   });
 });

@@ -174,6 +174,13 @@ button {
   font-weight: 800;
 }
 
+.field-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 textarea,
 input,
 select {
@@ -979,57 +986,231 @@ th {
   word-break: break-word;
 }
 
-.collapsible {
-  border: 1px solid #e3e8f0;
-  border-radius: 8px;
-  background: #ffffff;
-  overflow: hidden;
+/* ---------- 辅助说明浮层 ----------
+   说明是次要信息，所以默认只是一个小胶囊；展开后是覆盖在主功能区之上的浮层，
+   不占据版面高度、不拦截鼠标、不抢焦点。桌面端悬停即看，窄屏改为底部抽屉。 */
+
+.help-popover {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
 }
 
-.collapsible-head {
-  display: flex;
+.help-trigger {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 9px 11px;
-  border: 0;
-  background: transparent;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid #d8deea;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #4b5a72;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.help-trigger:hover,
+.help-trigger:focus-visible,
+.help-trigger.is-open {
+  border-color: #1f6feb;
+  background: #f2f7ff;
   color: #1f6feb;
+}
+
+.help-trigger:focus-visible {
+  outline: 2px solid #1f6feb;
+  outline-offset: 2px;
+}
+
+.help-panel {
+  position: fixed;
+  z-index: 60;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px 14px;
+  border: 1px solid #d5dceb;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 20px 48px rgba(23, 34, 56, 0.18);
   font-size: 13px;
+  line-height: 1.6;
+  color: #3d4a60;
+  animation: help-pop-in 0.14s ease-out;
+  /* 浮层要自己定文字度量：触发按钮可能挂在 white-space: nowrap 的状态文字里
+     （例如 cookies 那一行的状态标签），继承下来会让整段说明不换行、
+     在浮层内部撑出上千像素的横向滚动区。 */
+  font-weight: 400;
+  white-space: normal;
+  word-break: normal;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.help-panel.is-sheet {
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  top: auto;
+  width: auto;
+  max-height: 62vh;
+  border-radius: 12px;
+  animation-name: help-sheet-in;
+}
+
+@keyframes help-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes help-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .help-panel {
+    animation: none;
+  }
+}
+
+.help-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.help-panel-title {
+  color: #17202f;
+  font-size: 13.5px;
   font-weight: 850;
-  text-align: left;
+  line-height: 1.4;
 }
 
-.collapsible-body {
-  padding: 0 11px 11px;
-  border-top: 1px solid #eef2f8;
-  color: #48556a;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.collapsible-body p {
-  margin: 8px 0 0;
-}
-
-.preset-table {
-  width: 100%;
-  margin-top: 8px;
-  border-collapse: collapse;
-  font-size: 12.5px;
-}
-
-.preset-table th,
-.preset-table td {
-  padding: 6px 8px;
-  border-bottom: 1px solid #eef2f8;
-  text-align: left;
-  vertical-align: top;
-}
-
-.preset-table th {
+.help-panel-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: #657187;
-  font-weight: 850;
+}
+
+.help-panel-close:hover,
+.help-panel-close:focus-visible {
+  background: #eef2f8;
+  color: #17202f;
+}
+
+.help-body p {
+  margin: 0 0 8px;
+}
+
+.help-body p:last-child {
+  margin-bottom: 0;
+}
+
+.help-body ul,
+.help-body ol,
+.help-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.help-list > li {
+  margin-bottom: 8px;
+}
+
+.help-list > li:last-child {
+  margin-bottom: 0;
+}
+
+.help-list ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.help-list li {
+  margin: 0;
+}
+
+.help-body code,
+.help-list code {
+  padding: 1px 5px;
+  border: 1px solid #e3e8f0;
+  border-radius: 6px;
+  background: #f6f7fb;
+  color: #17202f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.help-body strong {
+  color: #22304a;
+}
+
+.diag-help-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 端口对照：不用三列表格 —— 浮层只有 400 多像素宽，三列会在浮层内部
+   撑出横向滚动条，把「说明」那一列截掉。改成两列网格，说明另起一行。 */
+.preset-list {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.preset-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 7px 0;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.preset-list li:last-child {
+  border-bottom: 0;
+}
+
+.preset-name {
+  color: #17202f;
+  font-size: 12.5px;
+  font-weight: 800;
+}
+
+.preset-note {
+  grid-column: 1 / -1;
+  color: #657187;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .link-button {
@@ -1052,8 +1233,7 @@ th {
   margin: 6px 0;
 }
 
-.command-code,
-.collapsible-body code {
+.command-code {
   padding: 2px 6px;
   border: 1px solid #e3e8f0;
   border-radius: 6px;
@@ -1105,18 +1285,18 @@ th {
   padding-top: 4px;
 }
 
-.cookie-howto > li {
-  margin-bottom: 10px;
-}
-
-.cookie-howto ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-
 @media (max-width: 720px) {
   .diag-actions .ghost-button {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* 触屏没有 hover，点击是唯一入口，把触发区放大到可稳定点中的尺寸。 */
+@media (pointer: coarse) {
+  .help-trigger {
+    height: 30px;
+    padding: 0 11px;
+    font-size: 12.5px;
   }
 }

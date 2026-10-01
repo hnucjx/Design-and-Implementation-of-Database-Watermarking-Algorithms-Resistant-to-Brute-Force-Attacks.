@@ -38,9 +38,9 @@ import {
   updateSettings,
   uploadCookies
 } from "./api";
-import { CookieSection } from "./components/CookieSection";
+import { CookieHowToPopover, CookieSection } from "./components/CookieSection";
 import { JobQueue } from "./components/JobQueue";
-import { ProxySection } from "./components/ProxySection";
+import { ProxyPortsPopover, ProxySection } from "./components/ProxySection";
 import { formatDuration } from "./formatting";
 import {
   buildResolutionOptions,
@@ -553,6 +553,8 @@ function UrlAnalyzer({
           <span className="cookie-inline-status">
             <Cookie size={16} />
             {settings?.cookies_enabled ? "已启用 cookies" : "未上传 cookies"}
+            {/* 说明挂在状态文字旁，而不是混进右侧的动作按钮里 —— 它解释的是这一行，不是一个动作。 */}
+            <CookieHowToPopover />
           </span>
           <div className="cookie-inline-actions">
             <label className="file-button compact-file-button">
@@ -1099,15 +1101,21 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
           onBlur={(event) => void saveAria2cConnections(Number(event.currentTarget.value))}
         />
       </label>
-      <label className="field">
-        <span>代理（留空 = 自动；填 direct 强制直连）</span>
+      <div className="field">
+        <div className="field-label-row">
+          <label className="field-label" htmlFor="proxy-address">
+            代理（留空 = 自动；填 direct 强制直连）
+          </label>
+          <ProxyPortsPopover onPick={(value) => setDraft({ ...draft, proxy: value })} />
+        </div>
         <input
+          id="proxy-address"
           value={draft.proxy ?? ""}
           placeholder="例如 127.0.0.1:7890"
           onChange={(event) => setDraft({ ...draft, proxy: event.target.value })}
           onBlur={(event) => void saveProxy(event.currentTarget.value)}
         />
-      </label>
+      </div>
       <ProxySection
         settings={settings}
         draftProxy={draft.proxy ?? ""}

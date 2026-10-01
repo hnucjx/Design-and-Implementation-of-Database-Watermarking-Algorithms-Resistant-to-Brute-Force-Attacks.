@@ -256,6 +256,55 @@ def test_detect_chromium_executable_prefers_path_then_install_dirs(monkeypatch, 
     assert ytdlp_service.detect_chromium_executable() == str(edge)
 
 
+def test_detect_node_executable_falls_back_to_install_dir(monkeypatch, tmp_path: Path) -> None:
+    node = tmp_path / "nodejs" / "node.exe"
+    node.parent.mkdir(parents=True)
+    node.write_bytes(b"")
+    monkeypatch.setattr(ytdlp_service.shutil, "which", lambda name: None)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "missing"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "missing-too"))
+
+    assert ytdlp_service.detect_node_executable() == str(node)
+
+
+def test_detect_js_runtime_prefers_explicit_path(monkeypatch, tmp_path: Path) -> None:
+    deno = tmp_path / "deno.exe"
+    deno.write_bytes(b"")
+    service = YtDlpService(download_dir=tmp_path, js_runtime_path=str(deno))
+    monkeypatch.setattr(service, "_runtime_version", lambda executable: "deno 2.1.0")
+    monkeypatch.setattr(ytdlp_service, "detect_node_executable", lambda: None)
+
+    assert service._detect_js_runtime() == ("deno", str(deno), "deno 2.1.0")
+
+
+def test_detect_js_runtime_falls_back_to_install_dir_when_path_is_empty(monkeypatch, tmp_path: Path) -> None:
+    """服务进程 PATH 里没有 node 时，也要能从安装目录里找出来。"""
+
+    node = tmp_path / "nodejs" / "node.exe"
+    node.parent.mkdir(parents=True)
+    node.write_bytes(b"")
+    monkeypatch.setattr(ytdlp_service.shutil, "which", lambda name: None)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "missing"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "missing-too"))
+    monkeypatch.setattr(ytdlp_service, "detect_deno_executable", lambda: None)
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_runtime_version", lambda executable: "v22.22.2")
+
+    assert service._detect_js_runtime() == ("node", str(node), "v22.22.2")
+
+
+def test_detect_js_runtime_ignores_unsupported_node_version(monkeypatch, tmp_path: Path) -> None:
+    node = str(tmp_path / "node.exe")
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_runtime_version", lambda executable: "v18.20.4")
+    monkeypatch.setattr(ytdlp_service, "detect_deno_executable", lambda: None)
+    monkeypatch.setattr(ytdlp_service, "detect_node_executable", lambda: node)
+
+    assert service._detect_js_runtime() is None
+
+
 def test_safari_hls_download_options_use_safari_profile_accepted_by_ytdlp(monkeypatch, tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
     monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))

@@ -61,6 +61,7 @@ def create_app(
         aria2c_enabled=app_settings.aria2c_enabled,
         aria2c_path=app_settings.aria2c_path,
         aria2c_connections=app_settings.aria2c_connections,
+        js_runtime_path=app_settings.js_runtime_path,
     )
     with Session(engine) as session:
         _apply_stored_settings(session, app_settings, service)

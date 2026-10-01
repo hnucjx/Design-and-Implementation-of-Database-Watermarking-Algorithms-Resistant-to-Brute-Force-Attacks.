@@ -80,7 +80,49 @@ _CHROMIUM_INSTALL_SUBPATHS = (
     ("Microsoft", "Edge", "Application", "msedge.exe"),
     ("Google", "Chrome", "Application", "chrome.exe"),
 )
+NODE_EXECUTABLE_NAMES = ("node", "nodejs")
+_DENO_INSTALL_SUBPATHS = (("deno", "deno.exe"),)
+_NODE_INSTALL_SUBPATHS = (("nodejs", "node.exe"),)
+_POSIX_FALLBACKS = {
+    "deno": ("/usr/local/bin/deno", "/opt/homebrew/bin/deno", "/usr/bin/deno"),
+    "node": ("/usr/local/bin/node", "/opt/homebrew/bin/node", "/usr/bin/node"),
+}
 logger = logging.getLogger(__name__)
+
+
+def _detect_executable(
+    names: tuple[str, ...],
+    install_subpaths: tuple[tuple[str, ...], ...] = (),
+    fallback_paths: tuple[str, ...] = (),
+) -> str | None:
+    """按「PATH → Windows 安装目录 → 固定路径」的顺序定位一个可执行文件。
+
+    只返回**确实存在**的路径：调用方（yt-dlp 插件 / yt-dlp 本体）都会自己校验
+    文件是否存在，返回不存在的路径只会把「不可用」伪装成「可用」，所以这里
+    宁可返回 ``None``。
+    """
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return found
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    roots = (
+        os.environ.get("ProgramFiles(x86)"),
+        os.environ.get("ProgramFiles"),
+        local_app_data,
+        str(Path(local_app_data) / "Programs") if local_app_data else None,
+    )
+    for root in roots:
+        if not root:
+            continue
+        for parts in install_subpaths:
+            candidate = Path(root).joinpath(*parts)
+            if candidate.exists():
+                return str(candidate)
+    for path in fallback_paths:
+        if Path(path).exists():
+            return path
+    return None
 
 
 def detect_chromium_executable() -> str | None:
@@ -92,23 +134,30 @@ def detect_chromium_executable() -> str | None:
     于是 ``pyproject.toml`` 里声明的依赖等于白装。让用户去配一个绝对路径
     是不现实的默认值，所以这里按「PATH → 常见安装目录」的顺序探测。
     """
-    for name in CHROMIUM_EXECUTABLE_NAMES:
-        found = shutil.which(name)
-        if found:
-            return found
-    roots = (
-        os.environ.get("ProgramFiles(x86)"),
-        os.environ.get("ProgramFiles"),
-        os.environ.get("LOCALAPPDATA"),
+    return _detect_executable(CHROMIUM_EXECUTABLE_NAMES, _CHROMIUM_INSTALL_SUBPATHS)
+
+
+def detect_node_executable() -> str | None:
+    """定位 Node，优先 PATH，其次常见安装目录。
+
+    yt-dlp 需要它来解 YouTube 的 nsig（JS challenge）。服务进程的 PATH 里经常
+    没有 node（本机装在 ``C:\\Program Files\\nodejs``，而服务由其它 shell 拉起），
+    只查 PATH 会把 provider 判成 unavailable。
+    """
+    return _detect_executable(
+        NODE_EXECUTABLE_NAMES,
+        _NODE_INSTALL_SUBPATHS,
+        _POSIX_FALLBACKS["node"] + (str(Path.home() / ".nvm" / "current" / "bin" / "node"),),
     )
-    for root in roots:
-        if not root:
-            continue
-        for parts in _CHROMIUM_INSTALL_SUBPATHS:
-            candidate = Path(root).joinpath(*parts)
-            if candidate.exists():
-                return str(candidate)
-    return None
+
+
+def detect_deno_executable() -> str | None:
+    """定位 Deno（yt-dlp 首选的 JS 运行时）。"""
+    return _detect_executable(
+        ("deno",),
+        _DENO_INSTALL_SUBPATHS,
+        _POSIX_FALLBACKS["deno"] + (str(Path.home() / ".deno" / "bin" / "deno"),),
+    )
 
 
 class DownloadCancelled(RuntimeError):
@@ -137,6 +186,7 @@ class YtDlpService:
         aria2c_enabled: bool = False,
         aria2c_path: str | None = None,
         aria2c_connections: int = DEFAULT_ARIA2C_CONNECTIONS,
+        js_runtime_path: str | None = None,
     ) -> None:
         self.download_dir = download_dir
         self.youtube_po_token = youtube_po_token
@@ -148,6 +198,8 @@ class YtDlpService:
         self.aria2c_enabled = aria2c_enabled
         self.aria2c_path = aria2c_path
         self.aria2c_connections = max(1, min(4, aria2c_connections))
+        # 显式指定的 JS 运行时路径（YTDL_JS_RUNTIME_PATH）；为空时自动探测。
+        self.js_runtime_path = js_runtime_path
 
     def get_ffmpeg_status(self) -> dict[str, bool]:
         return {"ffmpeg": self._ffmpeg_executable() is not None, "ffprobe": shutil.which("ffprobe") is not None}
@@ -178,6 +230,8 @@ class YtDlpService:
             "js_runtime": runtime is not None,
             "js_runtime_name": runtime[0] if runtime else None,
             "js_runtime_version": runtime[2] if runtime else None,
+            # provider 实际拿到的运行时路径（显式配置或自动探测）。
+            "js_runtime_path": runtime[1] if runtime else None,
             "yt_dlp_version": yt_dlp_version,
         }
 
@@ -739,16 +793,28 @@ class YtDlpService:
         return {"js_runtimes": {name: {"path": path}}}
 
     def _detect_js_runtime(self) -> tuple[str, str, str | None] | None:
-        deno_path = shutil.which("deno")
-        if deno_path:
-            return ("deno", deno_path, self._runtime_version(deno_path))
+        """探测可用的 JS 运行时（Deno 优先，其次 Node）。
 
-        node_path = shutil.which("node")
-        if node_path:
-            version = self._runtime_version(node_path)
-            if self._node_version_supported(version):
-                return ("node", node_path, version)
+        只查 PATH 是不够的：服务进程的 PATH 里常常没有 node（本机装在
+        ``C:\\Program Files\\nodejs``，而服务由别的 shell 拉起），yt-dlp 就会把
+        ``JS Challenge Providers`` 里的 node 标成 unavailable，nsig 解不出来、
+        提取直接失败。``YTDL_JS_RUNTIME_PATH`` 可显式指定，优先级最高。
+        """
+        for candidate in (self.js_runtime_path, detect_deno_executable(), detect_node_executable()):
+            if not candidate:
+                continue
+            runtime = self._js_runtime_from_executable(candidate)
+            if runtime:
+                return runtime
         return None
+
+    def _js_runtime_from_executable(self, executable: str) -> tuple[str, str, str | None] | None:
+        name = "deno" if Path(executable).name.lower().startswith("deno") else "node"
+        version = self._runtime_version(executable)
+        if name == "node" and not self._node_version_supported(version):
+            # 版本过低或根本跑不起来：当作没有这个运行时，让调用方继续找下一个候选。
+            return None
+        return (name, executable, version)
 
     def _runtime_version(self, executable: str) -> str | None:
         try:

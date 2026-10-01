@@ -31,6 +31,9 @@ class AppSettings(BaseSettings):
     youtube_po_token: str | None = None
     youtube_visitor_data: str | None = None
     youtube_po_browser_path: str | None = None
+    # 显式指定 JS 运行时（Deno / Node）可执行文件。留空时按「PATH -> 常见安装目录」自动探测；
+    # yt-dlp 用它解 YouTube 的 nsig（JS challenge），探测不到会直接导致提取失败。
+    js_runtime_path: str | None = None
     youtube_max_parallel_downloads: int = Field(default_factory=default_download_concurrency, ge=1)
     anti403_http_chunk_size_mb: int = Field(default=16, ge=1)
     # 0 = 关闭节流守卫。> 0 时写入 yt-dlp 的 throttledratelimit，会在单条流速度低于该值时

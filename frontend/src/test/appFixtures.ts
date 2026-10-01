@@ -1,4 +1,4 @@
-﻿import type { Job, Settings } from "../types";
+﻿import type { CookieHealth, Diagnostics, Job, ProxyTestResult, Settings } from "../types";
 
 export const analyzePayload = {
   url: "https://youtube.com/playlist?list=abc",
@@ -224,3 +224,94 @@ export const lockedEdgeCookieDetail = {
   raw_detail: "Could not copy Chrome cookie database."
 };
 
+
+export const diagnosticsPayload: Diagnostics = {
+  cookies_enabled: true,
+  log_file: String.raw`D:\code-repo\cascade\data\logs\app.log`,
+  sanitized_environment: [],
+  dependencies: {
+    ffmpeg: true,
+    ffprobe: true,
+    js_runtime: true,
+    js_runtime_name: "node",
+    js_runtime_version: "v22.22.2",
+    js_runtime_path: String.raw`C:\Program Files\nodejs\node.exe`,
+    js_runtime_error: null
+  }
+};
+
+export const diagnosticsWithoutJsRuntime: Diagnostics = {
+  ...diagnosticsPayload,
+  dependencies: {
+    ...diagnosticsPayload.dependencies,
+    js_runtime: false,
+    js_runtime_path: null,
+    js_runtime_error: String.raw`node C:\Program Files\nodejs\node.exe：以 yt-dlp 相同的权限模型启动失败（returncode=1）：ERR_ACCESS_DENIED`
+  }
+};
+
+export const proxyTestFailurePayload: ProxyTestResult = {
+  ok: false,
+  source: "setting",
+  proxy: "http://127.0.0.1:7890",
+  probe_url: "https://www.youtube.com/robots.txt",
+  http_status: null,
+  elapsed_ms: 2008,
+  bytes_read: 0,
+  error: "URLError: <urlopen error [WinError 10061] 由于目标计算机积极拒绝，无法连接。>",
+  summary: "通过代理 http://127.0.0.1:7890 访问失败：URLError。",
+  next_steps: [
+    "确认代理软件正在运行、端口一致；改完回到这里重新检测",
+    "若代理软件实际没开，把设置改成 direct 以强制直连，避免所有请求都在等超时"
+  ]
+};
+
+export const proxyTestSuccessPayload: ProxyTestResult = {
+  ok: true,
+  source: "system",
+  proxy: "http://127.0.0.1:7890",
+  probe_url: "https://www.youtube.com/robots.txt",
+  http_status: 200,
+  elapsed_ms: 190,
+  bytes_read: 792,
+  error: null,
+  summary: "连通：https://www.youtube.com/robots.txt 返回 HTTP 200，用时 190 ms（代理来源：system，代理：http://127.0.0.1:7890）",
+  next_steps: []
+};
+
+export const cookieHealthPayload: CookieHealth = {
+  present: true,
+  path: String.raw`D:\code-repo\cascade\data\cookies.txt`,
+  filename: "cookies.txt",
+  size_bytes: 6534,
+  format_ok: true,
+  format_note: "Netscape 格式（Tab 分隔 7 列）",
+  cookie_count: 44,
+  domains: { "youtube.com": 23, "google.com": 13, "accounts.google.com": 6, "myaccount.google.com": 2 },
+  youtube_domain_count: 23,
+  auth_cookie_names: ["SID", "HSID", "SAPISID", "LOGIN_INFO"],
+  missing_auth_cookie_names: ["SSID"],
+  anonymous_only: false,
+  expired_count: 0,
+  verdict: "登录态有效：YouTube 已识别为已登录",
+  next_steps: [],
+  logged_in: true,
+  logged_in_detail: 'YouTube 返回的页面里出现了 "LOGGED_IN":true',
+  checked_at: 1_790_000_000
+};
+
+export const cookieHealthGoogleOnlyPayload: CookieHealth = {
+  ...cookieHealthPayload,
+  cookie_count: 9,
+  domains: { "google.com": 9 },
+  youtube_domain_count: 0,
+  auth_cookie_names: ["SID", "HSID"],
+  missing_auth_cookie_names: ["SAPISID", "LOGIN_INFO"],
+  verdict: "登录态无效：cookie 没有落在 youtube.com 域上，所以请求被当成匿名",
+  logged_in: false,
+  logged_in_detail: 'YouTube 返回的页面里是 "LOGGED_IN":false —— 请求被当成匿名',
+  next_steps: [
+    "这是「只导出到 .google.com」的典型症状：SID 虽然存在，但 .google.com 的 cookie 不会发给 youtube.com",
+    "用 python scripts/export_cookies_via_cdp.py 重新导出（它会校验域名，拿不到就拒绝写文件）"
+  ]
+};

@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
@@ -10,19 +11,25 @@ from fastapi.staticfiles import StaticFiles
 from sqlmodel import Session, select
 
 from .config import AppSettings, REPO_ROOT, get_settings
+from .connectivity import test_proxy
+from .cookie_health import verify_cookies
 from .db import checkpoint_wal, create_app_engine, init_db, session_dependency
 from .events import EventBroker
 from .job_read_model import read_job
 from .job_manager import JobManager, new_id
+from .logging_setup import configure_logging, log_path
 from .models import Job, JobItem, Setting
 from .output_paths import discover_existing_output_path, discover_output_file_candidates, resolve_existing_output_path
 from .paths import safe_path_name
-from .proxy import redact_proxy_credentials
+from .proxy import redact_proxy_credentials, resolve_proxy
+from .runtime_env import describe_environment_risks, sanitize_environment
 from .schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
     BrowserCookieImportRequest,
+    CookieHealthRead,
     CookieStatus,
+    CookieVerifyRequest,
     CreateJobRequest,
     DeleteJobItemsRequest,
     DeleteJobItemsResponse,
@@ -30,6 +37,8 @@ from .schemas import (
     JobBatchActionRequest,
     JobBatchActionResponse,
     JobRead,
+    ProxyTestRead,
+    ProxyTestRequest,
     RestartJobRequest,
     SettingsRead,
     SettingsUpdate,
@@ -38,6 +47,8 @@ from .schemas import (
 from .system_open import LocalOpenError, open_path_with_default_app, open_video_with_best_player
 from .ytdlp_service import BrowserCookieImportError, YtDlpService
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(
     settings: AppSettings | None = None,
@@ -45,9 +56,18 @@ def create_app(
     directory_picker: Callable[[Path], Path | None] | None = None,
     system_opener: Callable[[Path], None] | None = None,
     video_opener: Callable[[Path, str | None], None] | None = None,
+    sanitize_environment_variables: bool = True,
 ) -> FastAPI:
     app_settings = settings or get_settings()
     app_settings.ensure_directories()
+    # 日志必须先初始化：后面每一步都可能出错，而「没有任何日志」会让排障从第一步就断掉。
+    configure_logging(app_settings.data_dir / "logs")
+    removed = sanitize_environment() if sanitize_environment_variables else []
+    if removed:
+        for item in removed:
+            logger.warning("已摘除会破坏 JS 运行时的宿主环境变量：%s=%s（原因：%s）", item.name, item.value, item.reason)
+        # 说明我们改的是本进程的环境，用户在别的 shell 里改名/删掉都不会影响应用行为。
+        logger.warning("摘除生效范围：当前应用进程；如仍看到相关报错，请检查是否由启动脚本反复注入")
     engine = create_app_engine(app_settings)
     init_db(engine)
     broker = EventBroker()
@@ -129,7 +149,75 @@ def create_app(
             "anti403_http_chunk_size_mb": app_settings.anti403_http_chunk_size_mb,
             "throttled_rate_kbps": app_settings.throttled_rate_kbps,
         }
-        return DiagnosticsRead(cookies_enabled=app_settings.cookies_path.exists(), dependencies=dependencies)
+        return DiagnosticsRead(
+            cookies_enabled=app_settings.cookies_path.exists(),
+            dependencies=dependencies,
+            log_file=str(log_path()) if log_path() else None,
+            sanitized_environment=describe_environment_risks(),
+        )
+
+    @app.post("/api/proxy/test", response_model=ProxyTestRead)
+    async def test_proxy_connection(request: ProxyTestRequest | None = Body(default=None)) -> ProxyTestRead:
+        """用**当前生效**（或请求里临时指定）的代理真实访问一次 YouTube。
+
+        不接受 ``proxy=""`` 之外的模糊语义：空 = 用当前设置，``direct`` = 强制直连，
+        其余按代理地址处理 —— 与 ``PUT /api/settings`` 的语义完全一致，避免出现
+        「测试用 A、下载用 B」这种最气人的偏差。
+        """
+        override = request.proxy if request else None
+        # getattr 兜底：测试里的 fake service 没有 proxy 属性，而「读不到配置」的语义
+        # 就是「没设置代理」，不该因此 500。
+        configured = getattr(service, "proxy", None)
+        resolution = resolve_proxy(override if override is not None else configured)
+        result = await asyncio.to_thread(test_proxy, resolution)
+        logger.info(
+            "proxy test: ok=%s source=%s proxy=%s status=%s elapsed_ms=%s error=%s",
+            result.ok,
+            result.source,
+            result.proxy or "<direct>",
+            result.http_status,
+            result.elapsed_ms,
+            result.error or "-",
+        )
+        return ProxyTestRead(**result.to_detail())
+
+    @app.post("/api/cookies/verify", response_model=CookieHealthRead)
+    async def verify_cookies_endpoint(request: CookieVerifyRequest | None = Body(default=None)) -> CookieHealthRead:
+        """校验 ``data/cookies.txt`` 是否真的能登录（而不是「文件存在」）。"""
+        deep = request.deep if request else True
+        resolution_for_cookies = (
+            service.proxy_resolution()
+            if hasattr(service, "proxy_resolution")
+            else resolve_proxy(getattr(service, "proxy", None))
+        )
+        health = await asyncio.to_thread(
+            verify_cookies,
+            app_settings.cookies_path,
+            resolution_for_cookies,
+            deep=deep,
+        )
+        logger.info(
+            "cookies verify: present=%s count=%s youtube_domain_count=%s auth=%s logged_in=%s verdict=%s",
+            health.present,
+            health.cookie_count,
+            health.youtube_domain_count,
+            ",".join(health.auth_cookie_names) or "-",
+            health.logged_in,
+            health.verdict,
+        )
+        return CookieHealthRead(**health.to_detail())
+
+    @app.post("/api/diagnostics/runtime", response_model=DiagnosticsRead)
+    async def refresh_runtime_diagnostics() -> DiagnosticsRead:
+        """重新做一次 JS 运行时/依赖探测。
+
+        探测结果在服务里是记忆化的（每次构建 ydl_opts 都起子进程太贵），所以用户装完
+        Node/Deno、或修好环境变量之后，需要一个明确的「重新自检」入口来打破缓存。
+        """
+        refresh = getattr(service, "refresh_js_runtime", None)
+        if callable(refresh):
+            await asyncio.to_thread(refresh)
+        return diagnostics()
 
     @app.post("/api/analyze", response_model=AnalyzeResponse)
     def analyze(request: AnalyzeRequest) -> AnalyzeResponse:

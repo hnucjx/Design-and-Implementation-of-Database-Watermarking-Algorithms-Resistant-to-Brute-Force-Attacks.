@@ -1013,7 +1013,9 @@ class JobManager:
         )
 
     def _log_item_failure(self, item: JobItem, options: DownloadOptions, exc: Exception) -> None:
-        if YtDlpService.is_cookie_required_error(exc):
+        if YtDlpService.is_js_challenge_error(exc):
+            category = "js_challenge_failed"
+        elif YtDlpService.is_cookie_required_error(exc):
             category = "cookie_required"
         elif YtDlpService.is_media_stream_blocked_error(exc):
             category = "media_stream_blocked"
@@ -1031,6 +1033,22 @@ class JobManager:
             type(exc).__name__,
             sanitize_log_message(YtDlpService.readable_error_message(exc)),
         )
+        # 同一处补一条可执行诊断：原始报错（如 “The page needs to be reloaded.”）指不到病因，
+        # 而这条日志给出了原因与下一步，用户不必再回来问。
+        # 整段都被保护：**日志不能把状态机搞挂**。测试里的 fake service 没有这个方法，
+        # 真服务将来若改了签名也一样 —— 任何情况下都只能少打一条日志。
+        try:
+            advise = getattr(self.service, "advise_failure", None)
+            advice = advise(exc, self._cookies_path()) if callable(advise) else None
+        except Exception:  # noqa: BLE001
+            advice = None
+        if advice:
+            logger.warning(
+                "download item failed advice: job_id=%s item_id=%s\n%s",
+                item.job_id,
+                item.id,
+                advice.to_log_block(),
+            )
 
     def _is_combined_format_payload(self, payload: dict[str, Any]) -> bool:
         info = payload.get("info_dict")

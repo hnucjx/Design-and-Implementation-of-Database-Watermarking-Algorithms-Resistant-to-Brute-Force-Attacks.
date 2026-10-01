@@ -38,7 +38,9 @@ import {
   updateSettings,
   uploadCookies
 } from "./api";
+import { CookieSection } from "./components/CookieSection";
 import { JobQueue } from "./components/JobQueue";
+import { ProxySection } from "./components/ProxySection";
 import { formatDuration } from "./formatting";
 import {
   buildResolutionOptions,
@@ -600,6 +602,7 @@ function UrlAnalyzer({
           </button>
         </div>
       )}
+      <CookieSection cookiesEnabled={Boolean(settings?.cookies_enabled)} />
       {settings && !settings.cookies_enabled && (
         <p className="hint" role="status">
           未配置 cookies 时 YouTube 媒体流 403 概率显著上升，建议先导入 cookies 再下载。
@@ -982,29 +985,6 @@ function Toggle({
   );
 }
 
-function proxySourceLabel(source: Settings["proxy_source"] | undefined): string {
-  switch (source) {
-    case "setting":
-      return "已手动设置";
-    case "system":
-      return "Windows 系统代理";
-    case "environment":
-      return "环境变量";
-    case "direct":
-      return "强制直连";
-    default:
-      return "未发现代理（直连）";
-  }
-}
-
-function proxyHint(settings: Settings): string {
-  if (settings.proxy_source === "direct") return "当前强制直连，不使用任何代理。";
-  if (!settings.proxy_effective) {
-    return "当前直连：没有设置代理，也没发现 Windows 系统代理或 HTTP_PROXY/HTTPS_PROXY 环境变量。";
-  }
-  return `当前生效：${settings.proxy_effective}（来源：${proxySourceLabel(settings.proxy_source)}）`;
-}
-
 function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onSettingsChange: (settings: Settings) => void }) {
   const [draft, setDraft] = useState(settings);
   const [saveMessage, setSaveMessage] = useState("");
@@ -1128,7 +1108,12 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
           onBlur={(event) => void saveProxy(event.currentTarget.value)}
         />
       </label>
-      <p className="hint">{proxyHint(settings)}</p>
+      <ProxySection
+        settings={settings}
+        draftProxy={draft.proxy ?? ""}
+        onDraftProxyChange={(value) => setDraft({ ...draft, proxy: value })}
+        onSettingsChange={onSettingsChange}
+      />
       {saveMessage && <span className="settings-save-status">{saveMessage}</span>}
     </section>
   );

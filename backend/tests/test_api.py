@@ -2044,3 +2044,134 @@ def test_batch_job_actions_pause_restart_and_delete_multiple_jobs(tmp_path: Path
     assert set(delete_response.json()["affected_job_ids"]) == {first_id, second_id}
     assert client.get(f"/api/jobs/{first_id}").status_code == 404
     assert client.get(f"/api/jobs/{second_id}").status_code == 404
+
+
+def test_proxy_test_endpoint_uses_the_service_setting(tmp_path: Path, monkeypatch) -> None:
+    """「检测代理」必须用当前生效的配置，否则界面上的结论会和下载行为不一致。"""
+    captured = {}
+
+    def fake_test(resolution):
+        captured["resolution"] = resolution
+        raise AssertionError("stop")
+
+    monkeypatch.setattr("app.main.test_proxy", fake_test)
+    service = FakeYtDlpService()
+    service.proxy = "127.0.0.1:7890"
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        try:
+            client.post("/api/proxy/test", json={})
+        except AssertionError:
+            pass
+
+    assert captured["resolution"].url == "http://127.0.0.1:7890"
+    assert captured["resolution"].source == "setting"
+
+
+def test_proxy_test_endpoint_accepts_a_temporary_override(tmp_path: Path, monkeypatch) -> None:
+    """允许「先试这个地址，再决定要不要保存」。"""
+    captured = {}
+
+    def fake_test(resolution):
+        captured["resolution"] = resolution
+        raise AssertionError("stop")
+
+    monkeypatch.setattr("app.main.test_proxy", fake_test)
+    service = FakeYtDlpService()
+    service.proxy = "127.0.0.1:7890"
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        try:
+            client.post("/api/proxy/test", json={"proxy": "direct"})
+        except AssertionError:
+            pass
+
+    assert captured["resolution"].source == "direct"
+
+
+def test_proxy_test_endpoint_returns_the_probe_result(tmp_path: Path, monkeypatch) -> None:
+    from app.connectivity import ProxyTestResult
+
+    monkeypatch.setattr(
+        "app.main.test_proxy",
+        lambda resolution: ProxyTestResult(
+            ok=True,
+            source=resolution.source,
+            proxy=resolution.url,
+            probe_url="https://www.youtube.com/robots.txt",
+            http_status=200,
+            elapsed_ms=42,
+            bytes_read=792,
+            summary="连通",
+        ),
+    )
+
+    with make_client(tmp_path) as client:
+        response = client.post("/api/proxy/test", json={"proxy": "127.0.0.1:7890"})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["http_status"] == 200
+    assert response.json()["elapsed_ms"] == 42
+
+
+def test_cookies_verify_endpoint_reports_missing_file(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        response = client.post("/api/cookies/verify", json={"deep": False})
+
+    assert response.status_code == 200
+    assert response.json()["present"] is False
+    assert response.json()["next_steps"]
+
+
+def test_cookies_verify_endpoint_reads_the_uploaded_jar(tmp_path: Path) -> None:
+    jar = (
+        "# Netscape HTTP Cookie File\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t0\tSID\tvalue\n"
+        ".youtube.com\tTRUE\t/\tTRUE\t0\tSAPISID\tvalue\n"
+    )
+
+    with make_client(tmp_path) as client:
+        upload = client.post("/api/cookies", files={"file": ("cookies.txt", jar, "text/plain")})
+        assert upload.status_code == 200
+        response = client.post("/api/cookies/verify", json={"deep": False})
+
+    payload = response.json()
+    assert payload["present"] is True
+    assert payload["youtube_domain_count"] == 2
+    assert payload["logged_in"] is None
+    assert "包含 youtube.com 域下的鉴权 cookie" in payload["verdict"]
+
+
+def test_cookies_verify_endpoint_deep_mode_uses_the_network(tmp_path: Path, monkeypatch) -> None:
+    jar = "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tvalue\n"
+
+    with make_client(tmp_path) as client:
+        client.post("/api/cookies", files={"file": ("cookies.txt", jar, "text/plain")})
+        monkeypatch.setattr("app.cookie_health.probe_logged_in", lambda *_a, **_k: (True, "page says true"))
+        response = client.post("/api/cookies/verify", json={"deep": True})
+
+    payload = response.json()
+    assert payload["logged_in"] is True
+    assert payload["verdict"] == "登录态有效：YouTube 已识别为已登录"
+
+
+def test_diagnostics_exposes_the_log_file_and_runtime_health(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        payload = client.get("/api/diagnostics").json()
+
+    assert payload["log_file"]
+    assert "sanitized_environment" in payload
+    assert "js_runtime" in payload["dependencies"]
+
+
+def test_runtime_self_test_refreshes_the_js_runtime(tmp_path: Path) -> None:
+    calls: list[str] = []
+    service = FakeYtDlpService()
+    service.refresh_js_runtime = lambda: calls.append("refreshed")
+
+    with TestClient(create_app(settings=make_settings(tmp_path), ytdlp_service=service)) as client:
+        response = client.post("/api/diagnostics/runtime")
+
+    assert response.status_code == 200
+    assert calls == ["refreshed"]

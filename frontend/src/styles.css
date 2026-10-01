@@ -888,3 +888,235 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- 代理 / cookies 自检面板 ----------
+   设计原则：结论用色块先给出来，证据用等宽小字列清楚，动作永远是按钮。
+   失败必须同时带「下一步」，所以 .diag-result 里一定有 .diag-steps 或空。 */
+
+.proxy-section,
+.cookie-diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.diag-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.diag-actions .ghost-button {
+  min-height: 36px;
+  height: auto;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.diag-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  background: #fbfcfe;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.diag-result.is-ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.diag-result.is-warn {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.diag-result.is-bad {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.diag-result-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 800;
+  color: #17202f;
+}
+
+.diag-result-head svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.diag-facts,
+.diag-steps {
+  margin: 0;
+  padding-left: 18px;
+  color: #48556a;
+}
+
+.diag-facts li,
+.diag-steps li {
+  margin: 2px 0;
+}
+
+.diag-error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.collapsible {
+  border: 1px solid #e3e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.collapsible-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  background: transparent;
+  color: #1f6feb;
+  font-size: 13px;
+  font-weight: 850;
+  text-align: left;
+}
+
+.collapsible-body {
+  padding: 0 11px 11px;
+  border-top: 1px solid #eef2f8;
+  color: #48556a;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.collapsible-body p {
+  margin: 8px 0 0;
+}
+
+.preset-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.preset-table th,
+.preset-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eef2f8;
+  text-align: left;
+  vertical-align: top;
+}
+
+.preset-table th {
+  color: #657187;
+  font-weight: 850;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1f6feb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  font-weight: 800;
+  text-decoration: underline;
+}
+
+.command-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 6px 0;
+}
+
+.command-code,
+.collapsible-body code {
+  padding: 2px 6px;
+  border: 1px solid #e3e8f0;
+  border-radius: 6px;
+  background: #f6f7fb;
+  color: #17202f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.command-copy {
+  min-height: 30px !important;
+  height: auto !important;
+  padding: 4px 10px !important;
+  font-size: 12.5px;
+}
+
+.runtime-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #d8dee9;
+  border-radius: 8px;
+  background: #fbfcfe;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.runtime-block.is-warn {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.runtime-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 850;
+  color: #17202f;
+}
+
+.runtime-head svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.cookie-diagnostics {
+  padding-top: 4px;
+}
+
+.cookie-howto > li {
+  margin-bottom: 10px;
+}
+
+.cookie-howto ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+@media (max-width: 720px) {
+  .diag-actions .ghost-button {
+    width: 100%;
+    justify-content: center;
+  }
+}

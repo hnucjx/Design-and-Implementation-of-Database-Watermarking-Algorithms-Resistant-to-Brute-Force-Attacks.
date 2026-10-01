@@ -20,6 +20,7 @@ from .browser_cookies import (
     BrowserCookieImportError,
     BrowserCookieImportResult,
 )
+from .error_advice import JS_CHALLENGE_HINTS, advise, exception_chain
 from .log_safety import sanitize_log_message
 from .proxy import ProxyResolution, has_no_proxy_bypass, redact_proxy_credentials, resolve_proxy
 from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
@@ -92,6 +93,11 @@ _POSIX_FALLBACKS = {
     "deno": ("/usr/local/bin/deno", "/opt/homebrew/bin/deno", "/usr/bin/deno"),
     "node": ("/usr/local/bin/node", "/opt/homebrew/bin/node", "/usr/bin/node"),
 }
+# JS 运行时自检用的哨兵串。必须是「跑得通才有」的输出，不能只看退出码：
+# 宿主注入的 NODE_OPTIONS 会让 node 在加载阶段就退出，退出码非 0 但 stderr 与
+# JS 运行时本身无关，所以失败原因要原样带出去给用户看。
+JS_RUNTIME_PROBE_MARKER = "cascade-js-runtime-ok"
+JS_RUNTIME_PROBE_TIMEOUT_SECONDS = 20
 logger = logging.getLogger(__name__)
 
 
@@ -212,6 +218,12 @@ class YtDlpService:
         # 代理：None / "auto" = 自动（优先 Windows 系统代理，其次环境变量）；
         # "direct" 等 = 强制直连；其余按 URL 处理。解析逻辑见 app/proxy.py。
         self.proxy = proxy
+        # JS 运行时自检的结论。``_detect_js_runtime`` 会写入「找到了但跑不起来」的原因，
+        # 没有它的话「检测到 node 却解不出 n challenge」是查不出来的（见 error_advice）。
+        self._js_runtime_rejections: list[str] = []
+        self._js_runtime_error: str | None = None
+        # (js_runtime_path 键, 探测结果)：探测要起子进程，必须记忆化。
+        self._js_runtime_cache: tuple[str, tuple[str, str, str | None] | None] | None = None
         resolution = self.proxy_resolution()
         # 启动时留一行日志：代理相关的故障最难查的就是「到底走没走代理」，
         # 而这行日志与 /api/diagnostics 用的是同一份解析结果。
@@ -222,6 +234,45 @@ class YtDlpService:
             redact_proxy_credentials(resolution.system_proxy) or "<none>",
             redact_proxy_credentials(resolution.environment_proxy) or "<none>",
         )
+        # 依赖一句话总览：出问题时先看这行就能排除掉大半「环境没装齐」的可能。
+        runtime = self._detect_js_runtime()
+        self._log_dependency_summary(runtime)
+
+    def _log_dependency_summary(self, runtime: tuple[str, str, str | None] | None) -> None:
+        ffmpeg_ok = self._ffmpeg_executable() is not None
+        if runtime:
+            logger.info(
+                "js runtime ready: name=%s path=%s version=%s",
+                runtime[0],
+                runtime[1],
+                runtime[2] or "unknown",
+            )
+        else:
+            logger.warning(
+                "js runtime unavailable: 没有可用的 Deno/Node —— YouTube 的 n challenge 将无法求解，"
+                "登录态下可能直接报 “The page needs to be reloaded.”。候选失败原因=%s",
+                "; ".join(self._js_runtime_rejections) or "未发现任何候选（PATH 与常见安装目录都没有）",
+            )
+        logger.info(
+            "dependencies ready: ffmpeg=%s po_token_provider=%s chromium=%s aria2c=%s",
+            ffmpeg_ok,
+            self._po_token_provider_version() is not None,
+            self._po_token_browser_path() or "<none>",
+            self._aria2c_executable() or "<none>",
+        )
+
+    def reset_js_runtime_cache(self) -> None:
+        """清掉 JS 运行时的探测缓存（测试与「重新自检」都用它）。"""
+        self._js_runtime_cache = None
+
+    def refresh_js_runtime(self) -> None:
+        """清掉缓存并立即重新探测，让界面拿到最新结论。
+
+        用户装完 Deno/Node、或修好 ``NODE_OPTIONS`` 之后需要一个明确的重新自检入口，
+        否则记忆化会让界面一直显示旧结论。
+        """
+        self.reset_js_runtime_cache()
+        self._detect_js_runtime()
 
     def proxy_resolution(self) -> ProxyResolution:
         """当前实际会使用的代理（含来源）。每次调用重新解析，设置改了立刻生效。"""
@@ -262,6 +313,10 @@ class YtDlpService:
             "js_runtime_version": runtime[2] if runtime else None,
             # provider 实际拿到的运行时路径（显式配置或自动探测）。
             "js_runtime_path": runtime[1] if runtime else None,
+            # 「找到了但跑不起来」的原因。只暴露 js_runtime=False 是不够的：用户会以为
+            # 自己明明装了 Node，这里必须把子进程的原始报错带出来。
+            "js_runtime_error": self._js_runtime_error,
+            "js_runtime_candidates_rejected": list(self._js_runtime_rejections),
             # 代理：proxy 是**实际生效值**（"" = 强制直连），proxy_source 说明它从哪来。
             # 把来源一并暴露出来，是因为「浏览器能上网、应用不能」这种故障里最难查的
             # 恰恰是「到底走了哪个代理」——之前没有任何地方能看到。
@@ -486,6 +541,19 @@ class YtDlpService:
                     type(exc).__name__,
                     sanitize_log_message(self.readable_error_message(exc)),
                 )
+                # 原始报错往往指不到病因（例如 “The page needs to be reloaded.”），
+                # 这里在同一处补一条可执行的诊断，用户只看日志就能知道下一步。
+                # 被保护起来：诊断本身出错绝不该改变重试/失败的行为。
+                try:
+                    advice = self.advise_failure(exc, cookies_path)
+                except Exception:  # noqa: BLE001
+                    advice = None
+                if advice:
+                    logger.warning(
+                        "yt-dlp profile failed advice: profile=%s\n%s",
+                        youtube_profile,
+                        advice.to_log_block(),
+                    )
                 if youtube_profile == "default" and not self.should_try_next_profile(exc):
                     raise
                 if first_retryable_error is None:
@@ -619,15 +687,36 @@ class YtDlpService:
             for current in YtDlpService._exception_chain(exc)
         )
 
+    @staticmethod
+    def is_js_challenge_error(exc: BaseException) -> bool:
+        """JS challenge（n 参数）解不出来 —— 典型表现是 ``The page needs to be reloaded.``。
+
+        这类错误只在**带 cookies 的登录取数路径**上稳定出现：登录态会走需要 nsig 的
+        client，解不出来时那些格式被判为「没有可用 URL」，最终抛出的却是完全指不到
+        病因的 ``The page needs to be reloaded.``。
+        """
+        return any(
+            any(hint in str(current).lower() for hint in JS_CHALLENGE_HINTS)
+            for current in YtDlpService._exception_chain(exc)
+        )
+
     @classmethod
     def should_try_next_profile(cls, exc: BaseException) -> bool:
         """判断当前 profile 失败后是否值得再换一个 profile 重试。
 
-        覆盖两类可自愈的失败：媒体流被挡（403 / 连接重置）与提取阶段被要求登录
-        （bot 校验）。其余错误（格式不可用、参数非法、文件系统问题）换 profile
-        无意义，应尽快把真实原因暴露给用户。
+        覆盖三类可自愈的失败：媒体流被挡（403 / 连接重置）、提取阶段被要求登录
+        （bot 校验）、以及 JS challenge 解不出来。其余错误（格式不可用、参数非法、
+        文件系统问题）换 profile 无意义，应尽快把真实原因暴露给用户。
+
+        其中 JS challenge 一类属于**尽力而为**的兜底：换 client 有可能绕开需要 nsig 的
+        那条路径，但若根因是 JS 运行时本身坏了，换 profile 也救不回来 —— 真正的修复是
+        ``runtime_env.sanitize_environment``。这里不放弃任何一次机会，因为代价只是一次重试。
         """
-        return cls.is_media_stream_blocked_error(exc) or cls.is_youtube_auth_blocked_error(exc)
+        return (
+            cls.is_media_stream_blocked_error(exc)
+            or cls.is_youtube_auth_blocked_error(exc)
+            or cls.is_js_challenge_error(exc)
+        )
 
     @staticmethod
     def is_connection_reset_error(exc: BaseException) -> bool:
@@ -662,17 +751,26 @@ class YtDlpService:
                 return message
         return f"{type(exc).__name__}（底层错误没有提供具体信息）"
 
+    def advise_failure(self, exc: BaseException, cookies_path: Path | None = None):
+        """把一次失败翻译成「发生了什么 + 该做什么」。无法归类时返回 ``None``。
+
+        上下文（JS 运行时自检结果、cookies、代理来源）由服务自己提供，因为只有服务
+        知道当前配置；调用方只需要把日志或错误消息展示出去。
+        """
+        resolution = self.proxy_resolution()
+        return advise(
+            exc,
+            js_runtime_available=self._detect_js_runtime() is not None,
+            js_runtime_error=self._js_runtime_error,
+            cookies_configured=bool(cookies_path and Path(cookies_path).exists()),
+            proxy_source=resolution.source,
+            proxy_url=redact_proxy_credentials(resolution.url) or "<direct>",
+        )
+
     @staticmethod
     def _exception_chain(exc: BaseException):
-        seen: set[int] = set()
-        pending: list[BaseException | None] = [exc]
-        while pending:
-            current = pending.pop(0)
-            if current is None or id(current) in seen:
-                continue
-            seen.add(id(current))
-            yield current
-            pending.extend([current.__cause__, current.__context__])
+        # 实现搬到 error_advice，保证「分类」和「给用户的建议」看的是同一条异常链。
+        return exception_chain(exc)
 
     @staticmethod
     def is_cookie_required_error(exc: Exception) -> bool:
@@ -829,23 +927,107 @@ class YtDlpService:
         if not runtime:
             return {}
         name, path, _version = runtime
+        # 必须带完整路径：``js_runtimes: {"node": {}}``（不给 path）在 yt-dlp 里是
+        # 静默空操作 —— 它不会去 PATH 里找，只会认为该运行时不可用。
         return {"js_runtimes": {name: {"path": path}}}
 
     def _detect_js_runtime(self) -> tuple[str, str, str | None] | None:
-        """探测可用的 JS 运行时（Deno 优先，其次 Node）。
+        """探测**真正能跑起来**的 JS 运行时（显式配置 → Deno → Node）。
 
         只查 PATH 是不够的：服务进程的 PATH 里常常没有 node（本机装在
         ``C:\\Program Files\\nodejs``，而服务由别的 shell 拉起），yt-dlp 就会把
         ``JS Challenge Providers`` 里的 node 标成 unavailable，nsig 解不出来、
         提取直接失败。``YTDL_JS_RUNTIME_PATH`` 可显式指定，优先级最高。
+
+        第二件同样重要的事：**能跑起来** ≠ **文件存在**。宿主环境里的 ``NODE_OPTIONS``
+        会把外部脚本强加载进每个 node 进程，而 yt-dlp 用 ``--experimental-permission``
+        启动 node 时必然拒绝读取它 —— 结果是「检测到 node、版本也合规，却解不出 n
+        challenge」，报错还只是 ``The page needs to be reloaded.``。所以这里在返回候选
+        之前会**真的执行一次**（并按 yt-dlp 的方式带上 ``--experimental-permission``），
+        跑不通就换下一个候选，并把失败原因留在 ``self._js_runtime_error`` 里。
+
+        探测会起子进程，因此按 ``js_runtime_path`` 做了记忆化 —— 否则每次构建 ydl_opts
+        都要重跑一遍。
         """
+        cache_key = self.js_runtime_path or ""
+        if self._js_runtime_cache is not None and self._js_runtime_cache[0] == cache_key:
+            return self._js_runtime_cache[1]
+
+        rejections: list[str] = []
+        chosen: tuple[str, str, str | None] | None = None
         for candidate in (self.js_runtime_path, detect_deno_executable(), detect_node_executable()):
             if not candidate:
                 continue
-            runtime = self._js_runtime_from_executable(candidate)
-            if runtime:
-                return runtime
-        return None
+            # 候选探测整体被保护：这里跑的是外部进程，任何异常都只能算「这个候选不可用」，
+            # 绝不能把服务构造或下载流程带崩。
+            try:
+                runtime = self._js_runtime_from_executable(candidate)
+                if not runtime:
+                    name = "deno" if Path(candidate).name.lower().startswith("deno") else "node"
+                    version = self._runtime_version(candidate)
+                    rejections.append(f"{name} {candidate}：版本不可用或无法启动（version={version!r}）")
+                    continue
+                failure = self._probe_js_runtime(runtime[0], runtime[1])
+            except Exception as exc:  # noqa: BLE001
+                rejections.append(f"{candidate}：探测时抛出 {type(exc).__name__}: {exc}")
+                continue
+            if failure:
+                rejections.append(f"{runtime[0]} {candidate}：{failure}")
+                continue
+            chosen = runtime
+            break
+
+        self._js_runtime_rejections = rejections
+        self._js_runtime_error = "；".join(rejections) if (rejections and not chosen) else None
+        self._js_runtime_cache = (cache_key, chosen)
+        return chosen
+
+    def _probe_js_runtime(self, name: str, executable: str) -> str | None:
+        """真的执行一次 JS 运行时。可用返回 ``None``，否则返回失败原因。
+
+        对 Node 会先按 yt-dlp 的方式（``--experimental-permission``）跑一次，再退回普通
+        方式：老版本 Node 不认这个开关，若只试受限方式，会把一个完全可用的 Node 误判为
+        不可用 —— 那比不检测更糟。
+        """
+        script = f"process.stdout.write({JS_RUNTIME_PROBE_MARKER!r})"
+        attempts: list[tuple[list[str], str]] = []
+        if name == "node":
+            attempts.append(
+                (
+                    [executable, "--experimental-permission", "--no-warnings=ExperimentalWarning", "-e", script],
+                    "以 yt-dlp 相同的权限模型启动",
+                )
+            )
+            attempts.append(([executable, "-e", script], "普通启动"))
+        else:
+            attempts.append(([executable, "eval", f"console.log({JS_RUNTIME_PROBE_MARKER!r})"], "deno eval"))
+
+        first_failure: str | None = None
+        for command, label in attempts:
+            try:
+                completed = subprocess.run(
+                    command,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=JS_RUNTIME_PROBE_TIMEOUT_SECONDS,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # 刻意捕获一切：自检**绝不能**把服务带崩。宿主环境里的猴子补丁、
+                # 被替换掉的 subprocess、奇怪的权限都只能算「这个候选不可用」。
+                failure = f"{label}失败：{type(exc).__name__}: {exc}"
+                first_failure = first_failure or failure
+                continue
+            if completed.returncode == 0 and JS_RUNTIME_PROBE_MARKER in (completed.stdout or ""):
+                return None
+            output = (completed.stderr or completed.stdout or "").strip().splitlines()
+            head = output[0] if output else "(没有任何输出)"
+            tail = output[1] if len(output) > 1 else ""
+            failure = f"{label}失败（returncode={completed.returncode}）：{head}"
+            if tail:
+                failure += f" / {tail}"
+            first_failure = first_failure or failure
+        return first_failure
 
     def _js_runtime_from_executable(self, executable: str) -> tuple[str, str, str | None] | None:
         name = "deno" if Path(executable).name.lower().startswith("deno") else "node"

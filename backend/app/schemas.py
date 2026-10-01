@@ -203,6 +203,54 @@ class BrowserCookieImportRequest(BaseModel):
     close_browser_if_locked: bool = False
 
 
+class ProxyTestRequest(BaseModel):
+    # 留空 = 用当前生效的解析结果；填值 = 先试这个地址再决定要不要保存。
+    proxy: str | None = None
+
+
+class ProxyTestRead(BaseModel):
+    ok: bool
+    source: str
+    proxy: str | None = None
+    probe_url: str
+    http_status: int | None = None
+    elapsed_ms: int = 0
+    bytes_read: int = 0
+    error: str | None = None
+    summary: str = ""
+    next_steps: list[str] = Field(default_factory=list)
+
+
+class CookieVerifyRequest(BaseModel):
+    # True = 额外把 cookies 发到 youtube.com 看 LOGGED_IN（需要联网）。
+    deep: bool = True
+
+
+class CookieHealthRead(BaseModel):
+    present: bool
+    path: str
+    filename: str | None = None
+    size_bytes: int = 0
+    format_ok: bool = False
+    format_note: str = ""
+    cookie_count: int = 0
+    domains: dict[str, int] = Field(default_factory=dict)
+    youtube_domain_count: int = 0
+    auth_cookie_names: list[str] = Field(default_factory=list)
+    missing_auth_cookie_names: list[str] = Field(default_factory=list)
+    anonymous_only: bool = False
+    expired_count: int = 0
+    verdict: str = ""
+    next_steps: list[str] = Field(default_factory=list)
+    logged_in: bool | None = None
+    logged_in_detail: str | None = None
+    checked_at: float = 0.0
+
+
 class DiagnosticsRead(BaseModel):
     cookies_enabled: bool
     dependencies: dict[str, bool | int | str | None | list[str]]
+    # 日志文件路径：出问题时用户第一件事就是找它。
+    log_file: str | None = None
+    # 启动时被摘掉的、会打坏 JS 运行时的宿主环境变量。
+    sanitized_environment: list[dict[str, str]] = Field(default_factory=list)

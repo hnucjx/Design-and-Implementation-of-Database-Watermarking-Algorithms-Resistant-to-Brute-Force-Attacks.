@@ -5,11 +5,17 @@ import App from "./App";
 import {
   analyzePayload,
   automaticResolutionFallback,
+  cookieHealthGoogleOnlyPayload,
+  cookieHealthPayload,
+  diagnosticsPayload,
+  diagnosticsWithoutJsRuntime,
   jobPayload,
   lockedEdgeCookieDetail,
   pausedJobPayload,
   playlistFallbackJobPayload,
   playlistJobPayload,
+  proxyTestFailurePayload,
+  proxyTestSuccessPayload,
   resolutionFallback,
   settingsPayload,
   singleFallbackJobPayload,
@@ -25,6 +31,28 @@ let analyzeLockedByEdgeCookies = false;
 let localFileActionFailure: string | null = null;
 let settingsUpdateDelayMs = 0;
 let settingsUpdateShouldFail = false;
+let currentDiagnosticsPayload = diagnosticsPayload;
+let currentProxyTestPayload = proxyTestSuccessPayload;
+let currentCookieHealthPayload = cookieHealthPayload;
+let proxyTestBodies: Array<Record<string, unknown>> = [];
+let cookieVerifyBodies: Array<Record<string, unknown>> = [];
+let runtimeRefreshCount = 0;
+
+/**
+ * 折叠块的默认展开状态取决于业务状态（cookies 未配置时帮助内容默认展开），
+ * 所以断言前先看 aria-expanded，只在收起时才点击展开——避免「点了一下反而关掉」。
+ */
+async function ensureExpanded(head: HTMLElement) {
+  if (head.getAttribute("aria-expanded") !== "true") {
+    await userEvent.click(head);
+  }
+  expect(head).toHaveAttribute("aria-expanded", "true");
+}
+
+/** 一行里混了多个文本节点时，getByText 的字符串/正则匹配都不可靠，用函数匹配整行文本。 */
+function exactRow(tagName: string, text: string) {
+  return (_content: string, element: Element | null) => element?.tagName === tagName && element.textContent === text;
+}
 
 describe("App", () => {
   beforeEach(() => {
@@ -36,6 +64,12 @@ describe("App", () => {
     localFileActionFailure = null;
     settingsUpdateDelayMs = 0;
     settingsUpdateShouldFail = false;
+    currentDiagnosticsPayload = diagnosticsPayload;
+    currentProxyTestPayload = proxyTestSuccessPayload;
+    currentCookieHealthPayload = cookieHealthPayload;
+    proxyTestBodies = [];
+    cookieVerifyBodies = [];
+    runtimeRefreshCount = 0;
     vi.stubGlobal("confirm", vi.fn(() => true));
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -68,6 +102,21 @@ describe("App", () => {
         }
         if (url.endsWith("/api/settings/download-dir/select")) {
           return Response.json({ ...currentSettingsPayload, download_dir: "D:\\Videos" });
+        }
+        if (url.endsWith("/api/cookies/verify") && init?.method === "POST") {
+          cookieVerifyBodies.push(JSON.parse(String(init.body ?? "{}")));
+          return Response.json(currentCookieHealthPayload);
+        }
+        if (url.endsWith("/api/proxy/test") && init?.method === "POST") {
+          proxyTestBodies.push(JSON.parse(String(init.body ?? "{}")));
+          return Response.json(currentProxyTestPayload);
+        }
+        if (url.endsWith("/api/diagnostics/runtime") && init?.method === "POST") {
+          runtimeRefreshCount += 1;
+          return Response.json(currentDiagnosticsPayload);
+        }
+        if (url.endsWith("/api/diagnostics")) {
+          return Response.json(currentDiagnosticsPayload);
         }
         if (url.endsWith("/api/cookies") && init?.method === "POST") {
           currentSettingsPayload = { ...currentSettingsPayload, cookies_enabled: true };
@@ -1195,5 +1244,134 @@ describe("App", () => {
         body: JSON.stringify({ resolution: "1080p" })
       })
     );
+  });
+
+  test("tests the saved proxy and shows the failure with next steps", async () => {
+    const user = userEvent.setup();
+    currentProxyTestPayload = proxyTestFailurePayload;
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "检测代理" }));
+
+    await waitFor(() => {
+      expect(proxyTestBodies).toEqual([{}]);
+    });
+
+    const result = await screen.findByText(/访问失败/);
+    expect(result).toBeInTheDocument();
+    expect(screen.getByText("来源：你手动填写的地址（setting）")).toBeInTheDocument();
+    expect(screen.getByText(exactRow("LI", "HTTP 状态：无响应　耗时：2008 ms　收到：0 字节"))).toBeInTheDocument();
+    expect(screen.getByText(/确认代理软件正在运行、端口一致/)).toBeInTheDocument();
+    expect(screen.getByText(/若代理软件实际没开/)).toBeInTheDocument();
+  });
+
+  test("can try the address in the input without saving it", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const proxy = await screen.findByLabelText("代理（留空 = 自动；填 direct 强制直连）");
+    await user.type(proxy, "127.0.0.1:10809");
+    await user.click(screen.getByRole("button", { name: "先试输入框里的地址" }));
+
+    await waitFor(() => {
+      expect(proxyTestBodies).toEqual([{ proxy: "127.0.0.1:10809" }]);
+    });
+    // 关键：试地址不等于保存。
+    expect(fetch).not.toHaveBeenCalledWith(
+      "/api/settings",
+      expect.objectContaining({ method: "PUT" })
+    );
+    expect(await screen.findByText(/返回 HTTP 200/)).toBeInTheDocument();
+  });
+
+  test("offers a preset table when the user does not know what to fill in", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const head = await screen.findByRole("button", { name: "不知道填什么？常见代理软件的本地端口" });
+    await ensureExpanded(head);
+
+    expect(screen.getByText("Clash / Clash Verge / Mihomo")).toBeInTheDocument();
+    expect(screen.getByText("v2rayN")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "127.0.0.1:10809" }));
+    expect(screen.getByLabelText("代理（留空 = 自动；填 direct 强制直连）")).toHaveValue("127.0.0.1:10809");
+  });
+
+  test("surfaces a broken JS runtime with the raw reason and a refresh button", async () => {
+    const user = userEvent.setup();
+    currentDiagnosticsPayload = diagnosticsWithoutJsRuntime;
+    render(<App />);
+
+    expect(await screen.findByText(/JS 运行时（解析 YouTube 的 n 参数，登录状态下必须）：不可用/)).toBeInTheDocument();
+    expect(screen.getByText(/ERR_ACCESS_DENIED/)).toBeInTheDocument();
+    expect(screen.getByText(/The page needs to be reloaded\./)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "重新自检" }));
+    await waitFor(() => {
+      expect(runtimeRefreshCount).toBe(1);
+    });
+  });
+
+  test("shows the log file path so users can find the evidence", async () => {
+    render(<App />);
+
+    // 路径出现两次：一行正文里直接可见，一次在「复制路径」按钮旁的代码块里。
+    expect(await screen.findByText(/日志文件：/)).toBeInTheDocument();
+    const logPaths = screen.getAllByText(/data\\logs\\app\.log/);
+    expect(logPaths.length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("button", { name: /复制路径/ })).toBeInTheDocument();
+  });
+
+  test("verifies cookies and reports the login verdict with domain evidence", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "校验 cookies（联网确认登录态）" }));
+
+    await waitFor(() => {
+      expect(cookieVerifyBodies).toEqual([{ deep: true }]);
+    });
+
+    expect(await screen.findByText(/登录态有效 —— 登录态有效：YouTube 已识别为已登录/)).toBeInTheDocument();
+    expect(screen.getByText(/youtube.com 域上：23/)).toBeInTheDocument();
+    expect(screen.getByText(/SID、HSID、SAPISID、LOGIN_INFO/)).toBeInTheDocument();
+    // 收窄到「联网校验」那一行：单独 /已登录/ 会同时命中结论行和这一行。
+    expect(screen.getByText(/联网校验：已登录/)).toBeInTheDocument();
+  });
+
+  test("explains a google.com-only cookie jar and how to fix it", async () => {
+    const user = userEvent.setup();
+    currentCookieHealthPayload = cookieHealthGoogleOnlyPayload;
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "校验 cookies（联网确认登录态）" }));
+
+    expect(await screen.findByText(/域名不对，等于没配/)).toBeInTheDocument();
+    expect(await screen.findByText(/「只导出到 \.google\.com」的典型症状/)).toBeInTheDocument();
+  });
+
+  test("can run the cookie check offline without touching the network", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "只做离线体检" }));
+
+    await waitFor(() => {
+      expect(cookieVerifyBodies).toEqual([{ deep: false }]);
+    });
+  });
+
+  test("documents the three ways to obtain cookies and warns about the unsafe one", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    const head = await screen.findByRole("button", { name: "怎么拿到 cookies？三种方式，从最省事开始" });
+    await ensureExpanded(head);
+
+    expect(screen.getByText("python scripts/export_cookies_via_cdp.py")).toBeInTheDocument();
+    expect(screen.getByText(/方式一：用仓库里的脚本/)).toBeInTheDocument();
+    expect(screen.getByText(/Get cookies\.txt LOCALLY/)).toBeInTheDocument();
+    expect(screen.getByText(/不要做什么：/)).toBeInTheDocument();
+    expect(screen.getByText(/破坏浏览器的 cookie 库/)).toBeInTheDocument();
   });
 });

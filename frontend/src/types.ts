@@ -143,6 +143,53 @@ export interface CookieStatus {
   imported_count?: number | null;
 }
 
+export interface ProxyTestResult {
+  ok: boolean;
+  source: Settings["proxy_source"];
+  proxy: string | null;
+  probe_url: string;
+  http_status: number | null;
+  elapsed_ms: number;
+  bytes_read: number;
+  error: string | null;
+  summary: string;
+  next_steps: string[];
+}
+
+export interface EnvironmentRisk {
+  name: string;
+  value: string;
+  reason: string;
+}
+
+export interface Diagnostics {
+  cookies_enabled: boolean;
+  dependencies: Record<string, boolean | number | string | string[] | null>;
+  log_file: string | null;
+  sanitized_environment: EnvironmentRisk[];
+}
+
+export interface CookieHealth {
+  present: boolean;
+  path: string;
+  filename: string | null;
+  size_bytes: number;
+  format_ok: boolean;
+  format_note: string;
+  cookie_count: number;
+  domains: Record<string, number>;
+  youtube_domain_count: number;
+  auth_cookie_names: string[];
+  missing_auth_cookie_names: string[];
+  anonymous_only: boolean;
+  expired_count: number;
+  verdict: string;
+  next_steps: string[];
+  logged_in: boolean | null;
+  logged_in_detail: string | null;
+  checked_at: number;
+}
+
 export interface ApiErrorDetail {
   code?: string;
   browser?: string | null;

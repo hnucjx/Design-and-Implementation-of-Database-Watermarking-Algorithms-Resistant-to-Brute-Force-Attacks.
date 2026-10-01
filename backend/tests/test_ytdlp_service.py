@@ -15,6 +15,17 @@ from app import ytdlp_service
 from app.ytdlp_service import BrowserCookieImportError, YtDlpService
 
 
+def reset_js_runtime_probe(monkeypatch, service: YtDlpService, failure: str | None = None) -> None:
+    """让 ``_detect_js_runtime`` 可以重新探测，且不必真的去起子进程。
+
+    两个都是必需的：``YtDlpService.__init__`` 会立刻探测一次并记忆化，测试改完候选必须
+    先清缓存；而测试里用的假可执行文件（``write_bytes(b"")``）本来就跑不起来，
+    所以自检要一起打桩。
+    """
+    service.reset_js_runtime_cache()
+    monkeypatch.setattr(service, "_probe_js_runtime", lambda name, executable: failure)
+
+
 def test_resolution_option_limits_best_video_height(monkeypatch, tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
     monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
@@ -358,6 +369,7 @@ def test_detect_js_runtime_prefers_explicit_path(monkeypatch, tmp_path: Path) ->
     service = YtDlpService(download_dir=tmp_path, js_runtime_path=str(deno))
     monkeypatch.setattr(service, "_runtime_version", lambda executable: "deno 2.1.0")
     monkeypatch.setattr(ytdlp_service, "detect_node_executable", lambda: None)
+    reset_js_runtime_probe(monkeypatch, service)
 
     assert service._detect_js_runtime() == ("deno", str(deno), "deno 2.1.0")
 
@@ -375,6 +387,7 @@ def test_detect_js_runtime_falls_back_to_install_dir_when_path_is_empty(monkeypa
     monkeypatch.setattr(ytdlp_service, "detect_deno_executable", lambda: None)
     service = YtDlpService(download_dir=tmp_path)
     monkeypatch.setattr(service, "_runtime_version", lambda executable: "v22.22.2")
+    reset_js_runtime_probe(monkeypatch, service)
 
     assert service._detect_js_runtime() == ("node", str(node), "v22.22.2")
 
@@ -385,8 +398,90 @@ def test_detect_js_runtime_ignores_unsupported_node_version(monkeypatch, tmp_pat
     monkeypatch.setattr(service, "_runtime_version", lambda executable: "v18.20.4")
     monkeypatch.setattr(ytdlp_service, "detect_deno_executable", lambda: None)
     monkeypatch.setattr(ytdlp_service, "detect_node_executable", lambda: node)
+    reset_js_runtime_probe(monkeypatch, service)
 
     assert service._detect_js_runtime() is None
+
+
+def test_detect_js_runtime_skips_a_candidate_that_cannot_actually_run(monkeypatch, tmp_path: Path) -> None:
+    """「文件存在」不等于「能跑」：自检失败的候选必须被跳过，让下一个候选顶上。"""
+
+    broken = str(tmp_path / "broken-node.exe")
+    working = str(tmp_path / "working-node.exe")
+    # js_runtime_path 是第一个候选，让它坏掉；PATH 探测出来的 node 是好的。
+    service = YtDlpService(download_dir=tmp_path, js_runtime_path=broken)
+    monkeypatch.setattr(service, "_runtime_version", lambda executable: "v22.22.2")
+    monkeypatch.setattr(ytdlp_service, "detect_deno_executable", lambda: None)
+    monkeypatch.setattr(ytdlp_service, "detect_node_executable", lambda: working)
+    service.reset_js_runtime_cache()
+    monkeypatch.setattr(
+        service,
+        "_probe_js_runtime",
+        lambda name, executable: "ERR_ACCESS_DENIED" if executable == broken else None,
+    )
+
+    assert service._detect_js_runtime() == ("node", working, "v22.22.2")
+
+
+def test_js_runtime_probe_reports_the_node_error_verbatim(monkeypatch, tmp_path: Path) -> None:
+    """把 node 的原始报错原样带出来 —— 这正是「检测到 node 却解不出 n challenge」的取证。"""
+
+    service = YtDlpService(download_dir=tmp_path)
+    captured: list[list[str]] = []
+
+    class Completed:
+        returncode = 1
+        stdout = ""
+        stderr = (
+            "Error: Access to this API has been restricted. Use --allow-fs-read to manage permissions.\n"
+            "    at Object.readFileSync (node:fs:440:20)\n"
+        )
+
+    def fake_run(command, **kwargs):
+        captured.append(command)
+        return Completed()
+
+    monkeypatch.setattr(ytdlp_service.subprocess, "run", fake_run)
+
+    failure = service._probe_js_runtime("node", "C:/fake/node.exe")
+
+    assert failure is not None
+    assert "ERR_ACCESS_DENIED" not in failure  # 报的是原文，不是我们编的 code
+    assert "Access to this API has been restricted" in failure
+    # 必须按 yt-dlp 的方式（带 --experimental-permission）先试一次。
+    assert captured and "--experimental-permission" in captured[0]
+
+
+def test_js_runtime_probe_never_raises(monkeypatch, tmp_path: Path) -> None:
+    """自检本身出错只能算「候选不可用」，绝不能把服务带崩。"""
+
+    service = YtDlpService(download_dir=tmp_path)
+
+    def exploding_run(*args, **kwargs):
+        raise AssertionError("subprocess has been replaced by the host environment")
+
+    monkeypatch.setattr(ytdlp_service.subprocess, "run", exploding_run)
+
+    failure = service._probe_js_runtime("node", "C:/fake/node.exe")
+
+    assert failure is not None
+    assert "AssertionError" in failure
+
+
+def test_dependency_status_exposes_js_runtime_failure_reason(monkeypatch, tmp_path: Path) -> None:
+    """诊断里必须能说明「为什么运行时不可用」，而不只是 js_runtime=False。"""
+
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(ytdlp_service, "detect_deno_executable", lambda: None)
+    monkeypatch.setattr(ytdlp_service, "detect_node_executable", lambda: "C:/fake/node.exe")
+    monkeypatch.setattr(service, "_runtime_version", lambda executable: "v22.22.2")
+    reset_js_runtime_probe(monkeypatch, service, failure="启动失败：ERR_ACCESS_DENIED")
+
+    status = service.get_dependency_status()
+
+    assert status["js_runtime"] is False
+    assert "ERR_ACCESS_DENIED" in str(status["js_runtime_error"])
+    assert status["js_runtime_candidates_rejected"]
 
 
 def test_safari_hls_download_options_use_safari_profile_accepted_by_ytdlp(monkeypatch, tmp_path: Path) -> None:
@@ -999,10 +1094,14 @@ def test_edge_cdp_fallback_never_launches_a_browser(monkeypatch, tmp_path: Path)
         launched.append(args)
         raise AssertionError("CDP fallback must not launch a browser process.")
 
+    # 先把服务构造完再打桩：构造时会合法地跑一次 `node --version` 做运行时自检，
+    # 那是产品行为，不该被算成「CDP 启动了进程」。
+    service = YtDlpService(download_dir=tmp_path)
+
     monkeypatch.setattr("app.browser_cookies.subprocess.Popen", forbidden_popen)
 
     with pytest.raises(BrowserCookieImportError) as exc_info:
-        YtDlpService(download_dir=tmp_path)._extract_edge_cookies_via_cdp()
+        service._extract_edge_cookies_via_cdp()
 
     assert exc_info.value.code == "edge_app_bound"
     assert launched == []

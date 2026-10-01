@@ -30,6 +30,7 @@
 | [004](004-empty-subtitle-languages-expand-to-all.md) | 字幕语言为空退化成 `["all"]` | `a579a93` | 空列表变成「拉全部字幕轨」→ HTTP 429 → **整个条目判失败，视频本体也下不到** |
 | [005](005-edge-cdp-fallback-touches-the-live-profile.md) | Edge CDP 回退挂载真实 profile | `a482a9e` | 既必然失败（Chromium 拒绝默认数据目录），又曾**清空真实 cookie 库（53 → 0）** |
 | [006](006-proxy-is-not-configurable.md) | 应用没有代理配置项 | `d779b52` | 环境变量静默顶掉 Windows 系统代理（实测：坏变量 → 502；修好 → HTTP 200），且界面上看不到也改不了 |
+| [007](007-js-challenge-fails-only-when-cookies-are-on.md) | 带 cookies 反而失败：n challenge 被宿主环境打坏 | `<sha>` | `NODE_OPTIONS=--require=` 让 yt-dlp 启动的 node 在权限模型下 `ERR_ACCESS_DENIED` 退出，报出「The page needs to be reloaded.」；而应用当时**根本不写日志**，连查都没法查 |
 
 ## 本轮（2026-10-01）背景
 
@@ -38,7 +39,7 @@
 
 ```
 提取 YouTube 页面
-  ├─ 需要 JS 运行时解 nsig        ← 003（探测不到 node）
+  ├─ 需要 JS 运行时解 nsig        ← 003（探测不到 node）→ 007（node 看得到却跑不起来）
   ├─ 需要过 bot 校验              ← 001（过不了时不会去试 anti403 profile）
   └─ 需要 PO token               ← 002（provider 因缺 browser_path 而 unavailable）
 ```
@@ -53,13 +54,22 @@
 它也纠正了上一轮分析里「直连超时」那个错误结论 —— 真因是环境变量把系统代理顶掉了，
 而当时没有任何地方能看出「应用实际用了哪个代理」。
 
+007 是这条链的**收尾**，也是三次「查不出来」的总结：它发现 003 之后 node 虽然能被看见、
+却仍然**跑不起来**（宿主往 `NODE_OPTIONS` 里塞了 `--require`），而真正的报错被吃掉、
+抛给用户的是一句 `The page needs to be reloaded.`。修它必须同时补上三件基础设施：
+**日志落盘**（在此之前应用从不写日志，INFO 被静默丢弃）、**真跑一次的运行时探测**、
+**把异常翻译成下一步的建议**。三者缺一，同类问题还会再花一轮才能查清。
+
 ## 已知但**未处理**的问题（下一轮候选）
 
 1. ~~**应用没有代理配置项。**~~ → 已由 [006](006-proxy-is-not-configurable.md) 处理。
    遗留：PAC/自动配置脚本不支持；「来源=环境变量」时 aria2c 仍拿不到代理。
 2. **`_close_browser_for_cookie_import()` 用 `taskkill /IM msedge.exe /F /T`**，
    会杀掉用户全部 Edge 进程（含未保存标签页）。虽属用户显式同意，破坏面仍过大。见 005 遗留风险。
-3. **端到端仍未验收通过。** 001~003 把 PO token provider 从「不可用」推进到「可用」，
-   006 让请求能真正出网，但「PO token 真能铸出来 + 视频真能下下来」需要在干净的代理环境下
-   单独验收。
+3. **视频级端到端仍未验收通过。** 001~003 把 PO token provider 从「不可用」推进到「可用」，
+   006 让请求能真正出网，007 让 JS 求解真的跑得起来；但本轮只验到 **元数据提取成功**
+   （带/不带 cookies 都能解析、`LOGGED_IN` 正确），「媒体流下得下来 + 合得起来」仍需在干净的
+   代理环境下单独验收。
 4. 同一 item 内多条字幕轨仍是串行请求，若 YouTube 收紧限流可能还需请求间隔控制（见 004 关联）。
+5. **环境净化只覆盖 `NODE_OPTIONS`**（007 遗留）。其它同样能打坏子进程的宿主注入没有处理 ——
+   只处理实测造成故障的那一个，不凭想象扩大范围。

@@ -1,12 +1,15 @@
 import type {
   AnalyzeResponse,
   ApiErrorDetail,
+  CookieHealth,
   CookieStatus,
   DeleteJobItemsResponse,
+  Diagnostics,
   DownloadOptions,
   Job,
   JobBatchAction,
   JobBatchActionResponse,
+  ProxyTestResult,
   Settings
 } from "./types";
 
@@ -142,6 +145,35 @@ export function importBrowserCookies(browser: string, closeBrowserIfLocked = fal
 
 export function deleteCookies(): Promise<CookieStatus> {
   return request<CookieStatus>("/api/cookies", { method: "DELETE" });
+}
+
+/**
+ * 用当前生效的代理真实探测一次 YouTube。
+ *
+ * `proxy` 传 undefined = 用已保存的设置；传具体值 = 先试这个地址（不保存）。
+ */
+export function testProxy(proxy?: string): Promise<ProxyTestResult> {
+  return request<ProxyTestResult>("/api/proxy/test", {
+    method: "POST",
+    body: JSON.stringify(proxy === undefined ? {} : { proxy })
+  });
+}
+
+/** 校验 cookies 是否真的能登录。deep=false 只做离线体检（不联网）。 */
+export function verifyCookies(deep = true): Promise<CookieHealth> {
+  return request<CookieHealth>("/api/cookies/verify", {
+    method: "POST",
+    body: JSON.stringify({ deep })
+  });
+}
+
+/** 重新做一次 JS 运行时/依赖探测（装完 Node/Deno 之后用）。 */
+export function refreshRuntimeDiagnostics(): Promise<Diagnostics> {
+  return request<Diagnostics>("/api/diagnostics/runtime", { method: "POST" });
+}
+
+export function getDiagnostics(): Promise<Diagnostics> {
+  return request<Diagnostics>("/api/diagnostics");
 }
 
 function restartRequest(resolution?: string): RequestInit {

@@ -20,6 +20,22 @@ there), lets the user log in once, reads the cookies over CDP, and writes them i
 Netscape format for yt-dlp.  The profile directory is kept, so every later refresh
 is fully unattended -- only the very first login needs a human.
 
+Two constraints are load-bearing, both discovered the hard way:
+
+* **The window must be headed.**  Google's SSO hop leaves ``SID``/``__Secure-*PSID``
+  on ``.google.com``.  YouTube only mints its own ``.youtube.com``-scoped auth
+  cookies for a real window -- under ``--headless=new`` it never does, so the
+  export looks perfectly fine yet every request to ``www.youtube.com`` is
+  anonymous, because a ``.google.com`` cookie is never sent to ``youtube.com``.
+* **Login state is only usable once the auth cookies exist on a ``youtube.com``
+  domain.**  After detecting login the script re-opens ``--url`` and waits
+  ``--settle-seconds`` for that to happen, and refuses to write anything until it
+  does (exit code 2) so a useless export never silently replaces a good one.
+
+Verify any export independently: send the jar to ``https://www.youtube.com/`` and
+look for ``"LOGGED_IN":true`` in the returned page.  A ``.google.com``-only jar
+yields ``false`` even though it contains ``SID``.
+
 Usage::
 
     python scripts/export_cookies_via_cdp.py                  # wait 5 min for login
@@ -62,6 +78,7 @@ DEFAULT_OUTPUT = REPO_ROOT / "data" / "cookies.txt"
 
 # Cookies that only exist on an authenticated session.  SID / __Secure-*PSID are
 # issued by Google at login time and are the ones yt-dlp actually needs.
+YOUTUBE_DOMAIN = "youtube.com"
 STRONG_AUTH_COOKIES = frozenset({"SID", "__Secure-1PSID", "__Secure-3PSID"})
 WEAK_AUTH_COOKIES = frozenset(
     {"HSID", "SSID", "APISID", "SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID", "LOGIN_INFO"}
@@ -197,6 +214,13 @@ class CdpSession:
         except Exception:  # noqa: BLE001 - the socket usually dies together with the browser
             pass
 
+    def open_tab(self, url: str) -> None:
+        """Ask the browser to load ``url`` so the site can mint its own cookies."""
+        try:
+            self.call("Target.createTarget", {"url": url})
+        except SetupError:
+            pass
+
     def close(self) -> None:
         try:
             self._websocket.__exit__(None, None, None)
@@ -204,12 +228,29 @@ class CdpSession:
             pass
 
 
-def auth_cookie_names(cookies: list[dict[str, Any]]) -> tuple[set[str], set[str]]:
+def _is_youtube_domain(domain: str) -> bool:
+    normalized = domain.lower().lstrip(".")
+    return normalized == YOUTUBE_DOMAIN or normalized.endswith(f".{YOUTUBE_DOMAIN}")
+
+
+def auth_cookie_names(
+    cookies: list[dict[str, Any]], *, youtube_only: bool = False
+) -> tuple[set[str], set[str]]:
+    """Collect auth cookie names, optionally restricted to youtube.com-scoped cookies.
+
+    ``youtube_only`` is the check that actually matters.  Google's SSO hop issues
+    SID/__Secure-*PSID on ``.google.com``; a request to ``www.youtube.com`` never
+    receives those, so the session is anonymous to YouTube until YouTube mints its
+    own ``.youtube.com``-scoped auth cookies (which it only does on a youtube.com
+    page loaded *while* authenticated).
+    """
     strong: set[str] = set()
     weak: set[str] = set()
     for cookie in cookies:
         domain = str(cookie.get("domain") or "")
         if not _is_youtube_related_cookie(domain):
+            continue
+        if youtube_only and not _is_youtube_domain(domain):
             continue
         name = str(cookie.get("name") or "")
         if name in STRONG_AUTH_COOKIES:
@@ -220,7 +261,14 @@ def auth_cookie_names(cookies: list[dict[str, Any]]) -> tuple[set[str], set[str]
 
 
 def is_logged_in(cookies: list[dict[str, Any]]) -> bool:
+    """True once *any* Google auth cookies exist (the SSO hop sets them first)."""
     strong, weak = auth_cookie_names(cookies)
+    return bool(strong) or len(weak) >= 3
+
+
+def has_youtube_session(cookies: list[dict[str, Any]]) -> bool:
+    """True only when YouTube itself has issued auth cookies on a youtube.com domain."""
+    strong, weak = auth_cookie_names(cookies, youtube_only=True)
     return bool(strong) or len(weak) >= 3
 
 
@@ -273,6 +321,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--poll-interval", type=float, default=2.0)
     parser.add_argument("--port", type=int, default=0, help="0 = pick a free port")
     parser.add_argument("--url", default="https://www.youtube.com/")
+    parser.add_argument(
+        "--settle-seconds",
+        type=float,
+        default=25.0,
+        help="after login, wait this long for youtube.com-scoped auth cookies to appear",
+    )
     parser.add_argument("--check-only", action="store_true", help="probe login state but never write cookies.txt")
     parser.add_argument("--keep-open", action="store_true", help="leave the browser window open on exit")
     parser.add_argument("--headless", action="store_true", help="for CI: cannot log in, only validates the plumbing")
@@ -315,29 +369,46 @@ def main(argv: list[str] | None = None) -> int:
 
         deadline = time.time() + args.timeout
         cookies: list[dict[str, Any]] = []
-        logged_in = False
+        auth_seen = False
         while time.time() < deadline:
             cookies = session.read_all_cookies()
             if is_logged_in(cookies):
-                logged_in = True
+                auth_seen = True
                 break
             if args.headless:
                 break
             time.sleep(args.poll_interval)
 
+        # Step 2: Google's SSO hop leaves the auth cookies on .google.com.  Nudge a
+        # youtube.com page so YouTube mints its own .youtube.com-scoped auth cookies;
+        # without them every request to youtube.com is anonymous.
+        if auth_seen and not has_youtube_session(cookies):
+            session.open_tab(args.url)
+            settle_deadline = time.time() + args.settle_seconds
+            while time.time() < settle_deadline:
+                cookies = session.read_all_cookies()
+                if has_youtube_session(cookies):
+                    break
+                time.sleep(1.0)
+
         strong, weak = auth_cookie_names(cookies)
+        strong_yt, weak_yt = auth_cookie_names(cookies, youtube_only=True)
+        logged_in = has_youtube_session(cookies)
         summary: dict[str, Any] = {
             "ok": logged_in,
             "logged_in": logged_in,
-            "auth_cookies": sorted(strong | weak),
+            "auth_cookies_any_domain": sorted(strong | weak),
+            "auth_cookies_youtube_scoped": sorted(strong_yt | weak_yt),
             "total_cookies_seen": len(cookies),
             "profile_dir": str(profile_dir),
         }
 
         if not logged_in:
             summary["error"] = (
-                "no authenticated YouTube session in this profile yet -- "
-                "log in inside the opened window and re-run"
+                "no youtube.com-scoped auth cookies: a request to www.youtube.com would be "
+                "anonymous. Either the profile is not logged in, or YouTube has not re-issued "
+                "its own cookies yet -- open youtube.com in the window, let it load while "
+                "signed in, then re-run."
             )
             if not args.check_only and output.exists():
                 summary["note"] = f"existing {output.name} left untouched"

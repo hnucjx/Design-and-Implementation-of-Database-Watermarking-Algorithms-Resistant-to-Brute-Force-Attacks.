@@ -379,6 +379,56 @@ describe("App", () => {
     });
   });
 
+  test("autosaves the proxy and sends null when cleared back to auto", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
+    const proxy = screen.getByLabelText("代理（留空 = 自动；填 direct 强制直连）");
+
+    await user.type(proxy, "127.0.0.1:1080");
+    await user.tab();
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/settings",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ proxy: "127.0.0.1:1080" })
+        })
+      );
+    });
+
+    await user.clear(proxy);
+    await user.tab();
+
+    // 清空 = 回到「自动」（null），不是「强制直连」——后者要显式填 direct。
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/settings",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ proxy: null })
+        })
+      );
+    });
+  });
+
+  test("shows which proxy is actually in effect", async () => {
+    currentSettingsPayload = {
+      ...settingsPayload,
+      proxy_source: "system",
+      proxy_effective: "http://127.0.0.1:7890"
+    };
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
+
+    expect(
+      screen.getByText("当前生效：http://127.0.0.1:7890（来源：Windows 系统代理）")
+    ).toBeInTheDocument();
+  });
+
   test("selects download directory with a folder dialog", async () => {
     const user = userEvent.setup();
     render(<App />);

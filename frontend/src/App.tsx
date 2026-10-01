@@ -982,6 +982,29 @@ function Toggle({
   );
 }
 
+function proxySourceLabel(source: Settings["proxy_source"] | undefined): string {
+  switch (source) {
+    case "setting":
+      return "已手动设置";
+    case "system":
+      return "Windows 系统代理";
+    case "environment":
+      return "环境变量";
+    case "direct":
+      return "强制直连";
+    default:
+      return "未发现代理（直连）";
+  }
+}
+
+function proxyHint(settings: Settings): string {
+  if (settings.proxy_source === "direct") return "当前强制直连，不使用任何代理。";
+  if (!settings.proxy_effective) {
+    return "当前直连：没有设置代理，也没发现 Windows 系统代理或 HTTP_PROXY/HTTPS_PROXY 环境变量。";
+  }
+  return `当前生效：${settings.proxy_effective}（来源：${proxySourceLabel(settings.proxy_source)}）`;
+}
+
 function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onSettingsChange: (settings: Settings) => void }) {
   const [draft, setDraft] = useState(settings);
   const [saveMessage, setSaveMessage] = useState("");
@@ -1014,6 +1037,25 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
       onSettingsChange(
         await updateSettings({
           aria2c_connections: nextConnections
+        })
+      );
+      setSaveMessage("已保存");
+    } catch {
+      setSaveMessage("保存失败");
+    } finally {
+      window.setTimeout(() => setSaveMessage(""), 1800);
+    }
+  }
+
+  async function saveProxy(value: string) {
+    const nextProxy = value.trim();
+    if (nextProxy === (settings.proxy ?? "")) return;
+    setSaveMessage("保存中...");
+    try {
+      onSettingsChange(
+        await updateSettings({
+          // 空值传 null = 回到「自动」，而不是「强制直连」（要直连请显式填 direct）。
+          proxy: nextProxy === "" ? null : nextProxy
         })
       );
       setSaveMessage("已保存");
@@ -1077,6 +1119,16 @@ function SettingsPanel({ settings, onSettingsChange }: { settings: Settings; onS
           onBlur={(event) => void saveAria2cConnections(Number(event.currentTarget.value))}
         />
       </label>
+      <label className="field">
+        <span>代理（留空 = 自动；填 direct 强制直连）</span>
+        <input
+          value={draft.proxy ?? ""}
+          placeholder="例如 127.0.0.1:7890"
+          onChange={(event) => setDraft({ ...draft, proxy: event.target.value })}
+          onBlur={(event) => void saveProxy(event.currentTarget.value)}
+        />
+      </label>
+      <p className="hint">{proxyHint(settings)}</p>
       {saveMessage && <span className="settings-save-status">{saveMessage}</span>}
     </section>
   );

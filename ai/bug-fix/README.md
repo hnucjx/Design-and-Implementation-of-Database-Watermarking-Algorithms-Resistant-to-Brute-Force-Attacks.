@@ -29,6 +29,7 @@
 | [003](003-js-runtime-invisible-outside-path.md) | JS 运行时只查 PATH | `21ebd9d` | 服务进程 PATH 里没有 node → `JS Challenge Providers: node (unavailable)` → nsig 解不出来 |
 | [004](004-empty-subtitle-languages-expand-to-all.md) | 字幕语言为空退化成 `["all"]` | `a579a93` | 空列表变成「拉全部字幕轨」→ HTTP 429 → **整个条目判失败，视频本体也下不到** |
 | [005](005-edge-cdp-fallback-touches-the-live-profile.md) | Edge CDP 回退挂载真实 profile | `a482a9e` | 既必然失败（Chromium 拒绝默认数据目录），又曾**清空真实 cookie 库（53 → 0）** |
+| [006](006-proxy-is-not-configurable.md) | 应用没有代理配置项 | — | 环境变量静默顶掉 Windows 系统代理（实测：坏变量 → 502；修好 → HTTP 200），且界面上看不到也改不了 |
 
 ## 本轮（2026-10-01）背景
 
@@ -48,15 +49,17 @@
 004 与 005 是验收过程中暴露的存量缺陷，与上面三条链无直接关系，
 但都会让「下载」这件事对用户失效（一个炸 429、一个破坏用户数据）。
 
+006 是这条链的**前置条件**：上面三环再正确，请求到不了 YouTube 也没用。
+它也纠正了上一轮分析里「直连超时」那个错误结论 —— 真因是环境变量把系统代理顶掉了，
+而当时没有任何地方能看出「应用实际用了哪个代理」。
+
 ## 已知但**未处理**的问题（下一轮候选）
 
-1. **应用没有代理配置项。** `ydl_opts` 里不含 `proxy`，完全依赖宿主进程的
-   `HTTP_PROXY` / `HTTPS_PROXY`；而 Windows 的系统代理是 WinINet 设置，yt-dlp / curl
-   **读不到**。若出口必须走代理，整条链路仍然不通。
-   （排查中发现：沙箱会注入只在本机存在的 `HTTPS_PROXY=127.0.0.1:54109`，
-   使子进程拿到一个不可用的代理 —— 这也是「环境变量式代理」不可靠的旁证。）
+1. ~~**应用没有代理配置项。**~~ → 已由 [006](006-proxy-is-not-configurable.md) 处理。
+   遗留：PAC/自动配置脚本不支持；「来源=环境变量」时 aria2c 仍拿不到代理。
 2. **`_close_browser_for_cookie_import()` 用 `taskkill /IM msedge.exe /F /T`**，
    会杀掉用户全部 Edge 进程（含未保存标签页）。虽属用户显式同意，破坏面仍过大。见 005 遗留风险。
-3. **端到端仍未验收通过。** 本轮把 provider 从「不可用」推进到「可用」，
-   但「PO token 真能铸出来 + 视频真能下下来」需要在干净的代理环境下单独验收。
+3. **端到端仍未验收通过。** 001~003 把 PO token provider 从「不可用」推进到「可用」，
+   006 让请求能真正出网，但「PO token 真能铸出来 + 视频真能下下来」需要在干净的代理环境下
+   单独验收。
 4. 同一 item 内多条字幕轨仍是串行请求，若 YouTube 收紧限流可能还需请求间隔控制（见 004 关联）。

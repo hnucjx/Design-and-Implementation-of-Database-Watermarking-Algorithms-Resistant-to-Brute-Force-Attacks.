@@ -128,6 +128,9 @@ export interface Settings {
   default_speed_limit_kbps: number | null;
   default_retries: number;
   aria2c_connections: number;
+  proxy: string | null;
+  proxy_source: "setting" | "system" | "environment" | "direct" | "none";
+  proxy_effective: string | null;
   cookies_enabled: boolean;
   ffmpeg: Record<string, boolean>;
 }

@@ -34,6 +34,12 @@ class AppSettings(BaseSettings):
     # 显式指定 JS 运行时（Deno / Node）可执行文件。留空时按「PATH -> 常见安装目录」自动探测；
     # yt-dlp 用它解 YouTube 的 nsig（JS challenge），探测不到会直接导致提取失败。
     js_runtime_path: str | None = None
+    # 代理。留空 = 自动（优先 Windows 系统代理，其次 HTTP_PROXY/HTTPS_PROXY 环境变量）；
+    # "direct"/"none"/"off" = 强制直连（用系统代理是坏的/想让应用绕过它时用）；
+    # 其余按代理 URL 处理，缺 scheme 时补 http://（127.0.0.1:7890 可以直接写）。
+    # 解析逻辑见 app/proxy.py：不配置的话代理完全由 yt-dlp 自己解析，而它是
+    # 「环境变量优先于系统设置」，宿主 shell 注入的变量会静默顶掉系统代理。
+    proxy: str | None = None
     youtube_max_parallel_downloads: int = Field(default_factory=default_download_concurrency, ge=1)
     anti403_http_chunk_size_mb: int = Field(default=16, ge=1)
     # 0 = 关闭节流守卫。> 0 时写入 yt-dlp 的 throttledratelimit，会在单条流速度低于该值时

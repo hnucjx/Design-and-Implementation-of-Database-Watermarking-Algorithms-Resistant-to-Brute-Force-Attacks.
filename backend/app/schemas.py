@@ -169,6 +169,12 @@ class SettingsRead(BaseModel):
     default_speed_limit_kbps: int | None
     default_retries: int
     aria2c_connections: int
+    # 用户显式设置的代理（None = 自动）。
+    proxy: str | None = None
+    # 实际生效的代理与来源（setting/system/environment/direct/none），用于在界面上
+    # 说明「现在到底走没走代理、走的哪个」——这正是以前最查不出来的东西。
+    proxy_source: str = "none"
+    proxy_effective: str | None = None
     cookies_enabled: bool
     ffmpeg: dict[str, bool]
 
@@ -181,6 +187,7 @@ class SettingsUpdate(BaseModel):
     default_speed_limit_kbps: int | None = Field(default=None, ge=1)
     default_retries: int | None = Field(default=None, ge=0, le=20)
     aria2c_connections: int | None = Field(default=None, ge=1, le=4)
+    proxy: str | None = None
 
 
 class CookieStatus(BaseModel):

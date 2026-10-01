@@ -4,11 +4,16 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.proxy import resolve_proxy
 from app.schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
 from app.ytdlp_service import BrowserCookieImportError, DownloadCancelled
 class FakeYtDlpService:
     def __init__(self):
         self.downloads = []
+        self.proxy = None
+
+    def proxy_resolution(self):
+        return resolve_proxy(self.proxy)
 
     def get_ffmpeg_status(self):
         return {"ffmpeg": True, "ffprobe": True}
@@ -32,6 +37,12 @@ class FakeYtDlpService:
             "js_runtime": True,
             "js_runtime_name": "node",
             "js_runtime_version": "v20.11.1",
+            "proxy": None,
+            "proxy_source": "none",
+            "proxy_writes_ydl_option": False,
+            "system_proxy": None,
+            "environment_proxy": None,
+            "no_proxy_bypass_set": False,
             "yt_dlp_version": "test",
         }
 

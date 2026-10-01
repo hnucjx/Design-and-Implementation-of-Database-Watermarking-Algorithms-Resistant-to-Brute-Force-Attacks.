@@ -306,6 +306,38 @@ def test_settings_return_and_persist_runtime_download_defaults(tmp_path: Path) -
         assert clear_response.json()["default_speed_limit_kbps"] is None
 
 
+def test_settings_return_and_persist_proxy(tmp_path: Path) -> None:
+    with make_client(tmp_path) as client:
+        assert client.get("/api/settings").json()["proxy"] is None
+
+        updated = client.put("/api/settings", json={"proxy": "127.0.0.1:1080"})
+
+        assert updated.status_code == 200
+        assert updated.json()["proxy"] == "127.0.0.1:1080"
+        assert updated.json()["proxy_source"] == "setting"
+        # 不带 scheme 的写法要补成合法 URL 才能真的用。
+        assert updated.json()["proxy_effective"] == "http://127.0.0.1:1080"
+        assert client.get("/api/settings").json()["proxy"] == "127.0.0.1:1080"
+
+        cleared = client.put("/api/settings", json={"proxy": None})
+
+        assert cleared.status_code == 200
+        # 显式传 null = 回到「自动」，不是「强制直连」（后者要写 "direct"）。
+        assert cleared.json()["proxy"] is None
+
+
+def test_partial_settings_update_keeps_configured_proxy(tmp_path: Path) -> None:
+    """没带 proxy 字段的 PUT 不能把用户已经配好的代理抹掉。"""
+
+    with make_client(tmp_path) as client:
+        client.put("/api/settings", json={"proxy": "127.0.0.1:1080"})
+
+        response = client.put("/api/settings", json={"default_retries": 4})
+
+        assert response.status_code == 200
+        assert response.json()["proxy"] == "127.0.0.1:1080"
+
+
 def test_runtime_download_default_update_preserves_item_resolution_override(tmp_path: Path) -> None:
     settings = make_settings(tmp_path)
     engine = create_app_engine(settings)

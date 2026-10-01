@@ -1,4 +1,4 @@
-﻿import type { Job } from "../types";
+﻿import type { Job, Settings } from "../types";
 
 export const analyzePayload = {
   url: "https://youtube.com/playlist?list=abc",
@@ -202,7 +202,7 @@ export const playlistFallbackJobPayload: Job = {
   ]
 };
 
-export const settingsPayload = {
+export const settingsPayload: Settings = {
   download_dir: "downloads",
   default_concurrency: 2,
   default_subtitle_languages: ["en"],
@@ -210,6 +210,9 @@ export const settingsPayload = {
   default_speed_limit_kbps: null,
   default_retries: 10,
   aria2c_connections: 2,
+  proxy: null,
+  proxy_source: "none",
+  proxy_effective: null,
   cookies_enabled: false,
   ffmpeg: { ffmpeg: true, ffprobe: true }
 };

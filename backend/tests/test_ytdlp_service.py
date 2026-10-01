@@ -177,6 +177,90 @@ def test_default_download_options_do_not_force_anti403_profile(monkeypatch, tmp_
     assert opts.get("extractor_args", {}).get("youtube", {}).get("player_client") != ["web_safari", "default"]
 
 
+def test_download_options_apply_resolved_system_proxy(monkeypatch, tmp_path: Path) -> None:
+    """系统代理必须真的进 ydl_opts —— 否则「浏览器能上网、应用不能」还是会发生。"""
+
+    monkeypatch.setattr("app.proxy.read_system_proxy", lambda: "127.0.0.1:7890")
+    monkeypatch.setattr("app.proxy.read_environment_proxy", lambda: None)
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+    )
+
+    # 注册表里存的是不带 scheme 的写法，必须补成合法 URL。
+    assert opts["proxy"] == "http://127.0.0.1:7890"
+
+
+def test_download_options_omit_proxy_when_nothing_is_configured(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("app.proxy.read_system_proxy", lambda: None)
+    monkeypatch.setattr("app.proxy.read_environment_proxy", lambda: None)
+    service = YtDlpService(download_dir=tmp_path)
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+    )
+
+    assert "proxy" not in opts
+
+
+def test_explicit_direct_proxy_is_written_to_download_options(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("app.proxy.read_system_proxy", lambda: "127.0.0.1:7890")
+    monkeypatch.setattr("app.proxy.read_environment_proxy", lambda: None)
+    service = YtDlpService(download_dir=tmp_path, proxy="direct")
+    monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
+
+    opts = service.build_download_options(
+        DownloadOptions(mode="video_subtitles", resolution="720p"),
+        cookies_path=None,
+    )
+
+    assert opts["proxy"] == ""
+
+
+def test_extract_metadata_applies_resolved_proxy(monkeypatch, tmp_path: Path) -> None:
+    """元数据提取同样是网络请求，也必须带代理（否则解析链接这一步就卡住）。"""
+
+    captured_opts: dict = {}
+    monkeypatch.setattr("app.proxy.read_system_proxy", lambda: "127.0.0.1:7890")
+    monkeypatch.setattr("app.proxy.read_environment_proxy", lambda: None)
+
+    class FakeYoutubeDL:
+        def __init__(self, opts):
+            captured_opts.update(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def extract_info(self, url, download=False):
+            return {"id": "x", "title": "X", "webpage_url": url, "formats": []}
+
+    monkeypatch.setattr("app.ytdlp_service.yt_dlp.YoutubeDL", FakeYoutubeDL)
+
+    YtDlpService(download_dir=tmp_path).extract_metadata("https://youtu.be/x")
+
+    assert captured_opts["proxy"] == "http://127.0.0.1:7890"
+
+
+def test_dependency_status_exposes_proxy_source_and_redacts_credentials(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("app.proxy.read_system_proxy", lambda: "127.0.0.1:7890")
+    monkeypatch.setattr("app.proxy.read_environment_proxy", lambda: "http://user:pw@127.0.0.1:54109")
+
+    status = YtDlpService(download_dir=tmp_path).get_dependency_status()
+
+    assert status["proxy"] == "http://127.0.0.1:7890"
+    assert status["proxy_source"] == "system"
+    assert status["proxy_writes_ydl_option"] is True
+    assert status["environment_proxy"] == "http://user:***@127.0.0.1:54109"
+
+
 def test_mweb_pot_chrome_download_options_use_provider_and_stability_profile(monkeypatch, tmp_path: Path) -> None:
     browser_path = str(tmp_path / "chrome.exe")
     service = YtDlpService(download_dir=tmp_path)

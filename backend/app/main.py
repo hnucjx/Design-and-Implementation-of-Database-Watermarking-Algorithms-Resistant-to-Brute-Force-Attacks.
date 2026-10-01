@@ -17,6 +17,7 @@ from .job_manager import JobManager, new_id
 from .models import Job, JobItem, Setting
 from .output_paths import discover_existing_output_path, discover_output_file_candidates, resolve_existing_output_path
 from .paths import safe_path_name
+from .proxy import redact_proxy_credentials
 from .schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -63,6 +64,7 @@ def create_app(
         aria2c_connections=app_settings.aria2c_connections,
         js_runtime_path=app_settings.js_runtime_path,
         default_subtitle_languages=app_settings.default_subtitle_languages,
+        proxy=app_settings.proxy,
     )
     with Session(engine) as session:
         _apply_stored_settings(session, app_settings, service)
@@ -347,6 +349,11 @@ def create_app(
             app_settings.aria2c_connections = update.aria2c_connections
             service.aria2c_connections = update.aria2c_connections
             _set_setting(session, "aria2c_connections", str(update.aria2c_connections))
+        if "proxy" in update.model_fields_set:
+            # 用 model_fields_set 而不是 `is not None`：显式传 null 表示「改回自动」。
+            app_settings.proxy = update.proxy
+            service.proxy = update.proxy
+            _set_setting(session, "proxy", (update.proxy or "").strip())
         if runtime_options_changed:
             await manager.set_runtime_download_defaults(
                 app_settings.default_speed_limit_kbps,
@@ -599,10 +606,15 @@ def _apply_stored_settings(session: Session, settings: AppSettings, service: YtD
     if stored.get("aria2c_connections"):
         settings.aria2c_connections = int(stored["aria2c_connections"])
         service.aria2c_connections = settings.aria2c_connections
+    if "proxy" in stored:
+        # 空串 = 未配置（自动），不是「强制直连」——见 app/proxy.py 的 DIRECT_PROXY_VALUES。
+        settings.proxy = stored["proxy"].strip() or None
+        service.proxy = settings.proxy
 
 
 def _settings_response(session: Session, settings: AppSettings, service: YtDlpService) -> SettingsRead:
     _apply_stored_settings(session, settings, service)
+    resolution = service.proxy_resolution()
     return SettingsRead(
         download_dir=str(settings.download_dir),
         default_concurrency=settings.default_concurrency,
@@ -611,6 +623,9 @@ def _settings_response(session: Session, settings: AppSettings, service: YtDlpSe
         default_speed_limit_kbps=settings.default_speed_limit_kbps,
         default_retries=settings.default_retries,
         aria2c_connections=settings.aria2c_connections,
+        proxy=settings.proxy,
+        proxy_source=resolution.source,
+        proxy_effective=redact_proxy_credentials(resolution.url),
         cookies_enabled=settings.cookies_path.exists(),
         ffmpeg=service.get_ffmpeg_status(),
     )

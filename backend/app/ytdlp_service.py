@@ -21,6 +21,7 @@ from .browser_cookies import (
     BrowserCookieImportResult,
 )
 from .log_safety import sanitize_log_message
+from .proxy import ProxyResolution, has_no_proxy_bypass, redact_proxy_credentials, resolve_proxy
 from .schemas import AnalyzeResponse, DownloadOptions, FormatOption, SubtitleOption, VideoEntry
 from .stall_guard import DownloadStalled, StallGuard
 from .ytdlp_formats import (
@@ -192,6 +193,7 @@ class YtDlpService:
         aria2c_connections: int = DEFAULT_ARIA2C_CONNECTIONS,
         js_runtime_path: str | None = None,
         default_subtitle_languages: Sequence[str] | None = None,
+        proxy: str | None = None,
     ) -> None:
         self.download_dir = download_dir
         self.youtube_po_token = youtube_po_token
@@ -207,6 +209,26 @@ class YtDlpService:
         self.js_runtime_path = js_runtime_path
         # 请求没指定字幕语言时的兜底集合（永远有界，绝不使用 yt-dlp 的 ["all"]）。
         self.default_subtitle_languages = list(default_subtitle_languages or FALLBACK_SUBTITLE_LANGUAGES)
+        # 代理：None / "auto" = 自动（优先 Windows 系统代理，其次环境变量）；
+        # "direct" 等 = 强制直连；其余按 URL 处理。解析逻辑见 app/proxy.py。
+        self.proxy = proxy
+        resolution = self.proxy_resolution()
+        # 启动时留一行日志：代理相关的故障最难查的就是「到底走没走代理」，
+        # 而这行日志与 /api/diagnostics 用的是同一份解析结果。
+        logger.info(
+            "proxy resolved: source=%s proxy=%s system=%s environment=%s",
+            resolution.source,
+            redact_proxy_credentials(resolution.url) or "<none>",
+            redact_proxy_credentials(resolution.system_proxy) or "<none>",
+            redact_proxy_credentials(resolution.environment_proxy) or "<none>",
+        )
+
+    def proxy_resolution(self) -> ProxyResolution:
+        """当前实际会使用的代理（含来源）。每次调用重新解析，设置改了立刻生效。"""
+        return resolve_proxy(self.proxy)
+
+    def _proxy_options(self) -> dict[str, str]:
+        return self.proxy_resolution().to_ydl_options()
 
     def get_ffmpeg_status(self) -> dict[str, bool]:
         return {"ffmpeg": self._ffmpeg_executable() is not None, "ffprobe": shutil.which("ffprobe") is not None}
@@ -217,6 +239,7 @@ class YtDlpService:
         impersonation_targets = self._available_impersonation_targets()
         provider_version = self._po_token_provider_version()
         aria2c_executable = self._aria2c_executable()
+        resolution = self.proxy_resolution()
         return {
             **ffmpeg,
             "impersonation_available": bool(impersonation_targets),
@@ -239,6 +262,15 @@ class YtDlpService:
             "js_runtime_version": runtime[2] if runtime else None,
             # provider 实际拿到的运行时路径（显式配置或自动探测）。
             "js_runtime_path": runtime[1] if runtime else None,
+            # 代理：proxy 是**实际生效值**（"" = 强制直连），proxy_source 说明它从哪来。
+            # 把来源一并暴露出来，是因为「浏览器能上网、应用不能」这种故障里最难查的
+            # 恰恰是「到底走了哪个代理」——之前没有任何地方能看到。
+            "proxy": redact_proxy_credentials(resolution.url),
+            "proxy_source": resolution.source,
+            "proxy_writes_ydl_option": resolution.writes_ydl_option,
+            "system_proxy": redact_proxy_credentials(resolution.system_proxy),
+            "environment_proxy": redact_proxy_credentials(resolution.environment_proxy),
+            "no_proxy_bypass_set": has_no_proxy_bypass(),
             "yt_dlp_version": yt_dlp_version,
         }
 
@@ -277,6 +309,7 @@ class YtDlpService:
             "sleep_interval_requests": YTDLP_REQUEST_SLEEP_SECONDS,
         }
         opts.update(self._javascript_runtime_options())
+        opts.update(self._proxy_options())
         if cookies_path:
             opts["cookiefile"] = str(cookies_path)
 
@@ -367,6 +400,7 @@ class YtDlpService:
         }
         youtube_profile = self._normalize_youtube_profile(youtube_profile)
         ydl_opts.update(self._javascript_runtime_options())
+        ydl_opts.update(self._proxy_options())
         extractor_args = self._extractor_args(youtube_profile)
         if extractor_args:
             ydl_opts["extractor_args"] = extractor_args

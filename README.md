@@ -30,6 +30,11 @@ python -m app
 
 ![YouTube Downloader 首页](docs/assets/screenshots/home.png)
 
+> 改过 `frontend/src` 之后要**重新 `npm run build`**，并在浏览器里**硬刷新**（Windows `Ctrl+Shift+R`）。
+> 单端口模式发的是 `frontend/dist` 下的构建产物，重启后端只会换掉磁盘上的文件、**不会让已打开的标签页
+> 重新加载**；而 `/api/events` 这条 SSE 长连接会自动重连，进度照旧滚动，很容易被误当成「页面已经是新的」。
+> 症状驱动的处置见 [排障手册：重启服务后页面还是旧样子](docs/troubleshooting.md#重启服务后页面还是旧样子)。
+
 ### 端口不是固定的
 
 端口只有一个来源：仓库根 `.env` 里的 `YTDL_API_PORT`（默认 `8000`，取值范围 `1..65535`）。后端读它，`frontend/vite.config.ts` 里前端开发服务器的 `/api` 代理读的也是它 —— 只有一处来源，才不会出现「后端换了端口、前端还代理旧端口」这种静默错配。
@@ -56,7 +61,7 @@ python -m app
 | --- | --- |
 | [文档总入口](docs/index.md) | 按读者角色选择阅读路径。 |
 | [用户手册](docs/user-manual.md) | 启动入口、下载操作、代理与网络、cookies、自检与日志。 |
-| [排障手册](docs/troubleshooting.md) | 按「你看到的那句话」查该点哪里：代理、cookies、JS 运行时与日志阅读。 |
+| [排障手册](docs/troubleshooting.md) | 按「你看到的那句话」查该点哪里：代理、cookies、JS 运行时、端口占用、页面没变化与日志阅读。 |
 | [需求分析](docs/requirements.md) | 项目目标、功能需求、非功能需求和边界。 |
 | [架构设计](docs/architecture.md) | 前后端、SQLite、yt-dlp、ffmpeg、SSE 和外部依赖关系。 |
 | [设计文档](docs/design.md) | 模块职责与依赖分层、运行时并发模型、关键数据流、扩展点和已知限制。 |

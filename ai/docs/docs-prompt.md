@@ -96,7 +96,7 @@
   - `UrlAnalyzer.tsx`：解析面板（链接输入、cookies 行、锁库提示、解析按钮）。
   - `AnalysisPanel.tsx`：解析结果（缩略图/标题/时长、playlist 勾选表、单视频汇总）。
   - `DownloadOptionsPanel.tsx`：下载选项（模式、清晰度、字幕、开关项、限速与重试、提交）。
-  - `SettingsPanel.tsx`：设置（下载目录、并发、aria2c 连接数、代理；失焦即保存）。
+  - `SettingsPanel.tsx`：设置（下载目录、并发、单视频并发下载数（aria2c）、代理；失焦即保存；单视频并发下载数旁挂 `Aria2cHelpPopover`，说明 aria2c 的查询与启用）。
   - `SearchableLanguageSelect.tsx` / `Toggle.tsx` / `StatusPill.tsx`：基础件。
   - `CookieSection.tsx`：cookies 状态、校验按钮与结论展示。
   - `ProxySection.tsx`：代理检测结果与「真的发一次请求」的入口。

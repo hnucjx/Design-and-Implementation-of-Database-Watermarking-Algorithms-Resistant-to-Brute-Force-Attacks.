@@ -29,7 +29,7 @@
 | FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除、批量操作，以及本地播放/打开文件夹。 | [`batch_job_action`](../backend/app/routers/jobs.py#L79)、[`system_open.py`](../backend/app/system_open.py) |
 | FR-8 | 默认请求人工字幕和自动字幕；缺少某类字幕时 fallback 到另一类可用字幕，并显示来源与格式。 | [`DownloadOptions`](../backend/app/schemas.py#L56)、[`DownloadOptionsPanel`](../frontend/src/components/DownloadOptionsPanel.tsx#L19) |
 | FR-9 | 支持 cookies 上传、浏览器导入和清除。 | [`/api/cookies`](../backend/app/routers/cookies.py#L60)、[`BrowserCookieImporter`](../backend/app/browser_cookies.py#L67) |
-| FR-10 | 支持并发、限速、重试次数和 aria2c 连接数作为运行时设置即时保存；限速/重试变更会让当前视频断点续传重启以应用新参数。 | [`SettingsUpdate`](../backend/app/schemas.py#L182)、[`set_runtime_download_defaults`](../backend/app/job_manager.py#L90) |
+| FR-10 | 支持并发、限速、重试次数和单视频并发下载数（aria2c）作为运行时设置即时保存；限速/重试变更会让当前视频断点续传重启以应用新参数。 | [`SettingsUpdate`](../backend/app/schemas.py#L182)、[`set_runtime_download_defaults`](../backend/app/job_manager.py#L90) |
 | FR-11 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/routers/events.py#L15)、[`EventBroker`](../backend/app/events.py#L7) |
 | FR-12 | 支持诊断依赖状态、cookies 状态和稳定性参数。 | [`/api/diagnostics`](../backend/app/routers/diagnostics.py#L29)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L281) |
 | FR-13 | 下载停滞可观测：在可配置窗口内没有新增字节时主动判为失败，而不是永久 `running`。 | [`StallGuard`](../backend/app/stall_guard.py#L32)、[`_download_once`](../backend/app/ytdlp_service.py#L575) |

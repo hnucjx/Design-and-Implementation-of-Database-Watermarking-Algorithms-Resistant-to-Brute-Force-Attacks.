@@ -114,7 +114,7 @@
 | --- | --- |
 | `default_speed_limit_kbps` | 全局默认限速；`null` 表示不限速。 |
 | `default_retries` | 全局默认下载重试次数，范围 `0..20`。 |
-| `aria2c_connections` | aria2c 每文件的连接数，范围 `1..4`，默认 `2`。仅当 `YTDL_ARIA2C_ENABLED=true` 且 aria2c 可用时才会真正用于下载。 |
+| `aria2c_connections` | aria2c 每文件的连接数，范围 `1..4`，默认 `2`（界面上叫「单视频并发下载数」）。仅当 `YTDL_ARIA2C_ENABLED=true` 且 aria2c 可用时才会真正用于下载，且它只是 profile 链里的后备——`default` 失败后才会轮到，不是每次下载都走。 |
 
 `PUT /api/settings` 采用局部更新语义：只有显式提交的字段才会被改写。`default_speed_limit_kbps` 通过 `model_fields_set` 判断，因此显式提交 `null` 表示取消限速；`aria2c_connections` 只更新设置与 `YtDlpService`，不会打断正在下载的任务。
 

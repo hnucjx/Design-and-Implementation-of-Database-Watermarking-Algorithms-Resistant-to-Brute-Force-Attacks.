@@ -29,7 +29,10 @@ describe("App · 帮助浮层", () => {
       "说明：Cookie 获取方式",
       "说明：Cookie 校验结论解读",
       "说明：常见代理软件的本地端口",
-      "说明：浏览器可访问而应用不可访问时的排查顺序"
+      "说明：浏览器可访问而应用不可访问时的排查顺序",
+      // 设置里的这一项：文案改成「单视频并发下载数」之后，aria2c 的两个生效条件
+      // （默认关闭 + 只在默认方式失败后才作为后备）都搬进了说明浮层，所以它也必须默认收起。
+      "说明：单视频并发下载的作用与启用方式"
     ];
     for (const name of helpIds) {
       expect(await screen.findByRole("button", { name })).toHaveAttribute("aria-expanded", "false");

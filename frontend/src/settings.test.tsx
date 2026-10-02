@@ -41,7 +41,7 @@ describe("App · 设置面板与代理检测", () => {
     render(<App />);
 
     expect(await screen.findByRole("heading", { name: "设置" })).toBeInTheDocument();
-    const connections = screen.getByLabelText("aria2c 连接数（1–4，仅在启用 aria2c 后生效）");
+    const connections = screen.getByLabelText("单视频并发下载数（1–4）");
     await waitFor(() => expect(connections).toHaveValue(2));
 
     await user.clear(connections);

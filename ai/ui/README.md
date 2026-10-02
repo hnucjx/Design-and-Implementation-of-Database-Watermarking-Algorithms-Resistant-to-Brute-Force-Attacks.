@@ -60,7 +60,7 @@ hash 只能在下一次触碰本目录时回填；查某条改动用
 |---|---|---|---|
 | [001](001-cookie-buttons-not-on-the-same-baseline.md) | 「选择 cookies」与「清除 cookies」不在同一基线 | `7b62a8c` | 文件上传控件的**基类**里写着 `margin-top: 16px`，而同排 `align-items: center` → 整体下沉 8px；变体的 `margin-top: 0` 被同优先级、位置更靠后的基类规则静默吃掉 |
 | [002](002-side-column-overflow-breaks-the-page.md) | 右栏把整页撑出横向滚动条（≤1600px 时约 44px） | `a4d492c` | 右栏的轨道宽度写死 `390px`（内容区 352px），而自检回显的那条 Windows 路径**没有断行机会**（min-content 401.53px）→ 面板 min-content 465.53px 超过轨道，grid item 又不许被压窄 → 溢出被算进整页。修法是让这条轨道里的文本可断行（`overflow-wrap: anywhere`，**不能**是 `break-word`） |
-| [003](003-language-trigger-label-overflows-the-page.md) | 语言选择器的标签把整页撑出横向滚动条 | 回填 | `.select-trigger span` 的 `white-space: nowrap` 把标签锁成一行，span 的 min-content 就等于整段文字 → flex item 的 `min-width: auto` 不许按钮被压窄 → 右栏轨道被顶宽（12 种语言实测 84px，390px 窗口 141px）。**`text-overflow: ellipsis` 从未生效过**（标签全程没被裁过一次）。修法是撤掉 nowrap 让标签换行 |
+| [003](003-language-trigger-label-overflows-the-page.md) | 语言选择器的标签把整页撑出横向滚动条 | `3643e76` | `.select-trigger span` 的 `white-space: nowrap` 把标签锁成一行，span 的 min-content 就等于整段文字 → flex item 的 `min-width: auto` 不许按钮被压窄 → 右栏轨道被顶宽（12 种语言实测 84px，390px 窗口 141px）。**`text-overflow: ellipsis` 从未生效过**（标签全程没被裁过一次）。修法是撤掉 nowrap 让标签换行 |
 
 ## 已知但**未处理**的界面问题（下一轮候选）
 
@@ -76,3 +76,18 @@ hash 只能在下一次触碰本目录时回填；查某条改动用
    确实没有 `en` 轨）。但**本轮没有查证它的下游影响**：带着一个不存在的语言提交任务后，
    后端是忽略、跳过、还是失败，属 `ai/bug-fix/` 的范围，未验。候选记录：`ai/ui/004`
    （下游若是失败，则应改记到 `ai/bug-fix/`）。
+
+2. **贴右边缘的说明浮层，右缘比布局视口宽出约 3px。**
+
+   `HelpPopover.place()` 用 `window.innerWidth` 算右边界，而它**含滚动条**
+   （1440 窗口下 `document.documentElement.clientWidth = 1425`，差 15px）。
+   浮层于是落在 `left=988`、`width=440` → `right=1428`，比布局视口多 3px。
+
+   **不是新增的缺陷**：同一栏里既有的「常用端口」浮层量到完全相同的 `left=988 / right=1428`
+   （1440px，实测见 `tmp_acceptance/ui_aria2c_help.py` 的第 [6] 段，那段专为对照而设）。
+   影响很小：固定定位元素不产生横向滚动条（整页 `overflowX = 0`），浮层本身
+   `scrollWidth - clientWidth = 0`、后代也没有内部溢出，这 3px 落在浮层的 `padding: 12px 14px`
+   与阴影上，文字未被裁。
+   候选记录：`ai/ui/005` —— 把 `place()` 里的 `window.innerWidth` 换成
+   `document.documentElement.clientWidth` 即可，但那是共用组件的行为变更，
+   需连同 42 项浮层探针（`ui_help_popover_check.py`）一起回归，不与文案改动混在一次提交里。

@@ -173,7 +173,7 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 13. 点击复制按钮，确认剪贴板内容为对应单视频、playlist 或子视频链接。
 14. 点击外链按钮，确认单视频、playlist 和子视频会打开对应 YouTube 页面。
 15. 清除 cookies 后在受限视频上触发媒体流失败，确认错误文案以「当前 cookies 状态：未配置」开头，并给出重试建议。
-16. 修改设置面板的 aria2c 连接数，确认保存成功且 `/api/diagnostics` 的 `aria2c_connections` 同步变化；确认未设置 `YTDL_ARIA2C_ENABLED=true` 时下载链路不会使用 aria2c。
+16. 修改设置面板的「单视频并发下载数（1–4）」，确认保存成功且 `/api/diagnostics` 的 `aria2c_connections` 同步变化；确认未设置 `YTDL_ARIA2C_ENABLED=true` 时下载链路不会使用 aria2c。这一项旁的「怎么启用」说明浮层要**默认收起**、点击展开，且展开时不越出视口、内部无横向溢出（探针 `tmp_acceptance/ui_aria2c_help.py`，23 项断言）。
 17. 设置面板点「检测代理」：通过时应看到 HTTP 200 与耗时；把端口改成 `1` 再点，应看到「积极拒绝」并给出下一步建议。随后在输入框里填一个地址后点「先试输入框里的地址」，确认**没有**触发 `PUT /api/settings`（试地址不等于保存）。
 18. 点代理输入框旁的「常用端口」说明，在浮层里点一行地址，确认它只填进输入框、不立即保存。
 19. 把 `cookies_enabled=false`（清除 cookies）后点「校验 cookies」，确认结论是「未配置」，并可从「获取方式」说明看到三种途径；导入 cookies 后再点一次，确认结论与「域上条数 / 命中的鉴权项 / 联网校验」三行证据一致。

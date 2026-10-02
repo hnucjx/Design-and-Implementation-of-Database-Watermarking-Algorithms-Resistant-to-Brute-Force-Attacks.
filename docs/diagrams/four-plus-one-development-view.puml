@@ -68,7 +68,7 @@ package "backend/app" {
 
 package "tests" {
   [backend/tests] as BackendTests
-  [frontend/src/App.test.tsx] as FrontendTests
+  [frontend/src/*.test.tsx] as FrontendTests
 }
 
 package "scripts" {

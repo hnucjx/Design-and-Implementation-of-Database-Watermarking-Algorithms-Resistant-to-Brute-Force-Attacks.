@@ -19,8 +19,6 @@ export const analyzePayload = {
   ffmpeg: { ffmpeg: true, ffprobe: true }
 };
 
-let currentAnalyzePayload = analyzePayload;
-
 export const jobPayload: Job = {
   id: "job-running",
   url: "https://youtu.be/running",

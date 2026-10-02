@@ -123,7 +123,11 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 
 ## 前端测试范围
 
-前端组件测试位于 [App.test.tsx](../frontend/src/App.test.tsx)，测试夹具在 [frontend/src/test](../frontend/src/test/)。
+前端组件测试是对 `App` 的**集成测试**，按功能面拆成 `frontend/src/*.test.tsx` 多个文件：解析链接与下载选项、cookies 导入与校验、设置面板与代理检测、任务中心（控制/删除/展开、本地文件操作与链接、进度与详情呈现各一个）、清晰度降级、自检信息、帮助浮层、版面与文案不变式，以及只读样式源文的 `styles.test.ts`。
+
+跨文件共享的东西只有三处，都在 [frontend/src/test](../frontend/src/test/)：测试台 [appHarness.ts](../frontend/src/test/appHarness.ts)（后端 `fetch` 替身与前后置钩子）、夹具 [appFixtures.ts](../frontend/src/test/appFixtures.ts)、样式源文解析 [cssRules.ts](../frontend/src/test/cssRules.ts)。
+
+每个文件都必须能**单独**跑绿（`npx vitest run --environment jsdom src/<文件名>`）。拆分前 69 个用例同处一个文件，个别断言实际上是靠同文件里先跑过的用例才成立的（详见 [ai/refactor/008](../ai/refactor/008-split-app-tests.md)）；只按整包绿来看是看不出来的。
 
 重点覆盖：
 

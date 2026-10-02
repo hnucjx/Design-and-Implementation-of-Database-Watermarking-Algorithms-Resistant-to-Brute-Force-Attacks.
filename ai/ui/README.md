@@ -33,6 +33,11 @@
 | 关联 | 指向相邻缺陷，说明是否同一类失败 |
 | 未覆盖 / 如实说明 | **必填的诚实项**：这类缺陷的自动化覆盖边界在哪、本轮没验到的地方 |
 
+记录的插图放 `ai/ui/assets/NNN-*.png`（目前只有 003 用到）：改动是**视觉**的、
+而 `docs/assets/screenshots/` 里那四张拍的是默认状态、看不出差别，所以对照图随记录走。
+图必须**自解释**（把「哪个是修复前、差多少像素」画在图上），并写清它是怎么生成的 ——
+003 的「修复前」那张是用承重注入还原的渲染，不是历史截图，不得当成历史截图引用。
+
 ## 一条通用约定：这类缺陷的自动化覆盖边界
 
 本仓库的前端测试跑在 **jsdom** 上，jsdom **不做布局**：`getBoundingClientRect()` 一律返回 0，
@@ -54,25 +59,20 @@ hash 只能在下一次触碰本目录时回填；查某条改动用
 | # | 标题 | 提交 | 一句话 |
 |---|---|---|---|
 | [001](001-cookie-buttons-not-on-the-same-baseline.md) | 「选择 cookies」与「清除 cookies」不在同一基线 | `7b62a8c` | 文件上传控件的**基类**里写着 `margin-top: 16px`，而同排 `align-items: center` → 整体下沉 8px；变体的 `margin-top: 0` 被同优先级、位置更靠后的基类规则静默吃掉 |
-| [002](002-side-column-overflow-breaks-the-page.md) | 右栏把整页撑出横向滚动条（≤1600px 时约 44px） | 回填 | 右栏的轨道宽度写死 `390px`（内容区 352px），而自检回显的那条 Windows 路径**没有断行机会**（min-content 401.53px）→ 面板 min-content 465.53px 超过轨道，grid item 又不许被压窄 → 溢出被算进整页。修法是让这条轨道里的文本可断行（`overflow-wrap: anywhere`，**不能**是 `break-word`） |
+| [002](002-side-column-overflow-breaks-the-page.md) | 右栏把整页撑出横向滚动条（≤1600px 时约 44px） | `a4d492c` | 右栏的轨道宽度写死 `390px`（内容区 352px），而自检回显的那条 Windows 路径**没有断行机会**（min-content 401.53px）→ 面板 min-content 465.53px 超过轨道，grid item 又不许被压窄 → 溢出被算进整页。修法是让这条轨道里的文本可断行（`overflow-wrap: anywhere`，**不能**是 `break-word`） |
+| [003](003-language-trigger-label-overflows-the-page.md) | 语言选择器的标签把整页撑出横向滚动条 | 回填 | `.select-trigger span` 的 `white-space: nowrap` 把标签锁成一行，span 的 min-content 就等于整段文字 → flex item 的 `min-width: auto` 不许按钮被压窄 → 右栏轨道被顶宽（12 种语言实测 84px，390px 窗口 141px）。**`text-overflow: ellipsis` 从未生效过**（标签全程没被裁过一次）。修法是撤掉 nowrap 让标签换行 |
 
 ## 已知但**未处理**的界面问题（下一轮候选）
 
-1. **语言选择器的触发文字过长时，同样会撑破右栏**（同 002 的成因，但修法不同）。
+1. **解析后，标签里可能出现一个在界面上摘不掉的语言。**
 
-   `.select-trigger span` 是 `white-space: nowrap` + `overflow: hidden; text-overflow: ellipsis` ——
-   意图明显是「太长就省略号」，但**从未生效过**：nowrap 之下没有任何断行机会，
-   `overflow-wrap: anywhere` 对它无效，而 `min-width: 0` 也无效（实测触发器 min-content 一点没变）。
+   `applyAnalysisResult()` 每次解析都把选择重置成 settings 的默认值
+   （`App.tsx:163`：`subtitle_languages: settings?.default_subtitle_languages ?? …`，
+   出厂默认是 `["en"]`）。如果这个视频**没有** `en` 字幕轨，标签会写「已选 1 项：en」，
+   而下拉列表里（只列该视频可用的语言）**没有对应的复选框**，用户没有任何办法把它去掉
+   —— 他会带着一个自己并不想要、且无法取消的字幕语言去建任务。
 
-   实测（`tmp_acceptance/ui_trigger_probe.py`，1440px，真实语言名）：
-
-   | 已选语言数 | 触发器 min-content | 整页横向溢出 |
-   |---|---|---|
-   | 4 | 298.13 | 0 |
-   | 6 | 429.02 | **49.00** |
-   | 8 | 553.16 | **173.00** |
-   | 12 | 832.36 | **452.00** |
-
-   即**选中 6 种字幕语言就会开始溢出**。修它必须做一个产品决定：
-   放弃 nowrap 让触发器变成多行，或在 JS 侧提前把字符串截断成「English, 日本語 +3」。
-   两者都会改变触发器的外观，故不与 002 混在一次提交里。候选记录：`ai/ui/003`。
+   本轮实测复现过这个状态（003 的探针里 `en` 一直挂在标签开头；那个 12 种语言的视频
+   确实没有 `en` 轨）。但**本轮没有查证它的下游影响**：带着一个不存在的语言提交任务后，
+   后端是忽略、跳过、还是失败，属 `ai/bug-fix/` 的范围，未验。候选记录：`ai/ui/004`
+   （下游若是失败，则应改记到 `ai/bug-fix/`）。

@@ -292,6 +292,23 @@ describe("App", () => {
     expect(screen.queryByText("本机下载默认值")).not.toBeInTheDocument();
   });
 
+  // 触发器标签是**数据驱动**的（「已选 N 项：en, zh-Hans, …」），选中几种就逐个列出几种。
+  // 这一条盯住「不许改成 JS 侧截断」：标签太长时，正确的解法是让它换行（见本文件末尾那条
+  // CSS 不变式），而不是少显示几个 —— 后者会把刚修好的缺陷换个形式放回来（ai/ui/003）。
+  test("lists every selected subtitle language in the trigger label", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("视频或 playlist 链接"), "https://youtube.com/watch?v=abc");
+    await user.click(screen.getByRole("button", { name: "解析链接" }));
+
+    // 「en」来自 settings 的 default_subtitle_languages，解析后出现在标签里。
+    await user.click(await screen.findByRole("button", { name: /已选 1 项：en/ }));
+    await user.click(screen.getByLabelText("字幕 zh-Hans"));
+
+    expect(screen.getByRole("button", { name: "已选 2 项：en, zh-Hans" })).toBeInTheDocument();
+  });
+
   test("integrates cookies controls into the analyzer panel", async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -1475,5 +1492,30 @@ describe("App", () => {
     // 这条声明是靠继承覆盖右栏全部后代的，所以任何地方把它显式关掉（normal）都等于
     // 把缺陷重新放回来。
     expect(stylesCss).not.toMatch(/overflow-wrap:\s*normal/);
+  });
+
+  // 语言选择触发器的标签随勾选变长。这里曾经是 `white-space: nowrap` + `overflow: hidden`
+  // + `text-overflow: ellipsis`，意图明显是「太长就省略号」，但那个意图**从未生效**：
+  // nowrap 之下没有断行机会，span 的 min-content 就等于整段文字；它是 flex item，父级按它的
+  // min-content 算宽度 → 标签放不下时不是被裁成省略号，而是把右栏轨道、整个网格一路顶宽，
+  // 整页出现横向滚动条（实测 12 种语言 84px，390px 窗口 141px，见 ai/ui/003）。
+  // jsdom 量不出布局，所以盯住根因对应的不变式：**必须允许换行，且不得靠 overflow 藏内容**。
+  test("lets the language trigger wrap its label instead of clipping it", () => {
+    const bodies = cssRuleBodies(stylesCss);
+    const label = bodies.get(".select-trigger span") ?? [];
+    expect(label.length).toBeGreaterThan(0);
+
+    const declaration = label.join("\n");
+    expect(declaration).toMatch(/white-space:\s*normal/);
+    // 显式而不靠从 .side-column 继承：本控件是 flex item，它的 min-content 直接决定
+    // 父级轨道宽度，组件一旦被移到别处就会静默退回旧病症。
+    expect(declaration).toMatch(/overflow-wrap:\s*anywhere/);
+
+    for (const body of label) {
+      expect(body).not.toMatch(/white-space:\s*nowrap/);
+      // 「藏起来」不等于「放得下」—— 与 002 里否掉 `min-width: 0` 是同一条理由。
+      expect(body).not.toMatch(/(?<![-\w])overflow\s*:/);
+      expect(body).not.toMatch(/text-overflow\s*:/);
+    }
   });
 });

@@ -1,6 +1,7 @@
 # 002 · 右栏把整页撑出横向滚动条（≤1600px 时约 44px）
 
-- **提交**：随本记录同一次提交。commit hash 与 `ai/ui/001` 同样处理，下次触碰本目录时回填。
+- **提交**：`a4d492c`（按 `ai/bug-fix/` 的同样做法，hash 在下一次触碰本目录时回填 ——
+  写在同一次提交里必然自我指涉。本次触碰即 003 那一轮）。
   查本次改动：`git log --oneline -- ai/ui/002-side-column-overflow-breaks-the-page.md`
 - **范围**：`frontend/src/styles.css`、`frontend/src/App.test.tsx`
 - **性质**：是缺陷。判定依据不是「不好看」，而是**页面多了一条横向滚动条**：

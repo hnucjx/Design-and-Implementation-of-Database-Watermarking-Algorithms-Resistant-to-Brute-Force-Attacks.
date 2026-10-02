@@ -18,7 +18,7 @@ python -m compileall backend\app
 python -m pytest backend\tests -q
 ```
 
-前端测试和构建（当前基线：**67 passed** + `tsc && vite build` 通过）：
+前端测试和构建（当前基线：**69 passed** + `tsc && vite build` 通过）：
 
 ```powershell
 cd frontend
@@ -139,7 +139,8 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 - 运行环境自检：JS 运行时不可用时显示原始报错与「The page needs to be reloaded.」的关联说明、日志文件路径可复制、「重新自检」会打到刷新接口。
 - cookies 校验：联网校验、离线体检、以及「域名不对，等于没配」与「google.com-only」两档结论的解释文案。
 - 辅助说明浮层：四个入口（获取方式 / 结论解读 / 常用端口 / 排查顺序）默认收起，悬停或点击可读，`Esc`、点击空白处、右上角 × 都能关闭，展开状态写入 `localStorage` 并在刷新后恢复。
-- 样式源文不变式：文件上传控件（`.file-button`）的基类不得声明纵向外边距与宽度。**jsdom 不做布局，这是布局类缺陷唯一能进单测的部分**——「两个按钮是否共线」只能靠真实浏览器量，见 [ai/ui](../ai/ui/README.md)。
+- 字幕语言标签：选中几种就**逐个列出**几种语言代码（不许改成「已选 N 项」式的 JS 侧截断 —— 标签太长时正确的解法是让它换行，见 [ai/ui/003](../ai/ui/003-language-trigger-label-overflows-the-page.md)）。
+- 样式源文不变式（**jsdom 不做布局，这是布局类缺陷唯一能进单测的部分**）：文件上传控件（`.file-button`）的基类不得声明纵向外边距与宽度（[ai/ui/001](../ai/ui/001-cookie-buttons-not-on-the-same-baseline.md)）；右栏（`.side-column`）必须声明 `overflow-wrap: anywhere`，且全表不得出现 `overflow-wrap: normal`（[ai/ui/002](../ai/ui/002-side-column-overflow-breaks-the-page.md)）；语言选择器标签（`.select-trigger span`）必须允许换行，且不得声明 `overflow:` 或 `text-overflow:`（「藏起来」不等于「放得下」，[ai/ui/003](../ai/ui/003-language-trigger-label-overflows-the-page.md)）。「两个按钮是否共线」「标签是否真的折了行」只能靠真实浏览器量，见 [ai/ui](../ai/ui/README.md)。
 
 ## 手动验收
 
@@ -170,6 +171,7 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 23. 设置面板点「重新自检」，确认 JS 运行时状态会被重新探测（装上 Node/Deno 后无需重启应用）。
 24. 在桌面宽度（≥1280px）下看解析面板的 cookies 操作行：「选择 cookies」与「清除 cookies」必须**同顶同底**，右侧「自动检测浏览器 / 从浏览器导入」也在同一基线。这一行曾因文件上传控件的基类声明了 `margin-top` 而整体下沉 8px（等宽同高、就是没对齐），见 [ai/ui/001](../ai/ui/001-cookie-buttons-not-on-the-same-baseline.md)。
 25. 把窗口宽度依次改成 1280 / 1366 / 1440 / 1520 / 1600，**页面底部不应出现横向滚动条**，右栏（下载选项 / 设置）应完整落在视口内。右栏是固定 390px 的网格轨道，里面任何一个「不能断行的长 token」（自检回显的 Windows 路径最典型）都会把整页撑宽 —— 这一条曾漏到 ≤1600px 时溢出 44px，见 [ai/ui/002](../ai/ui/002-side-column-overflow-breaks-the-page.md)。
+26. 解析一个有较多字幕轨道的视频，在「字幕语言」里多勾几种（12 种即可稳定复现）：标签应**就地折成多行**，选择器随之变高，页面**不得**出现横向滚动条，且标签里的语言代码**一个都不能少**（不允许被裁成省略号）。标签是 `已选 N 项：en, zh-Hans, …`、N 无上界，它曾经被 `white-space: nowrap` 锁成一行 → 不是被裁而是把整页顶宽，见 [ai/ui/003](../ai/ui/003-language-trigger-label-overflows-the-page.md)。
 
 ## 高风险回归点
 

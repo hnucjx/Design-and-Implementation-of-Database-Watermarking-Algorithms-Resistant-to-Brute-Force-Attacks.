@@ -66,6 +66,7 @@
 3. **窄屏改形态而不是改内容**：`≤640px` 或设备无 hover 能力时渲染为贴底抽屉（`is-sheet`），左右各留 8px、高度上限 62vh，见 [SHEET_QUERY](../frontend/src/components/HelpPopover.tsx#L18)。
 4. **浮层内部不允许横向溢出**：面板宽度上限 440px，三列表格会在浮层内撑出滚动条并把列截掉 —— 代理端口对照因此用两列网格而不是表格。浮层挂在 `white-space: nowrap` 的宿主元素（例如状态文字）内时，必须显式重置 `white-space` 与字重，否则说明文字会继承成一行粗体。
 5. **固定宽度的轨道里，文本必须能断行**：`.grid` 的右栏是写死的 `390px`（[styles.css](../frontend/src/styles.css#L104)），内容区只剩 352px，而 grid item 的 `min-width: auto` 不允许它被压窄 —— 因此「放不进一行的长 token」（自检回显的 Windows 路径、URL、后端错误原文）会让面板的 min-content 超过轨道，把整页撑出横向滚动条。右栏因此整体声明 `overflow-wrap: anywhere`（[styles.css](../frontend/src/styles.css#L124)，靠继承覆盖全部后代），见 [ai/ui/002](../ai/ui/002-side-column-overflow-breaks-the-page.md)。**必须用 `anywhere`**：`overflow-wrap: break-word` 不改变 min-content，挡不住这一类溢出。
+6. **会随数据变长的标签必须允许换行，不得用 `nowrap` 把它锁成一行**：字幕语言选择器的标签是 `已选 N 项：en, zh-Hans, …`（join 的是**语言代码**，N 无上界）。它曾经是 `white-space: nowrap` + `overflow: hidden; text-overflow: ellipsis`，意图是「太长就省略号」—— 但 nowrap 之下没有断行机会，`overflow-wrap` 对它**无效**，标签的 min-content 就等于整段文字，而它是 flex item、父级按它的 min-content 算宽度 → 放不下时不是被裁，是把右栏轨道和整个网格一路顶宽（12 种语言实测 84px），见 [ai/ui/003](../ai/ui/003-language-trigger-label-overflows-the-page.md)。判据：**`ellipsis` 只在元素真的被约束时才会出现** —— 先看 `scrollWidth > clientWidth` 成不成立；不成立就说明「省下来的空间」并没有省下来，只是换了个样子出问题。
 
 ## 依赖方向与分层规则
 

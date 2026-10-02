@@ -1,0 +1,79 @@
+name: CI
+
+# 门槛**只由已有的命令组成**：不引入 ruff / eslint / prettier。
+# 理由是 [ai/refactor/refactor.md §4.1 第 4 项](../../ai/refactor/refactor.md#41-后续候选清单登记为本轮三轮不做此后逐项单独一轮)
+# 记的那两条：它们会把 pip / npm 依赖带进来（撞 §3.1 第 6 条），且对 6000+ 行既有代码
+# 产生大量机械改动。这里补的是**本仓库自己的**门槛：分层依赖 + 契约漂移 + 代码锚点。
+#
+# 两处「本机有、CI 没有」的差异，刻意保留：
+#   1) 后端测试：本机要加 `--basetemp=tmp_pytest/runNNN`，那是**本机沙箱**拦删除导致的绕过
+#      （见 refactor.md §5）；干净的 Linux runner 不需要，也不应该带。
+#   2) `scripts/docs.py check` 不进 CI：它校验 UML SVG 与 PlantUML 源一致，需要 Java +
+#      PlantUML jar + Graphviz（`scripts/docs.py bootstrap` 会下载 jar）。这一步留在本地 DoD。
+#      CI 仍跑 `check_doc_anchors.py`（纯标准库）来守住文档里的代码行锚点。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: 后端（测试 / 分层 / 契约 / 锚点）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+
+      - name: 安装依赖
+        run: python -m pip install -e "backend[dev]"
+
+      - name: 后端测试
+        run: python -m pytest backend/tests -q
+
+      - name: 分层依赖校验（依据 docs/design.md 的模块职责矩阵）
+        run: python scripts/check_layers.py
+
+      # 本 job 没有 PyYAML，所以脚本会打印「跳过 docs/openapi.yaml」并只强校验 types.ts。
+      # 这是有意的（不为了校验而新增依赖），日志里能直接看到跳过了哪一半。
+      - name: 契约漂移校验
+        run: python scripts/check_api_contract.py
+
+      - name: 文档代码锚点
+        run: python scripts/check_doc_anchors.py
+
+  frontend:
+    name: 前端（类型 / 测试 / 构建）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        working-directory: frontend
+        run: npm ci
+
+      - name: 类型检查
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: 前端测试
+        working-directory: frontend
+        run: npx vitest run --environment jsdom
+
+      - name: 构建
+        working-directory: frontend
+        run: npx vite build

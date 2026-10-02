@@ -48,6 +48,7 @@
 | [runtime_env.py](../backend/app/runtime_env.py#L58) | L5 纯工具 | 摘除会打坏 JS 运行时的宿主环境变量，并返回可留痕的记录。 | 只动本进程 `os.environ`，不改系统设置。 |
 | [dev_server.py](../backend/app/dev_server.py#L44) | L5 纯工具 | 端口可用性探测、向后找可用端口、`netstat` / `tasklist` 输出的解析。 | 不启动服务、不改配置；拿不到占用者信息时返回 `None` 而不是猜一个名字。 |
 | [output_paths.py](../backend/app/output_paths.py#L13) | L3 领域 | 输出文件、中间文件与 sidecar 的候选路径解析与发现。 | 不删除文件（删除由 `job_manager` 在受限根目录内执行）。 |
+| [safe_delete.py](../backend/app/safe_delete.py#L22) | L3 领域 | 删除产物的**路径安全判定**：允许范围（`DeleteScope`）、某路径是否可删、任务目录是否可收走。纯函数，可单测。 | 不删任何东西（`unlink` / `rmdir` 由 `job_manager` 执行），不枚举候选（枚举在 `output_paths`）。 |
 | [system_open.py](../backend/app/system_open.py#L23) | L3 领域 | 选择可解码播放器、打开目录、窗口置前。 | 不校验文件是否存在（调用方先解析路径）。 |
 | [db.py](../backend/app/db.py#L27) | L4 基础设施 | engine 创建、SQLite pragma、补列、WAL checkpoint、session 依赖。 | 不知道业务表语义。 |
 | [logging_setup.py](../backend/app/logging_setup.py#L48) | L4 基础设施 | 配置 root/uvicorn logger，落盘 `data/logs/app.log` 并轮转。 | 不决定打什么日志，不解析业务语义。 |

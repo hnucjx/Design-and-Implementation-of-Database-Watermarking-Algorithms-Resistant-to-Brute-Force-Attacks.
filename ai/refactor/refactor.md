@@ -1,6 +1,6 @@
 # 重构总纲（refactor charter）
 
-> 最后更新：**2026-10-02 17:28 +08:00** ｜ 基线 commit：`3643e76`（main）
+> 最后更新：**2026-10-02 17:36 +08:00** ｜ 基线 commit：`3643e76`（main）
 > 本文件是重构的**总纲与索引**。每轮重构的「计划 / 实施方案 / 实施情况」各自成文，见 [§6 轮次索引](#6-轮次索引)。
 
 本仓库已有的三份记录目录各管一件事，不要混：
@@ -131,6 +131,8 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
    **✅ 已完成（次优形态：单一来源 + 漂移校验，未生成）→ [006](006-api-contract-drift.md)（2026-10-02）**
 4. **没有 lint / format / CI 门槛**：仓库无 `.github/`、无 ruff/eslint/prettier 配置。
    引入它们会对 6000+ 行既有代码产生大量机械改动，属独立议题。
+   **✅ 已完成（部分：建了 CI 与两个本仓库自己的门槛；仍**不引入** ruff/eslint/prettier）
+   → [007](007-ci-and-layers.md)（2026-10-02）**
 5. **`frontend/src/App.test.tsx`（1521 行 / 69 用例）未按功能拆分。**
 6. **`ytdlp_service.py` 里约 20 个上一轮留下的兼容代理方法**（`_format_selector` 等），
    现在只剩「保持测试与调用点不破」的作用，可评估回收。
@@ -145,7 +147,7 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 | --- | --- | --- |
 | 1 | 写**计划**（边界、不动什么、风险） | 计划里必须写明「本轮不做的事」 |
 | 2 | 实施（一次只做一个主题） | `git status` 只出现本轮范围内的文件 |
-| 3 | **验证** | 后端 `320 passed`、前端 `69 passed`、`npm run build` 通过；改了 `backend/app/**` 或 `frontend/src/**` 后跑 `python scripts/check_doc_anchors.py`（需 `--fix`）与 `python scripts/docs.py check` |
+| 3 | **验证** | 后端 `354 passed`、前端 `69 passed`、`npm run build` 通过；改了 `backend/app/**` 或 `frontend/src/**` 后跑 `python scripts/check_doc_anchors.py`（需 `--fix`）与 `python scripts/docs.py check`；新增模块 / 改分层后跑 `python scripts/check_layers.py`；改契约或 `types.ts` 后跑 `python scripts/check_api_contract.py` |
 | 4 | 写**记录**（本目录 `00N-*.md`） | 含明确时间戳；含「未覆盖 / 如实说明」小节 |
 | 5 | 单独 `git commit` + `git push` | `git ls-remote` 校验 sha；提交列表显式列文件，**不用 `git add -A`** |
 
@@ -180,6 +182,7 @@ hash 只能在**下一次触碰本目录时**回填；查某条改动用 `git lo
 | [004](004-artifact-paths.md) | 产物路径收敛：候选链只有一个计算处 | 回填 | `job_artifacts` 与 `job_manager._item_output_paths` 的候选链下沉到 `output_paths.py`；12 场景 × 3 入口的旧/新逐项对照（§4.1 第 1 项） |
 | [005](005-safe-delete.md) | 安全删除纯化：白名单判定可单测 | 回填 | 路径安全判定收进 `safe_delete.py`（`DeleteScope` + 3 个纯函数）；16 例含「字符串前缀」陷阱与 Windows 大小写；8 处端到端删除回归（§4.1 第 2 项） |
 | [006](006-api-contract-drift.md) | 契约漂移校验：单一来源是运行时 `app.openapi()` | 回填 | 新增 `scripts/check_api_contract.py`；`types.ts` 15 接口字段 + `openapi.yaml` 48 条目；两次注入式取证（§4.1 第 3 项，次优形态） |
+| [007](007-ci-and-layers.md) | CI 门槛 + 分层依赖校验 | 回填 | 新增 `.github/workflows/ci.yml` 与 `scripts/check_layers.py`（解析 design.md 的职责矩阵，顺带抓「新增模块忘登记」）；补齐 005 遗留的矩阵登记（§4.1 第 4 项，部分） |
 
 ---
 

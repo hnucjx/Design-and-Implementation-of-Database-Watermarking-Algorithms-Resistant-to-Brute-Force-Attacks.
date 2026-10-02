@@ -195,3 +195,25 @@ git diff --check
 ```
 
 涉及代码行为时还需运行 [测试文档](testing.md#自动测试命令) 中的后端和前端验证。
+
+### 结构性检查（本仓库自己的门槛）
+
+除测试外，仓库还有三个**不需要新增依赖**的检查脚本：
+
+| 脚本 | 检查什么 | 什么时候必须跑 |
+| --- | --- | --- |
+| `python scripts/check_layers.py` | 模块依赖方向是否符合 [设计文档](design.md#模块职责矩阵) 的分层（L0→L5 只向下），以及**有没有模块忘了登记进矩阵** | 新增 / 移动模块，或改了模块间的 import |
+| `python scripts/check_api_contract.py` | 运行时契约 `app.openapi()` 与 [types.ts](../frontend/src/types.ts)、[openapi.yaml](openapi.yaml) 有没有分叉 | 改了 `schemas.py`、路由的响应模型，或 `types.ts` / `openapi.yaml` |
+| `python scripts/check_doc_anchors.py` | 文档里的 `文件.py#LNN` 锚点有没有随代码改动漂移（加 `--fix` 自动重算） | 改动 `backend/app/**` 或 `frontend/src/**` 之后 |
+
+它们同时也跑在 CI 里。
+
+### CI
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 在 push 到 `main` 与 PR 时跑两个 job：
+**后端**（`pytest` → `check_layers` → `check_api_contract` → `check_doc_anchors`）与
+**前端**（`tsc --noEmit` → `vitest` → `vite build`）。
+
+两处刻意与本地不同：CI 的 `pytest` **不带** `--basetemp`（那是本机沙箱拦删除导致的绕过，见
+[重构总纲](../ai/refactor/refactor.md#5-每轮的固定流程dod)），CI 也**不跑** `docs.py check`
+（UML 一致性需要 Java + PlantUML + Graphviz，属本地工具链；锚点检查仍在 CI 里跑）。

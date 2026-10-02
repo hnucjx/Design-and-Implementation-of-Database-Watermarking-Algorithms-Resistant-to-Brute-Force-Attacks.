@@ -65,6 +65,7 @@
 2. **不抢焦点、不阻塞操作**：面板 `aria-modal=false`、打开时不 `autoFocus`、没有遮罩层，触发按钮在 `mousedown` 时阻止默认行为。这样在点开「常用端口」时，代理输入框里的光标和未保存的输入都不会被打断。
 3. **窄屏改形态而不是改内容**：`≤640px` 或设备无 hover 能力时渲染为贴底抽屉（`is-sheet`），左右各留 8px、高度上限 62vh，见 [SHEET_QUERY](../frontend/src/components/HelpPopover.tsx#L18)。
 4. **浮层内部不允许横向溢出**：面板宽度上限 440px，三列表格会在浮层内撑出滚动条并把列截掉 —— 代理端口对照因此用两列网格而不是表格。浮层挂在 `white-space: nowrap` 的宿主元素（例如状态文字）内时，必须显式重置 `white-space` 与字重，否则说明文字会继承成一行粗体。
+5. **固定宽度的轨道里，文本必须能断行**：`.grid` 的右栏是写死的 `390px`（[styles.css](../frontend/src/styles.css#L104)），内容区只剩 352px，而 grid item 的 `min-width: auto` 不允许它被压窄 —— 因此「放不进一行的长 token」（自检回显的 Windows 路径、URL、后端错误原文）会让面板的 min-content 超过轨道，把整页撑出横向滚动条。右栏因此整体声明 `overflow-wrap: anywhere`（[styles.css](../frontend/src/styles.css#L124)，靠继承覆盖全部后代），见 [ai/ui/002](../ai/ui/002-side-column-overflow-breaks-the-page.md)。**必须用 `anywhere`**：`overflow-wrap: break-word` 不改变 min-content，挡不住这一类溢出。
 
 ## 依赖方向与分层规则
 

@@ -18,7 +18,7 @@ python -m compileall backend\app
 python -m pytest backend\tests -q
 ```
 
-前端测试和构建（当前基线：**66 passed** + `tsc && vite build` 通过）：
+前端测试和构建（当前基线：**67 passed** + `tsc && vite build` 通过）：
 
 ```powershell
 cd frontend
@@ -169,6 +169,7 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 22. 检查 `data/logs/app.log`：启动时应有 `proxy resolved` / `js runtime ready`（或 `js runtime unavailable`）/ `dependencies ready` 三行；故意制造一次失败后，应有 `category=` 结构与紧随其后的 `诊断 / 原因 / 建议N` 块。
 23. 设置面板点「重新自检」，确认 JS 运行时状态会被重新探测（装上 Node/Deno 后无需重启应用）。
 24. 在桌面宽度（≥1280px）下看解析面板的 cookies 操作行：「选择 cookies」与「清除 cookies」必须**同顶同底**，右侧「自动检测浏览器 / 从浏览器导入」也在同一基线。这一行曾因文件上传控件的基类声明了 `margin-top` 而整体下沉 8px（等宽同高、就是没对齐），见 [ai/ui/001](../ai/ui/001-cookie-buttons-not-on-the-same-baseline.md)。
+25. 把窗口宽度依次改成 1280 / 1366 / 1440 / 1520 / 1600，**页面底部不应出现横向滚动条**，右栏（下载选项 / 设置）应完整落在视口内。右栏是固定 390px 的网格轨道，里面任何一个「不能断行的长 token」（自检回显的 Windows 路径最典型）都会把整页撑宽 —— 这一条曾漏到 ≤1600px 时溢出 44px，见 [ai/ui/002](../ai/ui/002-side-column-overflow-breaks-the-page.md)。
 
 ## 高风险回归点
 

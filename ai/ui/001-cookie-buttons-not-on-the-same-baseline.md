@@ -1,7 +1,7 @@
 # 001 · 「选择 cookies」与「清除 cookies」不在同一基线
 
-- **提交**：随本记录同一次提交。commit hash 按 `ai/bug-fix/` 的同样做法在下次触碰本目录时回填
-  （写在同一次提交里必然自我指涉，只能这样）。
+- **提交**：`7b62a8c`（按 `ai/bug-fix/` 的同样做法，hash 在下一次触碰本目录时回填 ——
+  写在同一次提交里必然自我指涉。本次触碰即 002 那一轮）。
   查本次改动：`git log --oneline -- ai/ui/001-cookie-buttons-not-on-the-same-baseline.md`
 - **范围**：`frontend/src/styles.css`、`frontend/src/App.test.tsx`、`frontend/vite.config.ts`、`frontend/src/vite-env.d.ts`
 

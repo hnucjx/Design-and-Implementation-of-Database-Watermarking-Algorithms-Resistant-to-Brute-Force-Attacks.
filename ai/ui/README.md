@@ -53,16 +53,26 @@ hash 只能在下一次触碰本目录时回填；查某条改动用
 
 | # | 标题 | 提交 | 一句话 |
 |---|---|---|---|
-| [001](001-cookie-buttons-not-on-the-same-baseline.md) | 「选择 cookies」与「清除 cookies」不在同一基线 | 回填 | 文件上传控件的**基类**里写着 `margin-top: 16px`，而同排 `align-items: center` → 整体下沉 8px；变体的 `margin-top: 0` 被同优先级、位置更靠后的基类规则静默吃掉 |
+| [001](001-cookie-buttons-not-on-the-same-baseline.md) | 「选择 cookies」与「清除 cookies」不在同一基线 | `7b62a8c` | 文件上传控件的**基类**里写着 `margin-top: 16px`，而同排 `align-items: center` → 整体下沉 8px；变体的 `margin-top: 0` 被同优先级、位置更靠后的基类规则静默吃掉 |
+| [002](002-side-column-overflow-breaks-the-page.md) | 右栏把整页撑出横向滚动条（≤1600px 时约 44px） | 回填 | 右栏的轨道宽度写死 `390px`（内容区 352px），而自检回显的那条 Windows 路径**没有断行机会**（min-content 401.53px）→ 面板 min-content 465.53px 超过轨道，grid item 又不许被压窄 → 溢出被算进整页。修法是让这条轨道里的文本可断行（`overflow-wrap: anywhere`，**不能**是 `break-word`） |
 
 ## 已知但**未处理**的界面问题（下一轮候选）
 
-1. **页面在 ≤1600 宽时存在约 44px 的横向溢出**（右栏被推出视口右侧，出现横向滚动条）。
-   已定位：`.grid` 的右栏是固定 `390px` 轨道，而「下载选项」面板的 min-content 是 **466px**，
-   作为 grid item 它溢出自己的网格区域（实测面板右边缘 `1469 = 1003 + 466`，视口 `clientWidth = 1425`）。
-   在 1280 / 1366 / 1440 / 1520 / 1600 宽下均溢出，1728 宽下正常。
-   **已确认与 `ai/ui/001` 的修复无关**：换回 HEAD 版样式复测，溢出同为 `1469 / 1425`；
-   且上一轮提交的 `help-collapsed.png` 里已经带着这条滚动条。
-   未处理的原因：它属于另一处独立缺陷（右栏轨道宽度 vs 面板 min-content），
-   按「一处修复 = 一个记录 = 一个 commit」的约定不与 001 混在一起。
-   候选记录：`ai/ui/002`。
+1. **语言选择器的触发文字过长时，同样会撑破右栏**（同 002 的成因，但修法不同）。
+
+   `.select-trigger span` 是 `white-space: nowrap` + `overflow: hidden; text-overflow: ellipsis` ——
+   意图明显是「太长就省略号」，但**从未生效过**：nowrap 之下没有任何断行机会，
+   `overflow-wrap: anywhere` 对它无效，而 `min-width: 0` 也无效（实测触发器 min-content 一点没变）。
+
+   实测（`tmp_acceptance/ui_trigger_probe.py`，1440px，真实语言名）：
+
+   | 已选语言数 | 触发器 min-content | 整页横向溢出 |
+   |---|---|---|
+   | 4 | 298.13 | 0 |
+   | 6 | 429.02 | **49.00** |
+   | 8 | 553.16 | **173.00** |
+   | 12 | 832.36 | **452.00** |
+
+   即**选中 6 种字幕语言就会开始溢出**。修它必须做一个产品决定：
+   放弃 nowrap 让触发器变成多行，或在 JS 侧提前把字符串截断成「English, 日本語 +3」。
+   两者都会改变触发器的外观，故不与 002 混在一次提交里。候选记录：`ai/ui/003`。

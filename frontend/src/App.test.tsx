@@ -25,6 +25,20 @@ import {
 } from "./test/appFixtures";
 import type { Job } from "./types";
 
+// 把 styles.css 拆成「选择器 → 规则体列表」：jsdom 不做布局，样式层面的不变式只能这样断言。
+// 注释必须先剥掉，否则紧邻规则上方的注释会被当成选择器的一部分，找不到 `.file-button` 之类。
+function cssRuleBodies(source: string): Map<string, string[]> {
+  const stripped = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const bodies = new Map<string, string[]>();
+  for (const match of stripped.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    for (const raw of match[1].split(",")) {
+      const selector = raw.trim();
+      if (selector) bodies.set(selector, [...(bodies.get(selector) ?? []), match[2]]);
+    }
+  }
+  return bodies;
+}
+
 let currentAnalyzePayload = analyzePayload;
 let currentJobsPayload: Job[] = [jobPayload, pausedJobPayload, playlistJobPayload];
 let currentSettingsPayload = settingsPayload;
@@ -1430,16 +1444,7 @@ describe("App", () => {
   // 「选择 cookies」与「清除 cookies」同排而该行是 align-items: center，基类只要带上
   // 纵向外边距，就会把它从兄弟的基线上推开一半（实测 8px，见 ai/ui/001）。
   test("keeps layout out of the file-button base class", () => {
-    // 先剥掉注释：否则紧邻规则上方的注释会被当成选择器的一部分，`.file-button` 就找不到了。
-    const source = stylesCss.replace(/\/\*[\s\S]*?\*\//g, "");
-    const bodies = new Map<string, string[]>();
-    for (const match of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-      for (const raw of match[1].split(",")) {
-        const selector = raw.trim();
-        if (selector) bodies.set(selector, [...(bodies.get(selector) ?? []), match[2]]);
-      }
-    }
-
+    const bodies = cssRuleBodies(stylesCss);
     const base = bodies.get(".file-button") ?? [];
     expect(base.length).toBeGreaterThan(0);
     for (const body of base) {
@@ -1450,5 +1455,25 @@ describe("App", () => {
       // 它们来自与 .ghost-button 共用的控件底座，是这一排按钮成对的基础。
       expect(body).not.toMatch(/(?<![-\w])width\s*:/);
     }
+  });
+
+  // 右栏（.side-column）的轨道宽度写死在 `.grid` 里（390px，内容区只剩 352px），
+  // 而 grid item 的 `min-width: auto` 不允许它被压窄：面板里只要出现一个「不可断行的
+  // token」（最典型的是自检里那条 Windows 路径），面板的 min-content 就会超过轨道宽度，
+  // 把整页撑出横向滚动条 —— ≤1600px 的窗口里实测 44px（见 ai/ui/002）。
+  // jsdom 量不出布局，所以这里盯住真正拦住它的那条声明。
+  test("keeps the fixed-width side column able to wrap its text", () => {
+    const bodies = cssRuleBodies(stylesCss);
+    const sideColumn = bodies.get(".side-column") ?? [];
+    expect(sideColumn.length).toBeGreaterThan(0);
+
+    // 必须是 anywhere：`overflow-wrap: break-word` 不改变 min-content，修不了这个病
+    // （这一条是实测出来的，不是风格洁癖）。
+    const declaration = sideColumn.join("\n");
+    expect(declaration).toMatch(/overflow-wrap:\s*anywhere/);
+
+    // 这条声明是靠继承覆盖右栏全部后代的，所以任何地方把它显式关掉（normal）都等于
+    // 把缺陷重新放回来。
+    expect(stylesCss).not.toMatch(/overflow-wrap:\s*normal/);
   });
 });

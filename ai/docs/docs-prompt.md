@@ -92,7 +92,7 @@
   - `JobQueue.tsx`：任务中心展示与本地文件操作入口。
 - `api.ts`：HTTP 边界与 `ApiError` 语义。`types.ts`：与后端 schema 逐字段对应的前端类型。
 - `quality.ts`、`formatting.ts`：清晰度选项/降级按钮文案、格式化工具。
-- `styles.css`：设计 token 与浮层/抽屉样式（浮层内必须显式重置 `white-space` 与字重，否则会继承宿主元素）。**共用基类不得声明只为某一处用法需要的版式**（宽度、外边距）：基类若声明在变体之后，会以同优先级把变体的重置静默吃掉，见 `ai/ui/001`。
+- `styles.css`：设计 token 与浮层/抽屉样式（浮层内必须显式重置 `white-space` 与字重，否则会继承宿主元素）。**共用基类不得声明只为某一处用法需要的版式**（宽度、外边距）：基类若声明在变体之后，会以同优先级把变体的重置静默吃掉，见 `ai/ui/001`。同理，**固定宽度的网格轨道里，文本必须能断行**：右栏是写死的 `390px`（内容区 352px），一个不能断行的长 token（Windows 路径最典型）就足以让面板的 min-content 超过轨道并撑出整页横向滚动条；修法是 `overflow-wrap: anywhere`（**不能**用 `break-word`，后者不改变 min-content），见 `ai/ui/002`。
 - `vite-env.d.ts`：`vite/client` 类型引用，供测试用 `?raw` 读取样式源文。
 - `App.test.tsx`、`test/appFixtures.ts`、`test/setup.ts`：前端测试范围与夹具。其中一条是**样式源文不变式**（读 `styles.css?raw`），因为 jsdom 不做布局，布局类缺陷只有这一部分能进单测。
 
@@ -100,7 +100,7 @@
 
 - `backend/pyproject.toml`、`frontend/package.json`：依赖、脚本、测试配置。
 - `backend/tests/`：17 个 `test_*.py` + `fakes.py`（当前 **289 passed**）。
-- `frontend/src/App.test.tsx`：当前 **66 passed**（`npx vitest run --environment jsdom`）。
+- `frontend/src/App.test.tsx`：当前 **67 passed**（`npx vitest run --environment jsdom`）。
 - `scripts/`：
   - `docs.py`：文档工具链（`bootstrap` / `render` / `check`），固定版本 PlantUML。
   - `check_doc_anchors.py`：代码行锚点漂移检查（`--fix` 自动重算）。
@@ -227,7 +227,7 @@ python scripts\docs.py check       # 校验本地链接 + SVG 与源一致
 ```powershell
 python -m compileall backend\app
 python -m pytest backend\tests -q                 # 当前基线 289 passed
-cd frontend; npx vitest run --environment jsdom   # 当前基线 66 passed
+cd frontend; npx vitest run --environment jsdom   # 当前基线 67 passed
 cd frontend; npx tsc --noEmit                     # 类型检查
 python scripts\docs.py check                      # 本地链接 + UML 产物一致
 python scripts\check_doc_anchors.py               # 代码行锚点无漂移
@@ -301,11 +301,11 @@ git ls-remote origin main   # 校验远端 sha 与本地一致
 | --- | --- |
 | 后端模块 | 28 个（含 `__main__.py`） |
 | 后端测试 | 17 个 `test_*.py` + `fakes.py`，**289 passed** |
-| 前端测试 | `App.test.tsx`，**66 passed** |
+| 前端测试 | `App.test.tsx`，**67 passed** |
 | HTTP 操作 | 28 个（`openapi.yaml` 的 `operationId` 数：26 个 `/api/*` + `/health` + 静态首页 `/`） |
 | 环境变量 | `YTDL_` 前缀，`AppSettings` 共 22 个字段（另有 `YTDL_LOG_LEVEL` 不属于 `AppSettings`） |
 | UML 图 | 15 张（`.puml` 与 `.svg` 成对） |
 | 截图 | 4 张 |
 | 修复记录 | `ai/bug-fix/` 001~010（功能类），已知未处理 12 条 |
-| 界面缺陷记录 | `ai/ui/` 001（布局对齐），已知未处理 1 条（页面横向溢出）；目录约定见 `ai/ui/README.md` |
+| 界面缺陷记录 | `ai/ui/` 001（布局对齐）、002（固定轨道被内容撑破）；已知未处理 1 条（语言触发器 `white-space: nowrap` 超长）；目录约定见 `ai/ui/README.md` |
 | 本机渲染基线 | PlantUML `1.2026.5`、Java 25.0.3、Graphviz 15.1.1 |

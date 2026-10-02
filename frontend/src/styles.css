@@ -113,6 +113,18 @@ button {
   gap: 18px;
 }
 
+/* 右栏的轨道宽度是写死的 390px（内容区只剩 352px），但它是「内容说了算」的一列：
+   面板里只要出现一个不能断行的 token（最典型的是 Windows 路径，例如自检里的
+   `...\node\versions\22.22.2-5\node.exe`），面板的 min-content 就会超过轨道宽度，
+   而 grid item 的 `min-width: auto` 不允许它被压窄，于是面板连同整页一起被撑宽，
+   在 ≤1600px 的窗口里出现横向滚动条（实测 44px，见 ai/ui/002）。
+   唯一能同时满足「轨道不变」与「内容不丢」的写法是让这条轨道里的文本可断行。
+   `overflow-wrap` 会继承，所以声明在列上即可覆盖全部后代，不必逐个容器去补。
+   注意必须是 `anywhere` 而不是 `break-word`：后者不改变 min-content，修不了这个病。 */
+.side-column {
+  overflow-wrap: anywhere;
+}
+
 .panel {
   border: 1px solid #dce2ee;
   border-radius: 8px;

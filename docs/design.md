@@ -50,14 +50,24 @@
 
 ## 前端组件边界
 
-`App.tsx` 负责状态编排与 SSE 订阅，展示职责拆到 `components/` 下四个组件：
+`App.tsx` 只负责状态编排（解析、建任务、设置回灌、SSE 订阅）与整体布局；展示职责全部在 `components/` 下，
+纯计算在 `formatting.ts` / `quality.ts` / `subtitles.ts` / `cookieLock.ts`。判断新代码放哪：**需要 `useState` 或发请求吗？**
+需要就留在 `App.tsx`（或抽成 hook），只把 props 变成界面就进 `components/`，只看数据变换就进纯模块。
 
-| 组件 | 职责 | 不负责 |
+| 组件 / 模块 | 职责 | 不负责 |
 | --- | --- | --- |
+| [UrlAnalyzer.tsx](../frontend/src/components/UrlAnalyzer.tsx#L29) | 解析面板：链接输入、cookies 行（状态 + 上传/清除 + 浏览器导入）、锁库提示、解析按钮。只持有「选了哪个浏览器」这类纯界面状态。 | 不发请求（回调交 `App`），不决定用哪份 cookies。 |
+| [AnalysisPanel.tsx](../frontend/src/components/AnalysisPanel.tsx#L12) | 解析结果：缩略图/标题/时长、playlist 条目勾选表、单视频汇总行。 | 不持有选中集合（状态归 `App`，提交要用同一份）。 |
+| [DownloadOptionsPanel.tsx](../frontend/src/components/DownloadOptionsPanel.tsx#L19) | 下载选项：模式、清晰度、字幕语言/来源/格式、开关项、限速与重试、提交按钮。 | 不持有状态：所有值来自 `options`，改动经 `onOptionChange` 回到 `App`。 |
+| [SearchableLanguageSelect.tsx](../frontend/src/components/SearchableLanguageSelect.tsx#L16) | 可搜索的字幕语言多选。标签里 join 的是**语言代码**，项数无上界 —— 不许 `nowrap`，见 [ai/ui/003](../ai/ui/003-language-trigger-label-overflows-the-page.md)。 | 不拉取可用语言（由 `App` 从解析结果里汇总）。 |
+| [SettingsPanel.tsx](../frontend/src/components/SettingsPanel.tsx#L18) | 设置：下载目录、并发、aria2c 连接数、代理（含连通性检测）。持有一份 `draft`，**失焦即保存**。 | 不解析代理来源（后端回传 `proxy_source`），不决定代理语义（留空=自动、`direct`=直连由后端定义）。 |
+| [Toggle.tsx](../frontend/src/components/Toggle.tsx#L4) / [StatusPill.tsx](../frontend/src/components/StatusPill.tsx#L4) | 基础件：勾选行、顶栏状态点。 | 不含业务判断（`ok === undefined` 一律按警告渲染）。 |
 | [CookieSection.tsx](../frontend/src/components/CookieSection.tsx#L121) | cookies 状态、校验按钮与结论展示；两个说明浮层（[获取方式](../frontend/src/components/CookieSection.tsx#L53)、[结论解读](../frontend/src/components/CookieSection.tsx#L96)）就近挂在这里。 | 不决定用哪份 cookies（后端决定），不构造请求体。 |
-| [ProxySection.tsx](../frontend/src/components/ProxySection.tsx#L140) | 代理输入框、检测结果展示；[常用端口](../frontend/src/components/ProxySection.tsx#L75)与[排查顺序](../frontend/src/components/ProxySection.tsx#L112)两个说明浮层。 | 不解析代理来源（后端回传 `proxy_source`），不保存设置（保存由 `SettingsPanel` 触发）。 |
+| [ProxySection.tsx](../frontend/src/components/ProxySection.tsx#L140) | 代理检测结果展示与「真的发一次请求」的入口；[常用端口](../frontend/src/components/ProxySection.tsx#L75)与[排查顺序](../frontend/src/components/ProxySection.tsx#L112)两个说明浮层。 | 不解析代理来源（后端回传 `proxy_source`），不保存设置（保存由 `SettingsPanel` 触发）。 |
 | [HelpPopover.tsx](../frontend/src/components/HelpPopover.tsx#L42) | **通用非模态说明浮层**：定位、钉住、关闭、记忆，以及窄屏抽屉形态。所有辅助说明共用它。 | 不含任何业务文案（文案由调用方以 children 传入）。 |
 | [JobQueue.tsx](../frontend/src/components/JobQueue.tsx#L16) | 任务中心展示与本地文件操作入口。 | 不直接访问本机文件系统（一律走后端受控打开/删除接口）。 |
+| [subtitles.ts](../frontend/src/subtitles.ts#L12) | 字幕文案与来源归一：`formatSubtitleInfo`（那行「字幕：来源 X · 格式 Y」）、`effectiveSubtitleSourceForAnalysis`（提交前把「两者都要」收敛成该视频真有的那一类）。 | 不做请求、不读存储。 |
+| [cookieLock.ts](../frontend/src/cookieLock.ts#L20) | 把后端 `browser_locked` 错误映射成界面状态（含 `pendingAnalyzeUrl`，用于「关闭 Edge 并导入」后自动补一次解析）。判据是 `detail.code`，不是文案。 | 不渲染界面（渲染在 `UrlAnalyzer`）。 |
 
 说明浮层的设计约束（这几条是界面改版时最容易破坏的，改之前先读）：
 

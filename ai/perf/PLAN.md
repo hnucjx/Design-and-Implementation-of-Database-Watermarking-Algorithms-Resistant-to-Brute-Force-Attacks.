@@ -187,7 +187,7 @@ concurrency=8: wall=1.26s  peak_parallel_downloads=8
 **真正的原因有三条：**
 
 1. **并发是 item（视频）级的，单视频任务只有 1 个 item。**
-   `main.py:145-171`：创建任务时按 `entries` 建 `JobItem`，单视频 URL 得到 1 条 entry → 1 个 item。因此**并发数对单视频任务恒为 1**，无论设置成多少。UI 标签「并发（若追求稳定，可设为 1）」（`frontend/src/App.tsx:1037`）没有说明这一点，这是「调了并发没变化」的直接来源。
+   `main.py:145-171`：创建任务时按 `entries` 建 `JobItem`，单视频 URL 得到 1 条 entry → 1 个 item。因此**并发数对单视频任务恒为 1**，无论设置成多少。UI 标签「并发（若追求稳定，可设为 1）」（当时在 `frontend/src/App.tsx:1037`，2026-10-02 重构后随设置面板移到 `frontend/src/components/SettingsPanel.tsx`）没有说明这一点，这是「调了并发没变化」的直接来源。
 
 2. **并发越高越容易触发节流中断。**
    阈值 65536 B/s 是**按单条流**判定的（§3.1 证据 2）。并发 N 时单流速度约 = 总带宽 / N：
@@ -249,7 +249,7 @@ concurrency=8: wall=1.26s  peak_parallel_downloads=8
 
 ### P1-1　并发语义澄清（零功能风险）
 
-- **改动**：`frontend/src/App.tsx:1037` 标签改为
+- **改动**：`frontend/src/App.tsx:1037` 标签改为（2026-10-02 重构后该标签位于 `frontend/src/components/SettingsPanel.tsx`）
 
   ```
   并发（同时下载的视频数；单个视频无效）

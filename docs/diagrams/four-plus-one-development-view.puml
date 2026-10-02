@@ -5,6 +5,13 @@ skinparam shadowing false
 
 package "frontend/src" {
   [App.tsx] as App
+  [components/UrlAnalyzer.tsx] as UrlAnalyzer
+  [components/AnalysisPanel.tsx] as AnalysisPanel
+  [components/DownloadOptionsPanel.tsx] as OptionsPanel
+  [components/SettingsPanel.tsx] as SettingsPanel
+  [components/SearchableLanguageSelect.tsx] as LanguageSelect
+  [components/Toggle.tsx] as Toggle
+  [components/StatusPill.tsx] as StatusPill
   [components/JobQueue.tsx] as JobQueue
   [components/ProxySection.tsx] as ProxySection
   [components/CookieSection.tsx] as CookieSection
@@ -13,6 +20,8 @@ package "frontend/src" {
   [types.ts] as FrontendTypes
   [quality.ts] as Quality
   [formatting.ts] as Formatting
+  [subtitles.ts] as Subtitles
+  [cookieLock.ts] as CookieLock
 }
 
 package "backend/app" {
@@ -61,12 +70,25 @@ package "scripts" {
   [acceptance_real.py] as AcceptanceReal
 }
 
+App --> UrlAnalyzer
+App --> AnalysisPanel
+App --> OptionsPanel
+App --> SettingsPanel
+App --> StatusPill
 App --> JobQueue
-App --> ProxySection
-App --> CookieSection
 App --> ApiClient
 App --> Quality
-App --> Formatting
+App --> Subtitles
+App --> CookieLock
+UrlAnalyzer --> CookieSection
+UrlAnalyzer --> CookieLock
+AnalysisPanel --> Formatting
+AnalysisPanel --> Quality
+OptionsPanel --> LanguageSelect
+OptionsPanel --> Toggle
+OptionsPanel --> Subtitles
+SettingsPanel --> ProxySection
+SettingsPanel --> ApiClient
 ApiClient --> FrontendTypes
 JobQueue --> FrontendTypes
 ProxySection --> ApiClient

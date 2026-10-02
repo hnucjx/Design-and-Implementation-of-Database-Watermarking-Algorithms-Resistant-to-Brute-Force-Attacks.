@@ -4,15 +4,23 @@ skinparam componentStyle rectangle
 skinparam shadowing false
 
 package "Frontend" {
-  [App.tsx\nstate + SSE + panels] as App
+  [App.tsx\nstate + SSE + layout] as App
+  [UrlAnalyzer.tsx\nlink + cookies row] as UrlAnalyzer
+  [AnalysisPanel.tsx\nentries + summary] as AnalysisPanel
+  [DownloadOptionsPanel.tsx\nmode/quality/subtitles] as OptionsPanel
+  [SettingsPanel.tsx\npaths, concurrency, proxy] as SettingsPanel
   [JobQueue.tsx\ntask center] as Queue
-  [ProxySection.tsx\nproxy input + test] as ProxySection
+  [ProxySection.tsx\nproxy result + probe] as ProxySection
   [CookieSection.tsx\ncookie state + verify] as CookieSection
   [HelpPopover.tsx\nnon-modal help overlay] as HelpPopover
+  [SearchableLanguageSelect.tsx] as LanguageSelect
+  [Toggle.tsx / StatusPill.tsx\nprimitives] as Primitives
   [api.ts\nHTTP boundary] as ApiClient
   [types.ts] as Types
   [quality.ts] as Quality
   [formatting.ts] as Formatting
+  [subtitles.ts\nsubtitle labels + source] as Subtitles
+  [cookieLock.ts\nbrowser-locked mapping] as CookieLock
 }
 
 package "Backend / entry" {
@@ -60,13 +68,26 @@ package "Backend / support" {
   [dev_server.py\nport occupant probe] as DevServer
 }
 
+App --> UrlAnalyzer
+App --> AnalysisPanel
+App --> OptionsPanel
+App --> SettingsPanel
 App --> Queue
-App --> ProxySection
-App --> CookieSection
 App --> ApiClient
+App --> CookieLock
 App --> Quality
-App --> Formatting
+App --> Subtitles
+UrlAnalyzer --> CookieSection
+UrlAnalyzer --> CookieLock
+AnalysisPanel --> Formatting
+AnalysisPanel --> Quality
+OptionsPanel --> LanguageSelect
+OptionsPanel --> Primitives
+OptionsPanel --> Subtitles
+SettingsPanel --> ProxySection
+SettingsPanel --> ApiClient
 Queue --> Formatting
+Queue --> Quality
 ProxySection --> HelpPopover
 CookieSection --> HelpPopover
 ApiClient --> Types

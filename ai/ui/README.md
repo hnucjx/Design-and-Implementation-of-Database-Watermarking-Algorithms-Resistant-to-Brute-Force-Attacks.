@@ -67,8 +67,8 @@ hash 只能在下一次触碰本目录时回填；查某条改动用
 1. **解析后，标签里可能出现一个在界面上摘不掉的语言。**
 
    `applyAnalysisResult()` 每次解析都把选择重置成 settings 的默认值
-   （`App.tsx:163`：`subtitle_languages: settings?.default_subtitle_languages ?? …`，
-   出厂默认是 `["en"]`）。如果这个视频**没有** `en` 字幕轨，标签会写「已选 1 项：en」，
+   （`App.tsx` 的 `applyAnalysisResult()`：`subtitle_languages: settings?.default_subtitle_languages ?? …`，
+   出厂默认是 `["en"]`；2026-10-02 重构前该行在 `App.tsx:163`）。如果这个视频**没有** `en` 字幕轨，标签会写「已选 1 项：en」，
    而下拉列表里（只列该视频可用的语言）**没有对应的复选框**，用户没有任何办法把它去掉
    —— 他会带着一个自己并不想要、且无法取消的字幕语言去建任务。
 

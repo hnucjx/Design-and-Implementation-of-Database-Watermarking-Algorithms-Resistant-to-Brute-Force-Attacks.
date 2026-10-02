@@ -86,13 +86,19 @@
 
 ### 3.3 前端（`frontend/src/`）
 
-- `App.tsx`：状态编排、SSE 订阅、解析/建任务/设置保存流程、cookies 交互；面板函数 `UrlAnalyzer`、`AnalysisPanel`、`DownloadOptionsPanel`、`SettingsPanel`。
+- `App.tsx`：**只做状态编排与布局** —— SSE 订阅、解析/建任务/设置保存流程、cookies 交互。
 - `components/`：
+  - `UrlAnalyzer.tsx`：解析面板（链接输入、cookies 行、锁库提示、解析按钮）。
+  - `AnalysisPanel.tsx`：解析结果（缩略图/标题/时长、playlist 勾选表、单视频汇总）。
+  - `DownloadOptionsPanel.tsx`：下载选项（模式、清晰度、字幕、开关项、限速与重试、提交）。
+  - `SettingsPanel.tsx`：设置（下载目录、并发、aria2c 连接数、代理；失焦即保存）。
+  - `SearchableLanguageSelect.tsx` / `Toggle.tsx` / `StatusPill.tsx`：基础件。
   - `CookieSection.tsx`：cookies 状态、校验按钮与结论展示。
-  - `ProxySection.tsx`：代理输入框、检测结果与常用端口对照。
+  - `ProxySection.tsx`：代理检测结果与「真的发一次请求」的入口。
   - `HelpPopover.tsx`：**通用非模态说明浮层**。默认收起；桌面端悬停即看、点击钉住；`≤640px` 或无 hover 能力时渲染为贴底抽屉；`Esc` / 点外部 / 右上角 × 关闭；不 `autoFocus`、无遮罩、不抢输入框焦点；钉住状态写 `localStorage`（键前缀 `cascade.help.open.v1.`），关闭同时清除记忆。
   - `JobQueue.tsx`：任务中心展示与本地文件操作入口。
 - `api.ts`：HTTP 边界与 `ApiError` 语义。`types.ts`：与后端 schema 逐字段对应的前端类型。
+- 纯模块：`formatting.ts`（展示格式化）、`quality.ts`（清晰度选项与标签）、`subtitles.ts`（字幕文案与来源归一）、`cookieLock.ts`（`browser_locked` 错误 → 界面状态）。
 - `quality.ts`、`formatting.ts`：清晰度选项/降级按钮文案、格式化工具。
 - `styles.css`：设计 token 与浮层/抽屉样式（浮层内必须显式重置 `white-space` 与字重，否则会继承宿主元素）。**共用基类不得声明只为某一处用法需要的版式**（宽度、外边距）：基类若声明在变体之后，会以同优先级把变体的重置静默吃掉，见 `ai/ui/001`。同理，**固定宽度的网格轨道里，文本必须能断行**：右栏是写死的 `390px`（内容区 352px），一个不能断行的长 token（Windows 路径最典型）就足以让面板的 min-content 超过轨道并撑出整页横向滚动条；修法是 `overflow-wrap: anywhere`（**不能**用 `break-word`，后者不改变 min-content），见 `ai/ui/002`。再加一条：**会随数据变长的标签不得被 `nowrap` 锁成一行** —— `nowrap` 之下 `overflow-wrap` 与 `min-width: 0` 都无效，而 `text-overflow: ellipsis` 只有在元素真的被约束时才会出现（先确认 `scrollWidth > clientWidth` 成立），否则「省空间」会静默变成「撑版面」，见 `ai/ui/003`。
 - `vite-env.d.ts`：`vite/client` 类型引用，供测试用 `?raw` 读取样式源文。

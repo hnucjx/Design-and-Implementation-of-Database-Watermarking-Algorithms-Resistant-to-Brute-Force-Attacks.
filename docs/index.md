@@ -36,6 +36,9 @@
 
 截图位于 [assets/screenshots](assets/screenshots/)，由真实浏览器实拍后随文档提交：首页 `home.png`，以及辅助说明的三种状态 `help-collapsed.png`（默认收起）、`help-open-desktop.png`（桌面端浮层）、`help-open-mobile.png`（窄屏底部抽屉）。界面改版后必须重拍替换，且不得包含本机用户名路径等个人信息。
 
+界面缺陷（能跑、不报错，但呈现错位或不一致）按 [ai/ui](../ai/ui/README.md) 的约定一条一记录，
+其中需要给出可测量的像素差；修复后同样要重拍上面这些截图，否则文档会停留在旧版界面。
+
 ## UML 图
 
 UML 源码位于 [diagrams](diagrams/)，渲染后的 SVG 位于 [assets/diagrams](assets/diagrams/)。

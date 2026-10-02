@@ -21,7 +21,10 @@ export default defineConfig(({ mode }) => {
       }
     },
     test: {
-      setupFiles: "./src/test/setup.ts"
+      setupFiles: "./src/test/setup.ts",
+      // 默认 `css: false` 会把 CSS 换成空模块，连 `./styles.css?raw` 也一起吃掉；
+      // 而「基类不得声明版式」这条不变式只能靠读样式源文来断言（jsdom 不做布局）。
+      css: true
     }
   };
 });

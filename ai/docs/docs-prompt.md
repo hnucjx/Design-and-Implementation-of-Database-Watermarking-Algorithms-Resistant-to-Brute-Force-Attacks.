@@ -28,7 +28,7 @@
 - **合规边界**：涉及 YouTube、cookies、PO token、下载稳定性、版权或权限限制时保持合规与边界清晰：不承诺绕过 DRM、会员、地区、年龄、私有视频等权限限制，不把「规避风控」写成产品目标。
 - **风险项必须写明代价**：`throttledratelimit`、aria2c 多连接等会影响 403 率的开关，必须在文档中同时给出「收益」与「代价」，并说明默认值与回退方式。
 - **只报「失败」不给下一步的提示视为未完成**：新增失败路径必须带可执行的下一步（API 侧是 `next_steps`，界面侧是「点哪里」）。
-- **未处理事项必须回流**：文档里承认的限制，要能在 `ai/bug-fix/README.md` 的「已知但未处理」清单里找到对应条目；反之亦然，两边不允许各说各话。
+- **未处理事项必须回流**：文档里承认的限制，要能在 `ai/bug-fix/README.md` 或 `ai/ui/README.md` 的「已知但未处理」清单里找到对应条目；反之亦然，两边不允许各说各话。功能类缺陷与界面类缺陷分别归到这两个目录（有报错/失败用例 → bug-fix；能跑但呈现不对 → ui）。
 
 ---
 
@@ -41,8 +41,10 @@
 | `ai/docs/docs.md` | 文档任务的原始需求（软件工程规范、UML、可跳转引用、README 收敛、持续同步）。 |
 | `ai/docs/docs-prompt.md` | 本文件，文档任务的可重复说明书。 |
 | `ai/perf/PLAN.md` | 下载性能与稳定性修复计划的根因分析、修复项、验证与回滚；文档中引用性能相关结论时以此为权威来源。 |
-| `ai/bug-fix/README.md` | 修复记录索引与「已知但未处理」清单（当前 12 条）。**文档中的限制、遗留风险与「尚未验证」声明必须与此处一致。** |
+| `ai/bug-fix/README.md` | 功能类修复记录索引与「已知但未处理」清单（当前 12 条）。**文档中的限制、遗留风险与「尚未验证」声明必须与此处一致。** |
 | `ai/bug-fix/NNN-*.md` | 逐条修复记录（问题 / 原因 / 修复方案 / 效果 / 验证 / 风险与回滚 / 关联）。文档里写「为什么这么设计」时优先引用这些记录而不是重新推导。 |
+| `ai/ui/README.md` | **界面缺陷记录**（能跑、不报错，但呈现错位或不一致）的索引与约定，含「这类缺陷的自动化覆盖边界」一节：jsdom 不做布局，布局类问题只能靠样式源文不变式 + 真实浏览器实测。 |
+| `ai/ui/NNN-*.md` | 逐条界面缺陷记录，与 bug-fix 同格式，但**必须给出可测量的像素证据**与截图。文档里解释「某处样式为什么这么写」时优先引用这些记录。 |
 | `ai/plan.md`、`ai/refactor.md`、`ai/tasks.md`、`ai/brainstorming.md` | 历史计划与重构记录，用于确认设计意图。 |
 
 ### 3.2 后端（`backend/app/`，28 个模块）
@@ -90,14 +92,15 @@
   - `JobQueue.tsx`：任务中心展示与本地文件操作入口。
 - `api.ts`：HTTP 边界与 `ApiError` 语义。`types.ts`：与后端 schema 逐字段对应的前端类型。
 - `quality.ts`、`formatting.ts`：清晰度选项/降级按钮文案、格式化工具。
-- `styles.css`：设计 token 与浮层/抽屉样式（浮层内必须显式重置 `white-space` 与字重，否则会继承宿主元素）。
-- `App.test.tsx`、`test/appFixtures.ts`、`test/setup.ts`：前端测试范围与夹具。
+- `styles.css`：设计 token 与浮层/抽屉样式（浮层内必须显式重置 `white-space` 与字重，否则会继承宿主元素）。**共用基类不得声明只为某一处用法需要的版式**（宽度、外边距）：基类若声明在变体之后，会以同优先级把变体的重置静默吃掉，见 `ai/ui/001`。
+- `vite-env.d.ts`：`vite/client` 类型引用，供测试用 `?raw` 读取样式源文。
+- `App.test.tsx`、`test/appFixtures.ts`、`test/setup.ts`：前端测试范围与夹具。其中一条是**样式源文不变式**（读 `styles.css?raw`），因为 jsdom 不做布局，布局类缺陷只有这一部分能进单测。
 
 ### 3.4 配置、脚本与测试
 
 - `backend/pyproject.toml`、`frontend/package.json`：依赖、脚本、测试配置。
 - `backend/tests/`：17 个 `test_*.py` + `fakes.py`（当前 **289 passed**）。
-- `frontend/src/App.test.tsx`：当前 **65 passed**（`npx vitest run --environment jsdom`）。
+- `frontend/src/App.test.tsx`：当前 **66 passed**（`npx vitest run --environment jsdom`）。
 - `scripts/`：
   - `docs.py`：文档工具链（`bootstrap` / `render` / `check`），固定版本 PlantUML。
   - `check_doc_anchors.py`：代码行锚点漂移检查（`--fix` 自动重算）。
@@ -224,7 +227,7 @@ python scripts\docs.py check       # 校验本地链接 + SVG 与源一致
 ```powershell
 python -m compileall backend\app
 python -m pytest backend\tests -q                 # 当前基线 289 passed
-cd frontend; npx vitest run --environment jsdom   # 当前基线 65 passed
+cd frontend; npx vitest run --environment jsdom   # 当前基线 66 passed
 cd frontend; npx tsc --noEmit                     # 类型检查
 python scripts\docs.py check                      # 本地链接 + UML 产物一致
 python scripts\check_doc_anchors.py               # 代码行锚点无漂移
@@ -288,18 +291,21 @@ git ls-remote origin main   # 校验远端 sha 与本地一致
 
 ---
 
-## 11. 当前基线快照（2026-10-02，commit `18537e8`）
+## 11. 当前基线快照（2026-10-02，自 commit `18537e8` 起；本轮已更新前端测试与界面缺陷记录）
 
 每次执行任务时更新本节；它只用于快速判断「哪些数字变了」，不作为事实来源。
+不改本节的 commit 值——写了就必然自我指涉，反查请用
+`git log --oneline -- ai/docs/docs-prompt.md`。
 
 | 项 | 值 |
 | --- | --- |
 | 后端模块 | 28 个（含 `__main__.py`） |
 | 后端测试 | 17 个 `test_*.py` + `fakes.py`，**289 passed** |
-| 前端测试 | `App.test.tsx`，**65 passed** |
+| 前端测试 | `App.test.tsx`，**66 passed** |
 | HTTP 操作 | 28 个（`openapi.yaml` 的 `operationId` 数：26 个 `/api/*` + `/health` + 静态首页 `/`） |
 | 环境变量 | `YTDL_` 前缀，`AppSettings` 共 22 个字段（另有 `YTDL_LOG_LEVEL` 不属于 `AppSettings`） |
 | UML 图 | 15 张（`.puml` 与 `.svg` 成对） |
 | 截图 | 4 张 |
-| 修复记录 | `ai/bug-fix/` 001~010，已知未处理 12 条 |
+| 修复记录 | `ai/bug-fix/` 001~010（功能类），已知未处理 12 条 |
+| 界面缺陷记录 | `ai/ui/` 001（布局对齐），已知未处理 1 条（页面横向溢出）；目录约定见 `ai/ui/README.md` |
 | 本机渲染基线 | PlantUML `1.2026.5`、Java 25.0.3、Graphviz 15.1.1 |

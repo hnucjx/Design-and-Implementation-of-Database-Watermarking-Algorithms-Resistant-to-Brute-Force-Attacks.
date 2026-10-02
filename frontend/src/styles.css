@@ -439,13 +439,8 @@ th {
   line-height: 1.45;
 }
 
-.compact-file-button {
-  flex-direction: row;
-  width: auto;
-  min-width: 130px;
-  margin-top: 0;
-}
-
+/* 与相邻的「选择 cookies」等宽（见下方 .compact-file-button）：两者是一组成对动作，
+   长短不一看着像两个不相干的控件。 */
 .cookie-clear-button {
   min-width: 130px;
 }
@@ -604,10 +599,14 @@ th {
   align-items: center;
 }
 
+/* 文件上传控件：原生 <input type="file"> 铺满整个 label 并透明，点击落在 label 上。
+   这里只放控件机制本身，**不放版式**（宽度、纵向间距）。原因不是洁癖：本控件与
+   「清除 cookies」同排，所在行是 align-items: center，基类只要声明了纵向外边距，
+   就会把它从同排兄弟的基线上推开一半的距离。而基类规则一旦写在变体之后，
+   两者同为 0,1,0 优先级，变体的重置会被静默吃掉 —— 「选择 cookies」正是这样
+   比「清除 cookies」低了 8px（等宽同高，却整体下沉）。见 ai/ui/001。 */
 .file-button {
   position: relative;
-  width: 100%;
-  margin-top: 16px;
   overflow: hidden;
 }
 
@@ -615,6 +614,11 @@ th {
   position: absolute;
   inset: 0;
   opacity: 0;
+}
+
+/* 变体声明在基类之后，且只声明「这一处需要、基类不管」的部分。 */
+.compact-file-button {
+  min-width: 130px;
 }
 
 .job-card {

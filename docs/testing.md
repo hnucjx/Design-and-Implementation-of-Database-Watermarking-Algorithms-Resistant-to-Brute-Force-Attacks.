@@ -18,7 +18,7 @@ python -m compileall backend\app
 python -m pytest backend\tests -q
 ```
 
-前端测试和构建（当前基线：**65 passed** + `tsc && vite build` 通过）：
+前端测试和构建（当前基线：**66 passed** + `tsc && vite build` 通过）：
 
 ```powershell
 cd frontend
@@ -139,6 +139,7 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 - 运行环境自检：JS 运行时不可用时显示原始报错与「The page needs to be reloaded.」的关联说明、日志文件路径可复制、「重新自检」会打到刷新接口。
 - cookies 校验：联网校验、离线体检、以及「域名不对，等于没配」与「google.com-only」两档结论的解释文案。
 - 辅助说明浮层：四个入口（获取方式 / 结论解读 / 常用端口 / 排查顺序）默认收起，悬停或点击可读，`Esc`、点击空白处、右上角 × 都能关闭，展开状态写入 `localStorage` 并在刷新后恢复。
+- 样式源文不变式：文件上传控件（`.file-button`）的基类不得声明纵向外边距与宽度。**jsdom 不做布局，这是布局类缺陷唯一能进单测的部分**——「两个按钮是否共线」只能靠真实浏览器量，见 [ai/ui](../ai/ui/README.md)。
 
 ## 手动验收
 
@@ -167,6 +168,7 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 21. 用 DevTools 把视口切到 390px 宽（或设备模拟）：同一个说明入口应变成贴底的**底部抽屉**，可滚动，且抽屉内部**没有横向滚动条**（说明正文必须换行，不能继承触发位置的 `white-space: nowrap`）。
 22. 检查 `data/logs/app.log`：启动时应有 `proxy resolved` / `js runtime ready`（或 `js runtime unavailable`）/ `dependencies ready` 三行；故意制造一次失败后，应有 `category=` 结构与紧随其后的 `诊断 / 原因 / 建议N` 块。
 23. 设置面板点「重新自检」，确认 JS 运行时状态会被重新探测（装上 Node/Deno 后无需重启应用）。
+24. 在桌面宽度（≥1280px）下看解析面板的 cookies 操作行：「选择 cookies」与「清除 cookies」必须**同顶同底**，右侧「自动检测浏览器 / 从浏览器导入」也在同一基线。这一行曾因文件上传控件的基类声明了 `margin-top` 而整体下沉 8px（等宽同高、就是没对齐），见 [ai/ui/001](../ai/ui/001-cookie-buttons-not-on-the-same-baseline.md)。
 
 ## 高风险回归点
 

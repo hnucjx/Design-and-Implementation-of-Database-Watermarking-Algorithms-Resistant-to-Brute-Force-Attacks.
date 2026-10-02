@@ -2,6 +2,8 @@
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import App from "./App";
+// 样式源文以字符串读入（Vite 的 `?raw`），用来断言 CSS 自身的不变式；见本文件末尾那例。
+import stylesCss from "./styles.css?raw";
 import {
   analyzePayload,
   automaticResolutionFallback,
@@ -1421,5 +1423,32 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "说明：Cookie 获取方式" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("dialog", { name: "Cookie 获取方式" })).toBeInTheDocument();
+  });
+
+  // jsdom 不做布局，「两个按钮对齐没有」在这里量不出来；但那一处的根因就在 CSS 里，
+  // 所以直接盯住根因对应的不变式：文件上传控件的**基类**不得声明版式。
+  // 「选择 cookies」与「清除 cookies」同排而该行是 align-items: center，基类只要带上
+  // 纵向外边距，就会把它从兄弟的基线上推开一半（实测 8px，见 ai/ui/001）。
+  test("keeps layout out of the file-button base class", () => {
+    // 先剥掉注释：否则紧邻规则上方的注释会被当成选择器的一部分，`.file-button` 就找不到了。
+    const source = stylesCss.replace(/\/\*[\s\S]*?\*\//g, "");
+    const bodies = new Map<string, string[]>();
+    for (const match of source.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      for (const raw of match[1].split(",")) {
+        const selector = raw.trim();
+        if (selector) bodies.set(selector, [...(bodies.get(selector) ?? []), match[2]]);
+      }
+    }
+
+    const base = bodies.get(".file-button") ?? [];
+    expect(base.length).toBeGreaterThan(0);
+    for (const body of base) {
+      // 纵向外边距：它当初就是被这个推离同排兄弟基线的（align-items: center 下偏移一半）。
+      expect(body).not.toMatch(/(?<![-\w])margin(-top|-bottom|-block|-inline)?\s*:/);
+      // 宽度：基类曾写着 `width: 100%`（为一种并不存在的全宽用法而写），
+      // 它会以同等优先级盖掉变体的 `width: auto`。高度与 min-height 不在此列 ——
+      // 它们来自与 .ghost-button 共用的控件底座，是这一排按钮成对的基础。
+      expect(body).not.toMatch(/(?<![-\w])width\s*:/);
+    }
   });
 });

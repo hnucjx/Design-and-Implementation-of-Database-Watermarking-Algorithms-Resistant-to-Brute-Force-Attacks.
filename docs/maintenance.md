@@ -20,12 +20,11 @@
 | 修改测试命令或测试策略 | [测试文档](testing.md)、README 测试摘要入口 |
 | 重构模块边界或调整依赖方向 | [设计文档](design.md)、[架构设计](architecture.md)、[4+1 架构视图](4-plus-1-view.md)、[实现文档](implementation.md)、组件图、模块依赖图、4+1 逻辑视图和开发视图 |
 | 修改任务队列、SSE、运行时设置、进度、暂停/重启/删除流程 | [设计文档](design.md#运行时并发模型)、[4+1 架构视图](4-plus-1-view.md)、[技术文档](technical.md)、[实现文档](implementation.md)、4+1 进程视图、运行时并发图、下载数据流图 |
-| 修改端口、绑定地址、部署模式、外部工具、文件位置或本机打开方式 | [4+1 架构视图](4-plus-1-view.md)、[开发文档](development.md)、[安全审计报告](safety-review.md#14-网络安全)、4+1 物理视图 |
+| 修改端口、部署模式、外部工具、文件位置或本机打开方式 | [4+1 架构视图](4-plus-1-view.md)、[开发文档](development.md)、4+1 物理视图 |
 | 修改代理、网络自检、cookies 校验或运行环境自检 | [用户手册](user-manual.md)、[排障手册](troubleshooting.md)、[API 文档](api.md)、[openapi.yaml](openapi.yaml)、[技术文档](technical.md) |
 | 修改日志、日志级别或错误提示文案 | [排障手册](troubleshooting.md)、[用户手册](user-manual.md#自检与日志)、[测试文档](testing.md)、[安全审计报告](safety-review.md) |
+| 修改界面布局、样式或控件排布 | [界面缺陷记录](../ai/ui/README.md)（一个问题一条记录）、[测试文档](testing.md) 的手动验收、受影响的 `docs/assets/screenshots/*` 截图重拍 |
 | 新增或删除用户关键操作 | [用户手册](user-manual.md)、[需求分析](requirements.md)、[4+1 架构视图](4-plus-1-view.md)、4+1 场景视图 |
-| 修改界面说明、说明浮层、面板布局或文案语气 | [用户手册](user-manual.md#辅助说明的查看方式)、[设计文档](design.md#前端组件边界)、[实现文档](implementation.md#前端实现)、[需求分析](requirements.md#功能需求)、`docs/assets/screenshots/` 截图（必须重拍替换） |
-| 新增或删除后端模块 / 前端组件 | [设计文档](design.md#模块职责矩阵)、[设计文档](design.md#前端组件边界)、[实现文档](implementation.md)、[架构设计](architecture.md)、`component-overview.puml`、`module-dependencies.puml`、4+1 开发视图 |
 | 修改安全相关的文件操作、CORS、日志清洗、环境变量或依赖 | [安全审计报告](safety-review.md)（更新基线 commit 与审查日期；新增的网络/文件/环境访问面要登记进「待复核项」） |
 
 ## 排障流程
@@ -78,6 +77,6 @@
 - [openapi.yaml](openapi.yaml) 的路径、状态码与模型字段是否仍与 `main.py`、`schemas.py` 一致（改动接口后必须显式核对，规范不会自动跟随代码）。
 - 是否已运行 `python scripts\docs.py check`，确认本地链接和 UML 产物一致；并运行 `python scripts\check_doc_anchors.py` 确认代码行锚点没有漂移。
 - 面向用户的报错文案是否都能被用户照着做：只给「失败」不给下一步的提示视为未完成（新增失败路径必须带 `next_steps`）。
-- `docs/assets/screenshots/` 下的截图是否仍是当前界面（界面改版后未重拍的截图等于过时文档），且不含本机用户名路径等个人信息。
-- 文档里声明的限制与「尚未验证」是否与 [ai/bug-fix/README.md](../ai/bug-fix/README.md) 的「已知但未处理」清单一致（两边不允许各说各话）。
 - 是否遗漏 `ai/` 下的任务或审查记录。
+- 改样式时问一句：**这条声明是谁需要它？** 为某一处用法写的版式（宽度、外边距）不该写进共用基类——基类若声明在变体之后，会以同优先级把变体的重置静默吃掉，`ai/ui/001` 就是这么来的。
+- 界面缺陷（能跑、不报错、就是不对）是否按 [ai/ui](../ai/ui/README.md) 的约定记了一条？只写「看着不齐」不算记录，要给出元素、属性与像素差。

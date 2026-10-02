@@ -6,7 +6,7 @@
 | 实施时间 | 2026-10-02 17:29 ~ 17:38 +08:00 |
 | 依据 | [refactor.md](refactor.md) §4.1 第 4 项「没有 lint / format / CI 门槛」 |
 | 起点 commit | `ffe096c`（R6 提交后） |
-| 本轮提交 | 待回填（见文末「提交与回滚」） |
+| 本轮提交 | `bbe2392`（见文末「提交与回滚」） |
 | 结论 | **部分完成**。建了 CI（`ci.yml`）与两个**本仓库自己的**门槛（分层依赖、契约漂移已在 006）；**仍不引入** ruff / eslint / prettier —— 这是有意的，不是遗漏 |
 
 ---
@@ -214,6 +214,6 @@ docs/openapi.yaml（本机没有 PyYAML）」—— 与其静默只跑一半，�
 
 | 项 | 值 |
 | --- | --- |
-| 提交 hash | 待回填（记录与改动在同一次提交里，hash 无法写进自身） |
-| 回滚命令 | `git revert <hash>` |
+| 提交 hash | `bbe2392`（2026-10-02 收尾一轮回填） |
+| 回滚命令 | `git revert bbe2392` |
 | 记录约定 | 与 [bug-fix](../bug-fix/README.md) / [ui](../ui/README.md) 一致：下次触碰 `ai/refactor/` 时回填 hash |

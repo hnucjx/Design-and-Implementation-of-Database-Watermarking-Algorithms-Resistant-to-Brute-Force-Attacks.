@@ -1,6 +1,6 @@
 # 重构总纲（refactor charter）
 
-> 最后更新：**2026-10-02 17:55 +08:00** ｜ 基线 commit：`3643e76`（main）
+> 最后更新：**2026-10-02 18:03 +08:00** ｜ 基线 commit：`e98abda`（main，R9 提交后；§2 的快照锚在 `3643e76`，那是 R1 前的取证点）
 > 本文件是重构的**总纲与索引**。每轮重构的「计划 / 实施方案 / 实施情况」各自成文，见 [§6 轮次索引](#6-轮次索引)。
 
 本仓库已有的三份记录目录各管一件事，不要混：
@@ -56,19 +56,29 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 
 ### 2.1 每轮结束后的「刷新」（随轮次滚动更新）
 
-上表是**写这份总纲时**的快照。每轮重构都会改动其中若干项，因此每轮结束时把新值记在这里，
-而不是回头改写上表（保留"改之前长什么样"的证据）。
+上表是**写这份总纲时**（R1 之前）的快照。R1~R9 每轮都会改动其中若干项，因此每轮结束时把新值记在这里，
+而不是回头改写上表（保留「改之前长什么样」的证据）。
 
-| 项 | 写总纲时（R1 前） | R2 后 | **R3 后（当前）** | 取证命令 |
-| --- | --- | --- | --- | --- |
-| 后端模块 | 29 个 `.py` / 6026 行 | 32 个 `.py` / 5791 行，另有 `routers/` 8 个 `.py` / 596 行 | **33 个 `.py`**，另有 `routers/` 8 个 | `ls backend/app/*.py \| wc -l`、`wc -l backend/app/*.py \| tail -1` |
-| 前端源码 | 13 个文件 / 4699 行 | 23 个文件 / 4790 行（R1 后） | **23 个文件 / 4790 行** | `find frontend/src -name '*.ts' -o -name '*.tsx' \| wc -l` |
-| `backend/app/main.py` | 722 行 | 130 行 | **130 行** | `wc -l backend/app/main.py` |
-| `backend/app/job_manager.py` | 1174 行 | 1174 行 | **1142 行**（−32，判定外移到新模块） | `wc -l backend/app/job_manager.py` |
-| `frontend/src/App.tsx` | 1128 行 | 446 行（R1 后） | **446 行** | `wc -l frontend/src/App.tsx` |
-| 后端测试 | 289 passed | 289 passed | **320 passed** | 见上表命令 |
-| 前端测试 | 69 passed | 69 passed | **69 passed** | 见上表命令 |
-| 文档锚点 | 无漂移 / 111 处待复核 | 无漂移 / 148 处待复核 | **无漂移 / 153 处待复核** | `python scripts/check_doc_anchors.py` |
+**只保留起点与终点两列**：九轮逐轮都列会变成一张读不了的表，R4~R9 的中间值在各轮记录的实施情况小节里。
+
+| 项 | 写总纲时（R1 前） | **R9 后（当前）** | 取证命令 |
+| --- | --- | --- | --- |
+| 后端模块 | 29 个 `.py` / 6026 行 | **34 个 `.py` / 6087 行**，另有 `routers/` 8 个 `.py` / 596 行 | `ls backend/app/*.py \| wc -l`、`cat backend/app/*.py \| wc -l` |
+| 前端源码 | 14 个文件 / 4699 行（含测试） | **35 个文件 / 4953 行**（含 11 个测试文件与 `test/` 三个共享件；其中非测试源码 20 个 / 2951 行） | `find frontend/src \( -name '*.ts' -o -name '*.tsx' \) \| wc -l`、`… -exec cat {} + \| wc -l` |
+| `backend/app/main.py` | 722 行（`create_app` 458 行 / 28 条路由） | **130 行**（装配根） | `wc -l backend/app/main.py` |
+| `backend/app/job_manager.py` | 1174 行 | **1128 行**（R3 判定外移 −32、R4 产物路径 −10、R5 安全删除 −4） | `wc -l backend/app/job_manager.py` |
+| `backend/app/ytdlp_service.py` | 1182 行 / 72 个方法 | **1130 行 / 57 个方法**（R9 回收 15 个转发层） | `wc -l backend/app/ytdlp_service.py` |
+| `frontend/src/App.tsx` | 1128 行 | **446 行** | `wc -l frontend/src/App.tsx` |
+| `frontend/src/App.test.tsx` | 1521 行 / 69 例 | **已拆成 11 个 `*.test.ts(x)`（最大 254 行）** | `ls frontend/src/*.test.ts*` |
+| 后端测试 | 289 passed | **354 passed** | `./.venv/Scripts/python.exe -m pytest backend/tests -q …` |
+| 前端测试 | 69 passed | **69 passed**（文件数与拆分无关：用例名逐字不变） | `cd frontend && npx vitest run --environment jsdom` |
+| 文档锚点 | 无漂移 / 111 处待复核 | **无漂移 / 156 处待复核** | `python scripts/check_doc_anchors.py` |
+
+两处口径说明：
+
+- 写总纲时那一列原本写「13 个文件」，按 `git ls-tree 3643e76 frontend/src` 复核是 **14** 个（行数 4699 一致）；
+  本表统一用复核值。
+- 前端两行的文件数包含测试与 `test/` 共享件，与最右列的命令口径一致 —— 不要拿它跟「非测试源码 20 个」混读。
 
 ---
 
@@ -107,12 +117,15 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 
 | 轮次 | 主题 | 目标 | 状态 |
 | --- | --- | --- | --- |
-| **R1** | 前端视图层解耦 | `App.tsx` 的 6 个内部组件 + 3 个文案函数外移，`App.tsx` 只留状态编排与布局 | 见 [001](001-frontend-view-layer.md) |
-| **R2** | 后端 API 层解耦 | `main.py` 的 24 条路由按领域拆成 `routers/`，路由支撑逻辑下沉，`create_app` 退化为装配根 | 见 [002](002-backend-api-layer.md) |
-| **R3** | 后端领域层：清晰度降级决策纯化 | 「降级候选 + 降级原因 + 用户文案」从 `job_manager.py` 抽成可单测的领域模块 | 见 [003](003-resolution-decisions.md) |
+| **R1** | 前端视图层解耦 | `App.tsx` 的 6 个内部组件 + 3 个文案函数外移，`App.tsx` 只留状态编排与布局 | ✅ `c385646`，见 [001](001-frontend-view-layer.md) |
+| **R2** | 后端 API 层解耦 | `main.py` 的 24 条路由按领域拆成 `routers/`，路由支撑逻辑下沉，`create_app` 退化为装配根 | ✅ `046e4de`，见 [002](002-backend-api-layer.md) |
+| **R3** | 后端领域层：清晰度降级决策纯化 | 「降级候选 + 降级原因 + 用户文案」从 `job_manager.py` 抽成可单测的领域模块 | ✅ `23467aa`，见 [003](003-resolution-decisions.md) |
 
 顺序是刻意的：**R1 风险最低（纯前端、无 IO）、R2 影响面最大（线上契约的入口）、R3 价值最高
 （唯一反复出缺陷的策略）**。R1 同时用来验证 §5 的流程本身跑得通。
+
+三轮已于 2026-10-02 全部完成。此后按 [§4.1](#41-后续候选清单登记为本轮三轮不做此后逐项单独一轮) 的约定
+「一项一轮」，六个候选各占一轮（R4~R9），同样是**一个主题 = 一个 commit = 一次 push**。
 
 ### 4.1 后续候选清单（登记为「本轮三轮不做」，此后逐项单独一轮）
 
@@ -150,6 +163,14 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
    `extract_edge_cookies_via_cdp=` 这三个分支永远不会被走到（009 之后全仓库只剩 2 处
    `BrowserCookieImporter(...)`，都不传参）。它们是「保留的扩展点」，删不删属
    `browser_cookies.py` 的设计决定，另起一轮评估。
+8. **（2026-10-02 收尾一轮新登记）`ai/**` 下的 Markdown 链接从来没有被任何工具检查过。**
+   `scripts/docs.py check` 只扫 `README.md` 与 `docs/**/*.md`（见 `scripts/docs.py:135`），
+   而 `ai/` 下有 48 个 Markdown、132 个带锚点的本地链接 —— 是纯粹的盲区。收尾一轮用一次性探针
+   按 GitHub slug 规则扫了一遍，当场扫出 **9 处断链**：7 处是 §4.1 标题改名后没同步的旧锚点
+   （001~004 共 7 处，都是这一轮自己改标题造成的）、1 处 `ai/ui/002` 的锚点笔误、1 处
+   `ai/bug-fix/007` 的跨目录路径少了一层 `../`。**修法已就地做掉**（见 [010](010-baseline-sync-and-hash-backfill.md)）。
+   剩余候选形态：把那个探针固化进 `scripts/`（例如 `check_ai_links.py`）并接进 CI，
+   与 `check_layers.py` / `check_api_contract.py` 同层 —— 否则下次改标题还会再断一遍。
 
 ---
 
@@ -188,17 +209,22 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 「提交」列按 [bug-fix](../bug-fix/README.md) / [ui](../ui/README.md) 同样的约定处理：记录与改动在同一次提交里，
 hash 只能在**下一次触碰本目录时**回填；查某条改动用 `git log --oneline -- ai/refactor/NNN-*.md`。
 
+**当前唯一未回填的是 [010](010-baseline-sync-and-hash-backfill.md)** —— 它自己就是那次「触碰」，
+按定义写不进自身的 hash（010 §5 的教训一节专门讨论了「占位符必须有人认领」这件事）。
+**下一次触碰 `ai/refactor/` 时必须把它补上。**
+
 | # | 标题 | 提交 | 一句话 |
 | --- | --- | --- | --- |
 | [001](001-frontend-view-layer.md) | 前端视图层解耦：`App.tsx` 只留状态编排 | `c385646` | 1128 行里 7 个内部组件 + 5 个纯函数外移到 9 个新文件，展示改版与状态编排从此可以各改各的 |
 | [002](002-backend-api-layer.md) | 后端 API 层解耦：`main.py` 退化为装配根 | `046e4de` | 458 行的 `create_app` 拆成 7 个 `APIRouter` + 3 个支撑模块（`api_context` / `api_support` / `job_artifacts`），新增接口不必再在巨型函数里找位置 |
-| [003](003-resolution-decisions.md) | 降级决策纯化：从「跑一次下载才知道」到「可直接单测」 | 回填 | 判定收进 `resolution_decisions.py`（4 个纯函数），`job_manager` 只剩 IO 与状态写入；新增 31 例单测，8 个场景在 HEAD 与重构后逐字段相同 |
-| [004](004-artifact-paths.md) | 产物路径收敛：候选链只有一个计算处 | 回填 | `job_artifacts` 与 `job_manager._item_output_paths` 的候选链下沉到 `output_paths.py`；12 场景 × 3 入口的旧/新逐项对照（§4.1 第 1 项） |
-| [005](005-safe-delete.md) | 安全删除纯化：白名单判定可单测 | 回填 | 路径安全判定收进 `safe_delete.py`（`DeleteScope` + 3 个纯函数）；16 例含「字符串前缀」陷阱与 Windows 大小写；8 处端到端删除回归（§4.1 第 2 项） |
-| [006](006-api-contract-drift.md) | 契约漂移校验：单一来源是运行时 `app.openapi()` | 回填 | 新增 `scripts/check_api_contract.py`；`types.ts` 15 接口字段 + `openapi.yaml` 48 条目；两次注入式取证（§4.1 第 3 项，次优形态） |
-| [007](007-ci-and-layers.md) | CI 门槛 + 分层依赖校验 | 回填 | 新增 `.github/workflows/ci.yml` 与 `scripts/check_layers.py`（解析 design.md 的职责矩阵，顺带抓「新增模块忘登记」）；补齐 005 遗留的矩阵登记（§4.1 第 4 项，部分） |
-| [008](008-split-app-tests.md) | 拆分 `App` 集成测试：一个文件一个功能面 | 回填 | 1521 行 / 69 例 → 11 个文件（最大 254 行）+ 3 个共享件；用例名逐字不变；**逐文件冷启动**暴露并修正一条顺序依赖断言（§4.1 第 5 项） |
-| [009](009-reclaim-compat-proxies.md) | 回收兼容代理：`ytdlp_service.py` 的 15 个转发层 | 回填 | 按「函数体只有一条原样转交语句」扫出 19 个候选，回收 15 个私有转发（含 5 个 0 调用点死代码）；cookies 三处注入接缝搬到 `browser_cookies`；1182 → 1130 行、方法数 72 → 57（§4.1 第 6 项） |
+| [003](003-resolution-decisions.md) | 降级决策纯化：从「跑一次下载才知道」到「可直接单测」 | `23467aa` | 判定收进 `resolution_decisions.py`（4 个纯函数），`job_manager` 只剩 IO 与状态写入；新增 31 例单测，8 个场景在 HEAD 与重构后逐字段相同 |
+| [004](004-artifact-paths.md) | 产物路径收敛：候选链只有一个计算处 | `03c94bd` | `job_artifacts` 与 `job_manager._item_output_paths` 的候选链下沉到 `output_paths.py`；12 场景 × 3 入口的旧/新逐项对照（§4.1 第 1 项） |
+| [005](005-safe-delete.md) | 安全删除纯化：白名单判定可单测 | `beb5b2c` | 路径安全判定收进 `safe_delete.py`（`DeleteScope` + 3 个纯函数）；16 例含「字符串前缀」陷阱与 Windows 大小写；8 处端到端删除回归（§4.1 第 2 项） |
+| [006](006-api-contract-drift.md) | 契约漂移校验：单一来源是运行时 `app.openapi()` | `ffe096c` | 新增 `scripts/check_api_contract.py`；`types.ts` 15 接口字段 + `openapi.yaml` 48 条目；两次注入式取证（§4.1 第 3 项，次优形态） |
+| [007](007-ci-and-layers.md) | CI 门槛 + 分层依赖校验 | `bbe2392` | 新增 `.github/workflows/ci.yml` 与 `scripts/check_layers.py`（解析 design.md 的职责矩阵，顺带抓「新增模块忘登记」）；补齐 005 遗留的矩阵登记（§4.1 第 4 项，部分） |
+| [008](008-split-app-tests.md) | 拆分 `App` 集成测试：一个文件一个功能面 | `f270e7a` | 1521 行 / 69 例 → 11 个文件（最大 254 行）+ 3 个共享件；用例名逐字不变；**逐文件冷启动**暴露并修正一条顺序依赖断言（§4.1 第 5 项） |
+| [009](009-reclaim-compat-proxies.md) | 回收兼容代理：`ytdlp_service.py` 的 15 个转发层 | `e98abda` | 按「函数体只有一条原样转交语句」扫出 19 个候选，回收 15 个私有转发（含 5 个 0 调用点死代码）；cookies 三处注入接缝搬到 `browser_cookies`；1182 → 1130 行、方法数 72 → 57（§4.1 第 6 项） |
+| [010](010-baseline-sync-and-hash-backfill.md) | 收尾：回填 hash、同步基线与 `ai/` 链接自查 | 待回填 | 回填 003~009 的 hash；§2.1 刷新表改成「起点 / 终点」两列并换成 R9 后实测值；`docs-prompt.md` 与 `docs/testing.md` 的过期基线（含 `testing.md` 漏登记的 7 个测试文件）；按 GitHub slug 规则扫 `ai/**` 并修掉 9 处断链。**零源码改动** |
 
 ---
 

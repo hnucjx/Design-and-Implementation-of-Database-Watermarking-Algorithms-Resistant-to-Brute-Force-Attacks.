@@ -6,7 +6,7 @@
 | 实施时间 | 2026-10-02 17:19 ~ 17:27 +08:00 |
 | 依据 | [refactor.md](refactor.md) §4.1 第 3 项「`openapi.yaml` 与 `types.ts` 是两份手写的同一契约」 |
 | 起点 commit | `beb5b2c`（R5 提交后） |
-| 本轮提交 | 待回填（见文末「提交与回滚」） |
+| 本轮提交 | `ffe096c`（见文末「提交与回滚」） |
 | 结论 | **完成（采用次优形态）**。新增 `scripts/check_api_contract.py`：以运行时 `app.openapi()` 为单一来源，校验 `types.ts` 的 15 个接口字段与 `openapi.yaml` 的 48 个 API 表面条目；**两次注入式取证**证明它抓得住漂移；未改一行契约、未新增依赖 |
 
 ---
@@ -224,6 +224,6 @@ ApiErrorDetail  → None（错误 detail 不在运行时的 schemas 里）
 
 | 项 | 值 |
 | --- | --- |
-| 提交 hash | 待回填（记录与改动在同一次提交里，hash 无法写进自身） |
-| 回滚命令 | `git revert <hash>` |
+| 提交 hash | `ffe096c`（2026-10-02 收尾一轮回填） |
+| 回滚命令 | `git revert ffe096c` |
 | 记录约定 | 与 [bug-fix](../bug-fix/README.md) / [ui](../ui/README.md) 一致：下次触碰 `ai/refactor/` 时回填 hash |

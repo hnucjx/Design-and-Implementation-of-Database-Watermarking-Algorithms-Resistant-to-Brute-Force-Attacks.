@@ -30,7 +30,7 @@
 3. **不改前端一行**。
 4. **不收敛「产物路径的两条计算链」**：`job_artifacts.output_file`（本轮从 `main.py` 原样搬出）
    与 `job_manager._item_output_paths` 仍各算一次。收敛需要同时改 API 层与编排层，已登记为
-   [refactor.md §4.1](refactor.md#41-明确列为后续候选的本轮三轮不做) 第 1 条。
+   [refactor.md §4.1](refactor.md#41-后续候选清单登记为本轮三轮不做此后逐项单独一轮) 第 1 条。
 5. **不引入依赖注入框架**（`dependency-injector` / `punq` 等）：用一个 `frozen` dataclass 挂在
    `app.state` 上即可，引依赖违反 §3.1 第 6 条。
 6. **不给每个模块写新测试**：本轮只做结构搬迁（§3.1 第 7 条），新增测试仅用于给新抽出的**纯逻辑**
@@ -184,7 +184,7 @@ operation 的 `description`。这是「新增」，不是改写 —— 重构前
 4. **12 条新增 `description` 已进入线上契约。** 它们不改变任何行为，但会让 `openapi.yaml`（手写）
    与 `app.openapi()`（运行时）多 12 处差异。本轮**没有**重新生成/校对 `openapi.yaml` ——
    该文件与 `frontend/src/types.ts` 的单一来源问题已登记为
-   [refactor.md §4.1](refactor.md#41-明确列为后续候选的本轮三轮不做) 第 3 条。
+   [refactor.md §4.1](refactor.md#41-后续候选清单登记为本轮三轮不做此后逐项单独一轮) 第 3 条。
 5. **本轮的自动化边界**：OpenAPI 全等能证明「契约没变」，**不能**证明「路由内部逻辑逐字没变」。
    逐字性是靠「搬迁时函数体原样剪切 + 289 个既有用例」间接覆盖的，没有做函数体级的多重集合比对
    （R1 对前端做过，后端没有对应的便宜做法：函数都是方法绑定到 `app` 上的闭包，静态比对会大量假阳性）。

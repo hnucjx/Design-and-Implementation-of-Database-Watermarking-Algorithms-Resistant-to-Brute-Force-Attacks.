@@ -77,7 +77,7 @@ FastAPI 应用由 [create_app](../backend/app/main.py#L39) 创建，启动时：
 
 ### 错误翻译
 
-[error_advice.advise](../backend/app/error_advice.py#L116) 把异常链上的文本翻成「code + 结论 + 下一步」，判定顺序是 JS challenge → cookies → 代理 → 媒体流。`YtDlpService._exception_chain` 直接委托给它的 `exception_chain()`（BFS 展开 `__cause__` / `__context__`，去重防环）。
+[error_advice.advise](../backend/app/error_advice.py#L116) 把异常链上的文本翻成「code + 结论 + 下一步」，判定顺序是 JS challenge → cookies → 代理 → 媒体流。异常链本身由 `error_advice.exception_chain()` 展开（BFS 遍历 `__cause__` / `__context__`，去重防环）；`ytdlp_service` 里的分类函数**直接调用它**，不再经过本类的转发方法（见 [ai/refactor/009](../ai/refactor/009-reclaim-compat-proxies.md)）。
 
 调用点有两处，**都被 `try/except` 保护**（诊断本身出错绝不能改变重试与失败行为，测试里的 fake service 也没有这个方法）：profile 失败处与任务失败处，后者见 [_log_item_failure](../backend/app/job_manager.py#L1045)。
 

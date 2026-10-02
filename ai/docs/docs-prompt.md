@@ -49,7 +49,7 @@
 | `ai/refactor/refactor.md` | **重构总纲**：目标与非目标、判定准则、基线快照、路线图与逐轮索引。文档里解释「某处结构为什么这么分」时优先引用它。 |
 | `ai/refactor/NNN-*.md` | 逐轮重构记录（计划 / 实施方案 / 实施情况 / 验证 / 未覆盖），带明确时间戳。 |
 
-### 3.2 后端（`backend/app/`，`app/*.py` 33 个 + `app/routers/` 8 个）
+### 3.2 后端（`backend/app/`，`app/*.py` 34 个 + `app/routers/` 8 个）
 
 分层含义：L0 入口 / L1 契约 / L2 编排 / L3 领域 / L4 基础设施 / L5 纯工具。依赖只向下，L3 不得反向依赖 L2 或 L0。
 
@@ -107,20 +107,23 @@
 - `quality.ts`、`formatting.ts`：清晰度选项/降级按钮文案、格式化工具。
 - `styles.css`：设计 token 与浮层/抽屉样式（浮层内必须显式重置 `white-space` 与字重，否则会继承宿主元素）。**共用基类不得声明只为某一处用法需要的版式**（宽度、外边距）：基类若声明在变体之后，会以同优先级把变体的重置静默吃掉，见 `ai/ui/001`。同理，**固定宽度的网格轨道里，文本必须能断行**：右栏是写死的 `390px`（内容区 352px），一个不能断行的长 token（Windows 路径最典型）就足以让面板的 min-content 超过轨道并撑出整页横向滚动条；修法是 `overflow-wrap: anywhere`（**不能**用 `break-word`，后者不改变 min-content），见 `ai/ui/002`。再加一条：**会随数据变长的标签不得被 `nowrap` 锁成一行** —— `nowrap` 之下 `overflow-wrap` 与 `min-width: 0` 都无效，而 `text-overflow: ellipsis` 只有在元素真的被约束时才会出现（先确认 `scrollWidth > clientWidth` 成立），否则「省空间」会静默变成「撑版面」，见 `ai/ui/003`。
 - `vite-env.d.ts`：`vite/client` 类型引用，供测试用 `?raw` 读取样式源文。
-- `App.test.tsx`、`test/appFixtures.ts`、`test/setup.ts`：前端测试范围与夹具。其中一条是**样式源文不变式**（读 `styles.css?raw`），因为 jsdom 不做布局，布局类缺陷只有这一部分能进单测。
+- `frontend/src/*.test.tsx`（11 个文件，按功能面拆分）、`test/appHarness.ts`、`test/appFixtures.ts`、`test/cssRules.ts`、`test/setup.ts`：前端测试范围与共享件。测试台 `appHarness.ts` 是**唯一**的后端 `fetch` 替身与前后置钩子来源；`styles.test.ts` 有一条**样式源文不变式**（读 `styles.css?raw`），因为 jsdom 不做布局，布局类缺陷只有这一部分能进单测。每个测试文件都必须能单独跑绿（见 `ai/refactor/008`）。
 
 ### 3.4 配置、脚本与测试
 
 - `backend/pyproject.toml`、`frontend/package.json`：依赖、脚本、测试配置。
-- `backend/tests/`：18 个 `test_*.py` + `fakes.py`（当前 **320 passed**）。
-- `frontend/src/App.test.tsx`：当前 **69 passed**（`npx vitest run --environment jsdom`）。
+- `backend/tests/`：22 个 `test_*.py` + `fakes.py`（当前 **354 passed**）。
+- `frontend/src/*.test.tsx` + `src/styles.test.ts`：11 个测试文件，当前 **69 passed**（`npx vitest run --environment jsdom`）。
 - `scripts/`：
   - `docs.py`：文档工具链（`bootstrap` / `render` / `check`），固定版本 PlantUML。
   - `check_doc_anchors.py`：代码行锚点漂移检查（`--fix` 自动重算）。
+  - `check_layers.py`：**分层依赖校验**——解析 `docs/design.md` 的模块职责矩阵，与 `backend/app` 实际模块集合对比，并检查 import 方向只向下。
+  - `check_api_contract.py`：**契约漂移校验**——以运行时 `app.openapi()` 为单一来源，比对 `docs/openapi.yaml` 与 `frontend/src/types.ts`。
   - `bench_concurrency.py`、`bench_throttle_guard.py`：可离线复现的并发与节流基准。
   - `acceptance_network.py`、`acceptance_real.py`：需要真实网络的验收脚本（本机常因环境无法执行，属「未验证」事项）。
   - `export_cookies_via_cdp.py`：独立配置的有头浏览器导出 cookies（有域名校验，失败退出码 2）。
 - `.gitignore`、`.editorconfig`：哪些产物不入库、写作格式约定（UTF-8 / LF / 去行尾空格）。
+- `.github/workflows/ci.yml`：CI 门槛（`pytest` → `check_layers.py` → `check_api_contract.py` → `check_doc_anchors.py`，以及前端 `vitest` / `tsc` / `build`）。**不跑** `docs.py check`（UML 一致性依赖本机 Java + PlantUML + Graphviz 工具链），本地与 CI 的差异见 `docs/development.md`。
 
 > 每次任务请用 `git log --oneline` 与 `git status -sb` 确认当前基线，并在文档中的性能/行为结论处标注对应的计划、提交或修复记录编号。
 
@@ -166,7 +169,7 @@
 - API 表格中的每个 endpoint 必须能在 `main.py` 找到对应路由函数；schema 字段必须能在 `schemas.py` 找到定义。
 - 环境变量表的每一项必须能在 `config.py` 找到字段，默认值逐字一致；表头若写「列出全部字段」，就不能漏项。
 - 性能与稳定性相关的数字（重试上限、停滞阈值、chunk 大小、并发默认值、profile 链顺序）必须与 `ytdlp_service.py`、`job_manager.py`、`config.py` 一致；可由环境变量覆盖的，写明变量名。
-- 测试命令与用例总数必须与当前实际运行结果一致（当前后端 320、前端 69）。
+- 测试命令与用例总数必须与当前实际运行结果一致（当前后端 354、前端 69）。
 - 前端组件、后端模块的增减必须反映到 `design.md` 的模块矩阵、`implementation.md` 的对应章节，以及受影响的 UML 图。
 - 同一事实只在一处详述；其他文档用链接引用。
 
@@ -189,7 +192,7 @@ python scripts\docs.py check       # 校验本地链接 + SVG 与源一致
 | 源码 | 用途 |
 | --- | --- |
 | `system-context.puml` | 系统上下文/容器视图：用户、浏览器、FastAPI、SQLite、yt-dlp、ffmpeg、YouTube。 |
-| `component-overview.puml` | 前后端主要组件与模块边界（含前端 4 个组件与后端 L0~L5 分层分组）。 |
+| `component-overview.puml` | 前后端主要组件与模块边界（含前端 11 个组件与后端 L0~L5 分层分组）。 |
 | `download-lifecycle.puml` | 任务与子项生命周期状态图。 |
 | `single-video-sequence.puml` | 单视频解析、建任务、下载、进度回传时序。 |
 | `playlist-sequence.puml` | 合集选条目、按并发并行下载、聚合状态时序。 |
@@ -239,11 +242,13 @@ python scripts\docs.py check       # 校验本地链接 + SVG 与源一致
 
 ```powershell
 python -m compileall backend\app
-python -m pytest backend\tests -q                 # 当前基线 320 passed
+python -m pytest backend\tests -q                 # 当前基线 354 passed
 cd frontend; npx vitest run --environment jsdom   # 当前基线 69 passed
 cd frontend; npx tsc --noEmit                     # 类型检查
 python scripts\docs.py check                      # 本地链接 + UML 产物一致
 python scripts\check_doc_anchors.py               # 代码行锚点无漂移
+python scripts\check_layers.py                    # 分层依赖方向 + 模块矩阵登记
+python scripts\check_api_contract.py              # 运行时契约与 openapi.yaml / types.ts 的漂移
 git diff --check                                  # 无行尾空白与冲突标记
 ```
 
@@ -304,7 +309,7 @@ git ls-remote origin main   # 校验远端 sha 与本地一致
 
 ---
 
-## 11. 当前基线快照（2026-10-02，自 commit `18537e8` 起；本轮已更新前端测试与界面缺陷记录）
+## 11. 当前基线快照（2026-10-02，自 commit `18537e8` 起；本轮已同步三轮重构 R1~R3 与后续六个候选 R4~R9 之后的模块、测试与记录基线）
 
 每次执行任务时更新本节；它只用于快速判断「哪些数字变了」，不作为事实来源。
 不改本节的 commit 值——写了就必然自我指涉，反查请用
@@ -312,13 +317,14 @@ git ls-remote origin main   # 校验远端 sha 与本地一致
 
 | 项 | 值 |
 | --- | --- |
-| 后端模块 | 33 个 `.py`（其中 `app/*.py` 33 个，另有 `app/routers/` 8 个） |
-| 后端测试 | 18 个 `test_*.py` + `fakes.py`，**320 passed** |
-| 前端测试 | `App.test.tsx`，**69 passed** |
+| 后端模块 | 34 个 `.py`（`app/*.py` 34 个，另有 `app/routers/` 8 个） |
+| 后端测试 | 22 个 `test_*.py` + `fakes.py`，**354 passed** |
+| 前端测试 | `frontend/src/*.test.tsx` + `src/styles.test.ts`（11 个文件）+ `src/test/` 三个共享件，**69 passed** |
 | HTTP 操作 | 28 个（`openapi.yaml` 的 `operationId` 数：26 个 `/api/*` + `/health` + 静态首页 `/`） |
 | 环境变量 | `YTDL_` 前缀，`AppSettings` 共 22 个字段（另有 `YTDL_LOG_LEVEL` 不属于 `AppSettings`） |
 | UML 图 | 15 张（`.puml` 与 `.svg` 成对） |
 | 截图 | 4 张 |
 | 修复记录 | `ai/bug-fix/` 001~010（功能类），已知未处理 12 条 |
 | 界面缺陷记录 | `ai/ui/` 001（布局对齐）、002（固定轨道被内容撑破）、003（会随数据变长的标签被 `nowrap` 锁成一行 → 顶宽整页）；记录插图 1 张（`ai/ui/assets/`）；已知未处理 1 条（解析后可能残留一个界面上摘不掉的语言代码）；目录约定见 `ai/ui/README.md` |
+| 重构记录 | `ai/refactor/` 001~009（路线图 R1~R3 + 后续候选 R4~R9，六项候选已全部结项），索引与判定准则见 `ai/refactor/refactor.md` |
 | 本机渲染基线 | PlantUML `1.2026.5`、Java 25.0.3、Graphviz 15.1.1 |

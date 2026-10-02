@@ -200,7 +200,7 @@ B 与 D 是**故意保留的失败用例**：它们失败才反证 A/C 的成功
 - **新增了一个持久化面**：`data/logs/app.log`（2 MiB × 3）。`data/` 与 `*.log` 都在 `.gitignore` 内，不会入库；
   写入前统一过 `sanitize_log_message`。
 - `/api/proxy/test` 会按请求体里的地址发一次请求。本工具本来就允许配置代理，且只绑定 `127.0.0.1`、
-  无认证；仍按「新增网络访问面」登记进 [安全审计报告](../docs/safety-review.md) 第 18 节待复核。
+  无认证；仍按「新增网络访问面」登记进 [安全审计报告](../../docs/safety-review.md) 第 18 节待复核。
 - `/api/diagnostics` 新增 `log_file`（本地绝对路径）与 `sanitized_environment`（被摘变量的原值，可能含本地路径）。
   都是排障必需，且不返回文件内容；同样登记在第 18 节。
 - 回滚单点：三个新接口都是只读的，删掉它们不影响下载链路；`logging_setup` 与 `runtime_env`

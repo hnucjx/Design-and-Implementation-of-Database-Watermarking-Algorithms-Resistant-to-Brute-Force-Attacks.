@@ -12,7 +12,7 @@
 python -m compileall backend\app
 ```
 
-后端测试（当前基线：**320 passed**）：
+后端测试（当前基线：**354 passed**）：
 
 ```powershell
 python -m pytest backend\tests -q
@@ -98,7 +98,7 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 
 ## 后端测试范围
 
-后端测试位于 [backend/tests](../backend/tests/)。
+后端测试位于 [backend/tests](../backend/tests/)（22 个 `test_*.py` + [fakes.py](../backend/tests/fakes.py)，当前 **354 passed**）：
 
 | 文件 | 重点 |
 | --- | --- |
@@ -117,6 +117,13 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 | [test_connectivity.py](../backend/tests/test_connectivity.py) | 代理探针：直连与走代理分别构造正确的 opener、HTTP 错误与网络异常都变成可展示证据、失败必带 `next_steps`、`direct` 失败文案说明「可能预期」。 |
 | [test_cookie_health.py](../backend/tests/test_cookie_health.py) | cookies 体检：格式、域名分布、鉴权项命中/缺失、过期、`LOGGED_IN` 三态（真/假/未知）、结论与下一步。 |
 | [test_resolution_decisions.py](../backend/tests/test_resolution_decisions.py) | 降级**判定**的纯单测（31 例，0.12 s）：四种降级原因各自的输入条件、"该不该找降级候选"的两个早退条件、两句失败文案不可互换、"元数据不可得"与"零个格式"必须区分、每个 reason 都能被 `fallback_policy` 翻成非空文案。 |
+| [test_output_paths.py](../backend/tests/test_output_paths.py) | 产物位置计算：候选链「记录值优先 + 去重」、成品定位与 sidecar 排除；含一条**与重构前实现逐项对照**的用例（见 [ai/refactor/004](../ai/refactor/004-artifact-paths.md)）。 |
+| [test_safe_delete.py](../backend/tests/test_safe_delete.py) | 删除白名单的路径安全判定：根目录与子孙放行，父目录、无关绝对路径、以及**共享字符串前缀的兄弟目录**一律拒绝，Windows 大小写差异视为同一根（见 [ai/refactor/005](../ai/refactor/005-safe-delete.md)）。 |
+| [test_proxy.py](../backend/tests/test_proxy.py) | 代理**解析**：`direct` 哨兵、显式 > 系统 > 环境变量的优先级、环境变量只报告不落盘、`no_proxy` 绕过与凭据脱敏。 |
+| [test_dev_server.py](../backend/tests/test_dev_server.py) | 端口预检与「谁占了这个端口」：`netstat` / `tasklist` 输出解析、可用端口向后查找、`YTDL_API_PORT` 默认值与 `.env` 锚定仓库根（[009](../ai/bug-fix/009-local-dev-port-is-occupied-and-unconfigurable.md)）。 |
+| [test_system_open.py](../backend/tests/test_system_open.py) | 本地打开：Windows 目录开新窗口、文件走默认关联、有可用播放器时优先、无可用播放器时如实报告缺失。 |
+| [test_finally_guards.py](../backend/tests/test_finally_guards.py) | **守护测试**：扫源码禁止 `finally` 里出现 `return`；自带「违规能被抓到」「嵌套作用域里的 `return` 不算违规」两条自检。 |
+| [test_job_manager_finally.py](../backend/tests/test_job_manager_finally.py) | 行为层回归：条目被删除时收尾不再吞掉逃逸中的异常，崩溃的条目被判 `failed` 而不是永久停在 `running`（[008](../ai/bug-fix/008-return-in-finally-swallows-the-real-error.md)）。 |
 | [fakes.py](../backend/tests/fakes.py) | API 测试的 fake service 和辅助对象，其中 `RaisingUnselectableProbeService` 刻意让 `prepare_download` **抛异常**而不是返回 `is_selectable=False` —— 复现真实 yt-dlp 的行为，防止降级分支再次退化成死代码。 |
 
 默认自动测试不依赖真实 YouTube 下载，避免网络、地区、cookies 和 YouTube 风控导致不稳定。

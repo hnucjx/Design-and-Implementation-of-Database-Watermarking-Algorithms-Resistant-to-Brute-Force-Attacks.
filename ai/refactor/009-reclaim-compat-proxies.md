@@ -6,7 +6,7 @@
 | 实施时间 | 2026-10-02 17:44 ~ 17:53 +08:00 |
 | 依据 | [refactor.md](refactor.md) §4.1 第 6 项「`ytdlp_service.py` 里约 20 个上一轮留下的兼容代理方法」 |
 | 起点 commit | `f270e7a`（R8 提交后） |
-| 本轮提交 | 待回填（见文末「提交与回滚」） |
+| 本轮提交 | `e98abda`（见文末「提交与回滚」） |
 | 结论 | **完成**。删掉 15 个「只有一条转发语句」的私有方法，抽掉一层无逻辑间接；cookies 三处注入接缝从「service 的转发方法」搬到实现所在的 `browser_cookies`；`ytdlp_service.py` 1182 → **1130 行**，方法数 72 → **57** |
 
 ---
@@ -271,6 +271,6 @@ BrowserCookieImporter(candidates=AUTO_BROWSER_COOKIE_CANDIDATES)
 
 | 项 | 值 |
 | --- | --- |
-| 提交 hash | 待回填（记录与改动在同一次提交里，hash 无法写进自身） |
-| 回滚命令 | `git revert <hash>` |
+| 提交 hash | `e98abda`（2026-10-02 收尾一轮回填） |
+| 回滚命令 | `git revert e98abda` |
 | 记录约定 | 与 [bug-fix](../bug-fix/README.md) / [ui](../ui/README.md) 一致：下次触碰 `ai/refactor/` 时回填 hash |

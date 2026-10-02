@@ -4,15 +4,16 @@
 
 ## 后端入口
 
-FastAPI 应用由 [create_app](../backend/app/main.py#L53) 创建，启动时：
+FastAPI 应用由 [create_app](../backend/app/main.py#L39) 创建，启动时：
 
 - 创建配置和目录。
 - 初始化 SQLite engine 和表结构。
 - 创建 `EventBroker`。
 - 创建 `YtDlpService` 并注入 PO token、chunk、throttled rate、aria2c 等配置。
 - 创建 `JobManager` 并在 lifespan 中启动/停止 worker。
+- 把这些依赖装进 [ApiContext](../backend/app/api_context.py#L27) 并挂到 `app.state`。
 
-路由函数保留 HTTP 入口、依赖注入和错误转换；任务序列化逻辑委托给 [job_read_model.py](../backend/app/job_read_model.py#L12)。
+`create_app` 只做装配：HTTP 路由按资源拆到 [routers/](../backend/app/routers/__init__.py#L21) 下（`diagnostics` / `cookies` / `analyze` / `jobs` / `job_files` / `settings` / `events`），由 `API_ROUTERS` 统一挂载。路由只做「取参 → 调辅助 → 定状态码」：请求级依赖经 [api_context.py](../backend/app/api_context.py#L50) 的 `ContextDep` / `SessionDep` 取，跨路由复用的任务/条目定位、设置读写与 cookies 处理在 [api_support.py](../backend/app/api_support.py#L26)，产物定位与本机打开在 [job_artifacts.py](../backend/app/job_artifacts.py#L29)。任务序列化逻辑委托给 [job_read_model.py](../backend/app/job_read_model.py#L12)，状态转换一律委托 `JobManager`。
 
 ## 数据模型
 

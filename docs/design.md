@@ -20,9 +20,13 @@
 
 | 模块 | 层 | 职责 | 不负责 |
 | --- | --- | --- | --- |
-| [main.py](../backend/app/main.py#L53) | L0 入口 | 装配应用与依赖、声明路由、错误状态码映射、静态资源托管、lifespan 启停。 | 不写业务规则，不做状态转换，不构造 yt-dlp 参数。 |
+| [main.py](../backend/app/main.py#L39) | L0 入口 | **只做装配**：建 `ApiContext`、挂载 `routers/` 下的 `APIRouter`、静态资源托管、lifespan 启停。 | 不声明路由（路由在 `routers/`），不写业务规则，不做状态转换，不构造 yt-dlp 参数。 |
+| [routers/](../backend/app/routers/__init__.py#L21) | L0 入口 | 按资源分模块声明 HTTP 路由（`diagnostics` / `cookies` / `analyze` / `jobs` / `job_files` / `settings` / `events`）：取参、调辅助、定状态码。 | 不做状态转换，不直接调用 yt-dlp，不写领域规则（产物定位见 `job_artifacts`，设置与错误映射见 `api_support`）。 |
+| [api_context.py](../backend/app/api_context.py#L27) | L0 入口 | 请求级依赖容器 `ApiContext`（`frozen` dataclass）+ `get_context` / `get_session` 依赖别名。 | 不装配依赖（装配在 `main.py`），不写业务规则。 |
+| [api_support.py](../backend/app/api_support.py#L26) | L0 入口 | 路由支撑：任务/条目定位与 404、设置读写与响应构造、cookies 元数据提取、目录选择。 | 不声明路由，不做状态转换。 |
+| [job_artifacts.py](../backend/app/job_artifacts.py#L29) | L0 入口 | 产物**定位**（一条候选链）与本机**打开**（播放 / 打开所在目录）。 | 不删文件（删除带白名单校验，属 `job_manager`），不决定用什么播放器（属 `system_open`）。 |
 | [__main__.py](../backend/app/__main__.py#L64) | L0 入口 | 本地启动入口：解析命令行、启动前做端口预检并识别占用者、交给 uvicorn。 | 不装配应用（那是 `main.py`），不写业务规则。 |
-| [config.py](../backend/app/config.py#L19) | L1 契约 | 声明全部设置字段、默认值与约束、目录准备。 | 不读数据库（`Setting` 覆盖在 `main.py` 里做）。 |
+| [config.py](../backend/app/config.py#L19) | L1 契约 | 声明全部设置字段、默认值与约束、目录准备。 | 不读数据库（`Setting` 覆盖在 `api_support.py` 里做）。 |
 | [schemas.py](../backend/app/schemas.py#L14) | L1 契约 | 定义 HTTP 线上模型与枚举。 | 不引用 yt-dlp 类型，不含业务逻辑。 |
 | [models.py](../backend/app/models.py#L27) | L1 契约 | 定义持久化表结构与 `JobStatus`。 | 不做读写编排。 |
 | [job_manager.py](../backend/app/job_manager.py#L39) | L2 编排 | 队列、worker、并发、暂停/重启/删除、进度 hook、错误分类、终态收敛、事件发布。 | 不直接调用 yt-dlp（经 `YtDlpService`），不解析 yt-dlp 内部结构（经 formats 工具）。 |
@@ -90,7 +94,8 @@ PlantUML 源文件：[module-dependencies.puml](diagrams/module-dependencies.pum
 2. **L3 不得反向依赖 L2 或 L0**。典型反例：让 `ytdlp_service` 去更新 `JobItem` 状态。正确做法是把结果返回给 `job_manager`，由编排层决定状态。
 3. **L1 保持纯净**：`schemas.py` 不导入 yt-dlp，`config.py` 不导入数据库层。这样 API 契约可以脱离运行时被单独审阅、测试和生成文档。
 4. 新能力优先落到 L3 的单一模块（例如"判断是否需要合并音视频"属于 `ytdlp_formats.requires_ffmpeg`），只有需要"在多个模块之间做决定"时才上移到 L2。
-5. 同一层内部的横向依赖要显式说明理由。当前存在的横向依赖：`job_manager` → `ytdlp_formats`（复用降级计算）与 `job_read_model` → `output_paths`（复用路径发现），两者都是复用纯函数，不构成循环。
+5. 同一层内部的横向依赖要显式说明理由。当前存在的横向依赖：`job_manager` → `ytdlp_formats`（复用降级计算）与 `job_read_model` → `output_paths`（复用路径发现），两者都是复用纯函数，不构成循环。L0 内部另有一组单向横向依赖：`routers/*` → `api_support` / `job_artifacts` / `api_context`，方向固定（路由是叶子，支撑模块不反向导入任何路由），因此不会成环。
+6. **组合根只做装配**：`create_app` 里出现业务分支即为越界 —— 判断「这段代码该放哪」的判据是"它需不需要一个 `Request`"，需要就进 `routers/`，只是一段被多个路由复用的逻辑就进 `api_support.py` / `job_artifacts.py`。
 
 ## 运行时并发模型
 
@@ -178,9 +183,9 @@ worker 领取 item → 声明式预检测（`prepare_download`，命中则不再
 | 想做的事 | 正确落点 |
 | --- | --- |
 | 新增一个下载 profile（新的 player client / impersonation 组合） | 在 `ytdlp_service.py` 加常量并扩展 `_download_profiles()`、`_youtube_extractor_args()`、`_impersonation_target()`；若属于 anti-403 链路需同步 `YOUTUBE_ANTI403_PROFILES`。 |
-| 新增一个可配置项 | `config.py` 加字段 → 需要的话在 `main.py` 的 `_apply_stored_settings` / `_settings_response` 与 `Setting` 表打通 → 补 `/api/settings` 与诊断字段 → 更新环境变量文档。 |
+| 新增一个可配置项 | `config.py` 加字段 → 需要的话在 `api_support.py` 的 `apply_stored_settings` / `settings_response` 与 `Setting` 表打通 → 补 `/api/settings` 路由（`routers/settings.py`）与诊断字段 → 更新环境变量文档。 |
 | 新增一个降级原因 | 在 `fallback_policy.py` 加常量与文案，并补一条 `restart_resolution` 规则；不要在 `job_manager` 里内联中文字符串。 |
-| 新增一个 API | 在 `main.py` 声明路由，模型放 `schemas.py`；涉及状态转换的一律委托 `JobManager`，不直接改表。 |
+| 新增一个 API | 在 `routers/` 下对应资源的模块里声明路由（新资源就新建一个模块并登记进 `API_ROUTERS`），模型放 `schemas.py`，跨路由复用的逻辑放 `api_support.py` / `job_artifacts.py`；涉及状态转换的一律委托 `JobManager`，不直接改表。 |
 | 新增一种错误分类 | 在 `YtDlpService` 加静态判定函数，在 `_log_item_failure` 加类别名，并补单测确认不会与其他分类互相误命中（尤其注意关键词冲突）。 |
 
 ## 已知限制与设计债

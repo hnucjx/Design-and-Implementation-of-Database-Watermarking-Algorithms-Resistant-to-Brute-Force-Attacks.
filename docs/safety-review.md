@@ -39,7 +39,7 @@
 详情：
 
 - 文件删除在 [_delete_output_files](../backend/app/job_manager.py#L346) 中执行，所有候选路径通过 [_is_under_allowed_root](../backend/app/job_manager.py#L368) 验证，仅允许在下载根目录或任务下载子目录下操作
-- 本地播放/打开文件夹接口（[main.py](../backend/app/main.py#L342) 起）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
+- 本地播放/打开文件夹接口（[routers/job_files.py](../backend/app/routers/job_files.py#L16) 起）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
 - [safe_path_name](../backend/app/paths.py#L7) 为 playlist 目录名移除 `<>:"/\|?*` 等不安全字符，并限制长度为 120 字符
 - [discover_output_file_candidates](../backend/app/output_paths.py#L30) 仅在给定的 `job_download_dir` 内按 YouTube video ID 匹配文件，不遍历上级目录
 
@@ -94,7 +94,7 @@
 
 详情：
 
-- [GET /api/diagnostics](../backend/app/main.py#L139) 仅返回 PO token / visitor data 的"是否已配置"布尔值，不返回原文（[get_dependency_status](../backend/app/ytdlp_service.py#L287)）
+- [GET /api/diagnostics](../backend/app/routers/diagnostics.py#L29) 仅返回 PO token / visitor data 的"是否已配置"布尔值，不返回原文（[get_dependency_status](../backend/app/ytdlp_service.py#L287)）
 - [sanitize_log_message](../backend/app/log_safety.py#L11) 在写入日志前通过正则替换移除 URL query string（包含 cookie、token、authorization 等参数）
 - 代理 URL 在日志与 API 响应里都先经 [redact_proxy_credentials](../backend/app/proxy.py#L62) 脱敏（`user:pass@` → `***`）
 - cookies 文件（`data/cookies.txt`）和 `.env` 文件均在 `.gitignore` 中排除，不会进入 Git

@@ -6,7 +6,7 @@
 
 本项目提供一个本机单用户 YouTube 下载控制台，使用户能够解析公开视频或 playlist，选择清晰度和字幕选项，将下载任务加入队列，并在任务中心观察状态、失败原因和最终输出信息。
 
-系统范围由 [FastAPI 路由](../backend/app/main.py#L135)、[API schema](../backend/app/schemas.py#L14) 和 [前端类型](../frontend/src/types.ts#L1) 共同定义。
+系统范围由 [routers/](../backend/app/routers/__init__.py)、[API schema](../backend/app/schemas.py#L14) 和 [前端类型](../frontend/src/types.ts#L1) 共同定义。
 
 ## 用户角色
 
@@ -20,23 +20,23 @@
 
 | 编号 | 需求 | 代码依据 |
 | --- | --- | --- |
-| FR-1 | 支持单视频和 playlist 元数据解析。 | [`POST /api/analyze`](../backend/app/main.py#L222)、[`AnalyzeResponse`](../backend/app/schemas.py#L43) |
-| FR-2 | 支持选择 playlist 子项并创建下载任务。 | [`_selected_entries`](../backend/app/main.py#L531)、[`CreateJobRequest`](../backend/app/schemas.py#L72) |
+| FR-1 | 支持单视频和 playlist 元数据解析。 | [`POST /api/analyze`](../backend/app/routers/analyze.py#L16)、[`AnalyzeResponse`](../backend/app/schemas.py#L43) |
+| FR-2 | 支持选择 playlist 子项并创建下载任务。 | [`selected_entries`](../backend/app/api_support.py#L55)、[`CreateJobRequest`](../backend/app/schemas.py#L72) |
 | FR-3 | 支持视频+字幕、仅视频、仅字幕三种模式。 | [`DownloadMode`](../backend/app/schemas.py#L7) |
 | FR-4 | 用户只选择清晰度，默认 `1440p`；后端自动选择具体格式。 | [`format_selector`](../backend/app/ytdlp_formats.py#L9) |
 | FR-5 | 下载前预检测计划分辨率、格式和视频大小，任务中心展示实际值。 | [`prepare_download`](../backend/app/ytdlp_service.py#L393)、[`_apply_download_preparation`](../backend/app/job_manager.py#L983) |
 | FR-6 | 支持明确的分辨率降级原因和重启建议。 | [`fallback_policy.py`](../backend/app/fallback_policy.py#L4) |
-| FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除、批量操作，以及本地播放/打开文件夹。 | [`batch_job_action`](../backend/app/main.py#L276)、[`system_open.py`](../backend/app/system_open.py) |
+| FR-7 | 支持任务暂停、重启、删除、playlist 子视频删除、批量操作，以及本地播放/打开文件夹。 | [`batch_job_action`](../backend/app/routers/jobs.py#L79)、[`system_open.py`](../backend/app/system_open.py) |
 | FR-8 | 默认请求人工字幕和自动字幕；缺少某类字幕时 fallback 到另一类可用字幕，并显示来源与格式。 | [`DownloadOptions`](../backend/app/schemas.py#L56)、[`DownloadOptionsPanel`](../frontend/src/components/DownloadOptionsPanel.tsx#L19) |
-| FR-9 | 支持 cookies 上传、浏览器导入和清除。 | [`/api/cookies`](../backend/app/main.py#L470)、[`BrowserCookieImporter`](../backend/app/browser_cookies.py#L67) |
+| FR-9 | 支持 cookies 上传、浏览器导入和清除。 | [`/api/cookies`](../backend/app/routers/cookies.py#L60)、[`BrowserCookieImporter`](../backend/app/browser_cookies.py#L67) |
 | FR-10 | 支持并发、限速、重试次数和 aria2c 连接数作为运行时设置即时保存；限速/重试变更会让当前视频断点续传重启以应用新参数。 | [`SettingsUpdate`](../backend/app/schemas.py#L182)、[`set_runtime_download_defaults`](../backend/app/job_manager.py#L85) |
-| FR-11 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/main.py#L395)、[`EventBroker`](../backend/app/events.py#L7) |
-| FR-12 | 支持诊断依赖状态、cookies 状态和稳定性参数。 | [`/api/diagnostics`](../backend/app/main.py#L139)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L287) |
+| FR-11 | 支持 SSE 事件流和任务轮询。 | [`/api/events`](../backend/app/routers/events.py#L15)、[`EventBroker`](../backend/app/events.py#L7) |
+| FR-12 | 支持诊断依赖状态、cookies 状态和稳定性参数。 | [`/api/diagnostics`](../backend/app/routers/diagnostics.py#L29)、[`get_dependency_status`](../backend/app/ytdlp_service.py#L287) |
 | FR-13 | 下载停滞可观测：在可配置窗口内没有新增字节时主动判为失败，而不是永久 `running`。 | [`StallGuard`](../backend/app/stall_guard.py#L32)、[`_download_once`](../backend/app/ytdlp_service.py#L588) |
 | FR-14 | 媒体流失败时在错误文案中带上当前 cookies 状态，便于区分「未配置 cookies」与网络问题。 | [`_media_stream_failure_message`](../backend/app/job_manager.py#L1082) |
-| FR-15 | 代理可作为配置项读写（留空=自动、`direct`=强制直连、其余按 URL），并能**真的发一次请求**验证连通性，返回状态码、耗时、字节数与原始异常。 | [`proxy.py`](../backend/app/proxy.py#L169)、[`POST /api/proxy/test`](../backend/app/main.py#L159) |
-| FR-16 | 已配置的 cookies 可被校验：离线检查格式/域名/鉴权项/过期，可选联网确认登录态，输出「未配置 / 未登录 / 已登录」三档结论与证据。 | [`cookie_health.py`](../backend/app/cookie_health.py#L234)、[`POST /api/cookies/verify`](../backend/app/main.py#L184) |
-| FR-17 | 依赖与 JS 运行时状态可在不重启应用的前提下重新探测，并把结论回显到界面。 | [`POST /api/diagnostics/runtime`](../backend/app/main.py#L210)、[`runtime_env.py`](../backend/app/runtime_env.py#L58) |
+| FR-15 | 代理可作为配置项读写（留空=自动、`direct`=强制直连、其余按 URL），并能**真的发一次请求**验证连通性，返回状态码、耗时、字节数与原始异常。 | [`proxy.py`](../backend/app/proxy.py#L169)、[`POST /api/proxy/test`](../backend/app/routers/diagnostics.py#L65) |
+| FR-16 | 已配置的 cookies 可被校验：离线检查格式/域名/鉴权项/过期，可选联网确认登录态，输出「未配置 / 未登录 / 已登录」三档结论与证据。 | [`cookie_health.py`](../backend/app/cookie_health.py#L234)、[`POST /api/cookies/verify`](../backend/app/routers/cookies.py#L24) |
+| FR-17 | 依赖与 JS 运行时状态可在不重启应用的前提下重新探测，并把结论回显到界面。 | [`POST /api/diagnostics/runtime`](../backend/app/routers/diagnostics.py#L52)、[`runtime_env.py`](../backend/app/runtime_env.py#L58) |
 | FR-18 | 界面上的解释性内容默认收起，挂在其所解释的对象旁边，按需展开；展开时不抢占输入焦点、不阻塞其他操作，钉住状态可记忆。 | [`HelpPopover`](../frontend/src/components/HelpPopover.tsx#L42)、[用户手册：辅助说明的查看方式](user-manual.md#辅助说明的查看方式) |
 
 ## 非功能需求

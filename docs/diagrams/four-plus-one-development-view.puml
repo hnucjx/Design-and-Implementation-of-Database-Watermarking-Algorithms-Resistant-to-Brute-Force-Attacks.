@@ -26,6 +26,16 @@ package "frontend/src" {
 
 package "backend/app" {
   [main.py] as Main
+  [routers/diagnostics.py] as RtDiagnostics
+  [routers/cookies.py] as RtCookies
+  [routers/analyze.py] as RtAnalyze
+  [routers/jobs.py] as RtJobs
+  [routers/job_files.py] as RtJobFiles
+  [routers/settings.py] as RtSettings
+  [routers/events.py] as RtEvents
+  [api_context.py] as ApiContext
+  [api_support.py] as ApiSupport
+  [job_artifacts.py] as JobArtifacts
   [config.py] as Config
   [schemas.py] as Schemas
   [models.py] as Models
@@ -98,6 +108,15 @@ CookieSection --> HelpPopover
 
 CliEntry --> Main
 CliEntry --> DevServer
+Main --> RtDiagnostics
+Main --> RtCookies
+Main --> RtAnalyze
+Main --> RtJobs
+Main --> RtJobFiles
+Main --> RtSettings
+Main --> RtEvents
+Main --> ApiContext
+Main --> ApiSupport
 Main --> Config
 Main --> Schemas
 Main --> Manager
@@ -108,6 +127,39 @@ Main --> CookieHealth
 Main --> Connectivity
 Main --> RuntimeEnv
 Main --> LoggingSetup
+RtAnalyze --> ApiContext
+RtAnalyze --> ApiSupport
+RtAnalyze --> Service
+RtCookies --> ApiContext
+RtCookies --> ApiSupport
+RtCookies --> CookieHealth
+RtCookies --> ProxyResolver
+RtDiagnostics --> ApiContext
+RtDiagnostics --> Connectivity
+RtDiagnostics --> ProxyResolver
+RtDiagnostics --> RuntimeEnv
+RtJobs --> ApiContext
+RtJobs --> ApiSupport
+RtJobs --> Manager
+RtJobFiles --> ApiContext
+RtJobFiles --> ApiSupport
+RtJobFiles --> JobArtifacts
+RtSettings --> ApiContext
+RtSettings --> ApiSupport
+RtEvents --> Broker
+ApiContext --> Config
+ApiContext --> DB
+ApiContext --> Manager
+ApiContext --> Service
+ApiSupport --> ReadModel
+ApiSupport --> Models
+ApiSupport --> Schemas
+ApiSupport --> Service
+ApiSupport --> ProxyResolver
+ApiSupport --> Paths
+JobArtifacts --> Models
+JobArtifacts --> OutputPaths
+JobArtifacts --> SystemOpen
 Manager --> Models
 Manager --> Service
 Manager --> Broker

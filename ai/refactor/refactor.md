@@ -19,7 +19,7 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 
 | 位置 | 现状 | 为什么现在是问题 |
 | --- | --- | --- |
-| `frontend/src/App.tsx` | **1128 行**，一个文件里塞了 1 个状态容器 + 6 个展示组件 + 3 个文案函数 | 展示改版要碰状态容器；状态改动要通读 1100 行。两者变化频率完全不同，却被绑在一个文件里 |
+| `frontend/src/App.tsx` | **1128 行**，一个文件里塞了 1 个状态容器 + 7 个内部组件（5 个展示组件 + 2 个基础件）+ 5 个文案/映射函数 | 展示改版要碰状态容器；状态改动要通读 1100 行。两者变化频率完全不同，却被绑在一个文件里 |
 | `backend/app/main.py` | **722 行**，其中 `create_app` 一个函数 **455 行**、内联声明 **24 条路由** | 组合根同时承担了「路由声明 + 请求校验 + 路径解析 + 设置读写」。新增一个接口要在一个 455 行的函数里找位置 |
 | `backend/app/job_manager.py` | **1174 行**，其中「清晰度降级」的**决策 + 原因 + 用户文案**散在 10 个方法里 | 降级是本项目历史上唯一反复出缺陷的策略（[010](../bug-fix/010-unselectable-probe-raise-skips-the-fallback.md) 整段降级曾是死代码），而它的判据至今只能靠跑整条下载链路来验 |
 
@@ -53,6 +53,21 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 | `frontend/src/components/JobQueue.tsx` | 512 | 已是独立组件，边界清楚 |
 | `backend/tests/test_api.py` | 2208 | — |
 | `backend/app/schemas.py` | 256 | 线上契约，**不动** |
+
+### 2.1 每轮结束后的「刷新」（随轮次滚动更新）
+
+上表是**写这份总纲时**的快照。每轮重构都会改动其中若干项，因此每轮结束时把新值记在这里，
+而不是回头改写上表（保留"改之前长什么样"的证据）。
+
+| 项 | 写总纲时（R1 前） | **R2 后（当前）** | 取证命令 |
+| --- | --- | --- | --- |
+| 后端模块 | 29 个 `.py` / 6026 行 | **32 个 `.py` / 5791 行**，另有 `routers/` 8 个 `.py` / 596 行 | `ls backend/app/*.py \| wc -l`、`wc -l backend/app/*.py \| tail -1` |
+| 前端源码 | 13 个文件 / 4699 行 | **23 个文件 / 4790 行**（R1 后） | `find frontend/src -name '*.ts' -o -name '*.tsx' \| wc -l` |
+| `backend/app/main.py` | 722 行 | **130 行** | `wc -l backend/app/main.py` |
+| `frontend/src/App.tsx` | 1128 行 | **446 行**（R1 后） | `wc -l frontend/src/App.tsx` |
+| 后端测试 | 289 passed | **289 passed** | 见上表命令 |
+| 前端测试 | 69 passed | **69 passed** | 见上表命令 |
+| 文档锚点 | 无漂移 / 111 处待复核 | **无漂移 / 148 处待复核** | `python scripts/check_doc_anchors.py` |
 
 ---
 
@@ -102,8 +117,8 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 
 写在这里是为了**防止每轮范围膨胀**：发现了就登记，不动手。
 
-1. **产物路径有两条计算链。** `main.py` 的 `_output_file` / `_item_folder` / `_job_folder` 与
-   `job_manager.py` 的 `_item_output_paths` 各算一次「这个条目的文件在哪」，命中 §3 第 5 条。
+1. **产物路径有两条计算链。** `job_artifacts.py` 的 `output_file` / `item_folder` / `job_folder`
+   （R2 从 `main.py` 原样搬出）与 `job_manager.py` 的 `_item_output_paths` 各算一次「这个条目的文件在哪」，命中 §3 第 5 条。
    收敛它们需要同时改 API 层与编排层，与 R2 的边界重叠，拆成独立一轮更干净。
 2. **`job_manager.py` 的「安全删除」白名单**（`_delete_output_files` / `_is_under_allowed_root`）
    是路径安全的承重逻辑，却只能靠跑任务来验 —— 它应该和 R3 同类地纯函数化，但属另一个主题。
@@ -134,6 +149,11 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 - 后端测试必须给 `--basetemp` 指到仓库内，否则 pytest 收尾清理系统 Temp 会被 safe-delete 拦截，
   **连摘要行都打不出来**：
   `./.venv/Scripts/python.exe -m pytest backend/tests -q -p no:cacheprovider --basetemp=tmp_pytest/runNNN`
+- **`--basetemp` 指的目录必须不存在**（R2 实测）。它若已存在，pytest 会在会话启动时装整个
+  `rmtree` 它；工作区内一次删 137 个文件会触发沙箱批量删除守卫
+  （`SAFE_DELETE_BULK_CONFIRM_REQUIRED`，阈值 50），表现为**每个用 `tmp_path` 的用例
+  error at setup**（实测 104 passed / 185 errors），而错误栈指向 `pytest_asyncio` 的 fixture 钩子，
+  **看起来像插件坏了**。换一个从未用过的 `runNNN` 即恢复。
 - 后端依赖只在仓库根 `.venv`（`sqlalchemy` / `sqlmodel` / `yt_dlp` 都在那里）；
   managed 解释器跑 pytest 会 6 个模块收集失败，那是环境问题不是代码问题。
 - `npm run build` 的 `emptyDir` 走 `rmSync` 会被拦，需要时改用 `--outDir` 指向新目录。
@@ -149,8 +169,8 @@ hash 只能在**下一次触碰本目录时**回填；查某条改动用 `git lo
 
 | # | 标题 | 提交 | 一句话 |
 | --- | --- | --- | --- |
-| [001](001-frontend-view-layer.md) | 前端视图层解耦：`App.tsx` 只留状态编排 | 回填 | 1128 行里 6 个展示组件 + 3 个文案函数外移，展示改版与状态编排从此可以各改各的 |
-| [002](002-backend-api-layer.md) | 后端 API 层解耦：`main.py` 退化为装配根 | 回填 | 455 行的 `create_app` 拆成 4 个 `APIRouter` + 1 个路由支撑模块，新增接口不必再在巨型函数里找位置 |
+| [001](001-frontend-view-layer.md) | 前端视图层解耦：`App.tsx` 只留状态编排 | `c385646` | 1128 行里 7 个内部组件 + 5 个纯函数外移到 9 个新文件，展示改版与状态编排从此可以各改各的 |
+| [002](002-backend-api-layer.md) | 后端 API 层解耦：`main.py` 退化为装配根 | 回填 | 455 行的 `create_app` 拆成 7 个 `APIRouter` + 3 个支撑模块（`api_context` / `api_support` / `job_artifacts`），新增接口不必再在巨型函数里找位置 |
 | [003](003-resolution-decisions.md) | 降级决策纯化：从「跑一次下载才知道」到「可直接单测」 | 回填 | 降级候选/原因/文案收敛成纯函数，`JobManager` 只保留 IO 与状态写入 |
 
 ---

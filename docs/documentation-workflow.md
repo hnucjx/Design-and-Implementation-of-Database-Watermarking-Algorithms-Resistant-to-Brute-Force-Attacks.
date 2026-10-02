@@ -89,7 +89,7 @@ python scripts\check_doc_anchors.py          # 只报告，有漂移时退出码
 python scripts\check_doc_anchors.py --fix    # 能唯一确定符号的锚点直接重算
 ```
 
-判定方式是「链接标签是否等于该行的符号名」：标签是符号名（如 `[resolve_proxy](../backend/app/proxy.py#L169)`）就能自动重算；标签是文件名或散文（如 `[main.py](../backend/app/main.py#L500)`）会列进「待人工复核」—— 那是正常项，不是漂移。
+判定方式是「链接标签是否等于该行的符号名」：标签是符号名（如 `[resolve_proxy](../backend/app/proxy.py#L169)`）就能自动重算；标签是文件名或散文（如 `[main.py](../backend/app/main.py#L117)`）会列进「待人工复核」—— 那是正常项，不是漂移。
 
 改动 `backend/app/**` 或 `frontend/src/**` 之后跑一次，把结果并进同一个 commit，不要让锚点漂移累积。
 

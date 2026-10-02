@@ -56,7 +56,7 @@ npm install
 
 ### 普通单端口模式
 
-普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开它打印的地址（默认 `http://127.0.0.1:8000`）。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L500)。
+普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开它打印的地址（默认 `http://127.0.0.1:8000`）。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L117)。
 
 启动命令是 [`python -m app`](../backend/app/__main__.py)，它比裸 `python -m uvicorn app.main:app` 多做两件事：**启动前先检查端口**（见 [端口被占用时](#端口被占用时)），以及**把实际监听地址打印出来** —— 因为端口是可配的，不再是一个可以写死在文档里的常量。
 
@@ -90,7 +90,7 @@ npm run dev -- --port 5173
 这里的两个端口是**两件不同的事**，不要混为一谈：
 
 - **后端端口可配**，来源是 `YTDL_API_PORT`；`--port` 可临时覆盖。
-- **前端 dev server 端口不在配置里**，就是命令行 `--port 5173` 给的值。CORS 中间件只放行 `http://127.0.0.1:5173` 与 `http://localhost:5173`（见 [main.py](../backend/app/main.py#L111)）—— 但开发模式下 [api.ts](../frontend/src/api.ts) 用的是相对路径 `/api`，浏览器只与 Vite 同源通信、由 Vite 服务端转发，所以正常流程**不会触发 CORS**。把 dev server 换到别的端口后，只要仍走 Vite 代理也照样能用；CORS 白名单只在某处改成直连后端时才起作用。
+- **前端 dev server 端口不在配置里**，就是命令行 `--port 5173` 给的值。CORS 中间件只放行 `http://127.0.0.1:5173` 与 `http://localhost:5173`（见 [main.py](../backend/app/main.py#L97)）—— 但开发模式下 [api.ts](../frontend/src/api.ts) 用的是相对路径 `/api`，浏览器只与 Vite 同源通信、由 Vite 服务端转发，所以正常流程**不会触发 CORS**。把 dev server 换到别的端口后，只要仍走 Vite 代理也照样能用；CORS 白名单只在某处改成直连后端时才起作用。
 
 ### 端口被占用时
 
@@ -160,7 +160,7 @@ npm run dev -- --port 5173
 | `YTDL_ARIA2C_PATH` | 空 | aria2c 可执行文件路径或命令名；为空时按 PATH 查找。 |
 | `YTDL_ARIA2C_CONNECTIONS` | `2` | aria2c 每文件连接数，取值范围 `1..4`。连接越多，403/限速风险越高。 |
 
-运行时可在设置面板修改的字段（下载目录、并发、默认清晰度、字幕语言、限速、重试次数、aria2c 连接数）会写入 `Setting` 表并在下次启动时覆盖环境变量，见 [_apply_stored_settings](../backend/app/main.py#L675)。
+运行时可在设置面板修改的字段（下载目录、并发、默认清晰度、字幕语言、限速、重试次数、aria2c 连接数）会写入 `Setting` 表并在下次启动时覆盖环境变量，见 [_apply_stored_settings](../backend/app/api_support.py#L141)。
 
 ## PlantUML 图更新
 

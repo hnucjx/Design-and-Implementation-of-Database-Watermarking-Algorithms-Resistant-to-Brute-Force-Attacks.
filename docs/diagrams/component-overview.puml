@@ -24,7 +24,11 @@ package "Frontend" {
 }
 
 package "Backend / entry" {
-  [main.py\nFastAPI routes + lifespan] as Main
+  [main.py\ncomposition root + lifespan] as Main
+  [routers/*\nHTTP endpoints] as Routers
+  [api_context.py\nrequest dependencies] as ApiCtx
+  [api_support.py\nendpoint helpers] as ApiSupport
+  [job_artifacts.py\nartifact location] as JobArtifacts
   [schemas.py\nrequest/response models] as Schemas
   [config.py\nAppSettings] as Config
 }
@@ -92,6 +96,9 @@ ProxySection --> HelpPopover
 CookieSection --> HelpPopover
 ApiClient --> Types
 ApiClient --> Main : HTTP + SSE
+Main --> Routers
+Main --> ApiCtx
+Main --> ApiSupport
 Main --> Config
 Main --> Schemas
 Main --> Manager
@@ -103,6 +110,21 @@ Main --> CookieHealth
 Main --> Connectivity
 Main --> RuntimeEnv
 Main --> LoggingSetup
+Routers --> ApiCtx
+Routers --> ApiSupport
+Routers --> JobArtifacts
+Routers --> Manager
+Routers --> Service
+Routers --> Broker
+ApiCtx --> Manager
+ApiCtx --> Service
+ApiCtx --> DB
+ApiSupport --> ReadModel
+ApiSupport --> Models
+ApiSupport --> Service
+ApiSupport --> ProxyResolver
+JobArtifacts --> OutputPaths
+JobArtifacts --> SystemOpen
 CookieHealth --> Connectivity
 CookieHealth --> ProxyResolver
 Connectivity --> ProxyResolver

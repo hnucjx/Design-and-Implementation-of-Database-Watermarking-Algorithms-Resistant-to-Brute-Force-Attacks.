@@ -45,7 +45,7 @@ python scripts\check_doc_anchors.py          # 只报告，有漂移时退出码
 python scripts\check_doc_anchors.py --fix    # 能唯一确定符号的锚点直接重算
 ```
 
-它只改「标签就是符号名」的锚点；标签是文件名或散文的（例如 `[main.py](../backend/app/main.py#L500)`）会列进「待人工复核」。
+它只改「标签就是符号名」的锚点；标签是文件名或散文的（例如 `[main.py](../backend/app/main.py#L117)`）会列进「待人工复核」。
 
 首次执行前如尚未初始化文档工具，请先阅读 [文档写作与生成环境](documentation-workflow.md)。用例数会随功能变化，本文档记录的是当前基线值；改动测试后请同步更新这里。
 

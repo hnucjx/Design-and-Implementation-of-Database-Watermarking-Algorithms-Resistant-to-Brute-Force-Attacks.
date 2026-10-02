@@ -2085,7 +2085,7 @@ def test_proxy_test_endpoint_uses_the_service_setting(tmp_path: Path, monkeypatc
         captured["resolution"] = resolution
         raise AssertionError("stop")
 
-    monkeypatch.setattr("app.main.test_proxy", fake_test)
+    monkeypatch.setattr("app.routers.diagnostics.test_proxy", fake_test)
     service = FakeYtDlpService()
     service.proxy = "127.0.0.1:7890"
 
@@ -2107,7 +2107,7 @@ def test_proxy_test_endpoint_accepts_a_temporary_override(tmp_path: Path, monkey
         captured["resolution"] = resolution
         raise AssertionError("stop")
 
-    monkeypatch.setattr("app.main.test_proxy", fake_test)
+    monkeypatch.setattr("app.routers.diagnostics.test_proxy", fake_test)
     service = FakeYtDlpService()
     service.proxy = "127.0.0.1:7890"
 
@@ -2124,7 +2124,7 @@ def test_proxy_test_endpoint_returns_the_probe_result(tmp_path: Path, monkeypatc
     from app.connectivity import ProxyTestResult
 
     monkeypatch.setattr(
-        "app.main.test_proxy",
+        "app.routers.diagnostics.test_proxy",
         lambda resolution: ProxyTestResult(
             ok=True,
             source=resolution.source,

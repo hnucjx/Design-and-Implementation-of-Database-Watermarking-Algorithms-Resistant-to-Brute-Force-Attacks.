@@ -5,7 +5,11 @@ skinparam shadowing false
 skinparam linetype ortho
 
 package "L0 entry" {
-  [main.py\nFastAPI routes + lifespan] as Main
+  [main.py\ncomposition root] as Main
+  [routers/*\nHTTP endpoints] as Routers
+  [api_context.py\nrequest dependencies] as ApiCtx
+  [api_support.py\nendpoint helpers] as ApiSupport
+  [job_artifacts.py\nartifact location] as Artifacts
 }
 
 package "L1 contracts" {
@@ -48,6 +52,9 @@ package "L5 pure helpers" {
   [runtime_env.py\nhostile env scrubbing] as RuntimeEnv
 }
 
+Main --> Routers
+Main --> ApiCtx
+Main --> ApiSupport
 Main --> Config
 Main --> Schemas
 Main --> Manager
@@ -58,6 +65,30 @@ Main --> CookieHealth
 Main --> Connectivity
 Main --> Logging
 Main --> RuntimeEnv
+Routers --> ApiCtx
+Routers --> ApiSupport
+Routers --> Artifacts
+Routers --> Schemas
+Routers --> Manager
+Routers --> Service
+Routers --> CookieHealth
+Routers --> Connectivity
+Routers --> RuntimeEnv
+Routers --> Proxy
+Routers --> Broker
+ApiCtx --> Manager
+ApiCtx --> Service
+ApiCtx --> DB
+ApiCtx --> Config
+ApiSupport --> ReadModel
+ApiSupport --> Models
+ApiSupport --> Schemas
+ApiSupport --> Service
+ApiSupport --> Proxy
+ApiSupport --> Paths
+Artifacts --> Models
+Artifacts --> Outputs
+Artifacts --> Opener
 Manager --> Models
 Manager --> Service
 Manager --> Advice
@@ -90,6 +121,9 @@ note bottom
 Dependency rule: arrows only point downwards.
 L5 has no project imports; L3 never imports L2 or L0;
 infrastructure (L4) knows tables but not job logic.
+Inside L0 the direction is fixed: main.py assembles,
+routers/* are leaves, and the support modules
+(api_support, job_artifacts, api_context) never import a router.
 Two deliberate separations: parsing the proxy (proxy.py)
 is apart from proving it works (connectivity.py), and
 producing a cookie report (cookie_health.py) is apart from

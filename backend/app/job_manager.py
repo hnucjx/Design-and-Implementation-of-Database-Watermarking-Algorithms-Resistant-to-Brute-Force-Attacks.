@@ -28,6 +28,7 @@ from .resolution_decisions import (
     should_look_for_fallback,
     unselectable_resolution_message,
 )
+from .safe_delete import delete_scope, is_deletion_allowed, removable_job_dir
 from .schemas import DownloadOptions, FormatOption
 from .transfer_stats import TransferStats
 from .ytdlp_service import DownloadCancelled, YtDlpService
@@ -348,29 +349,24 @@ class JobManager:
         await self.broker.publish({"type": "job_deleted", "job_id": job_id})
 
     def _delete_output_files(self, output_paths: list[Path], job_download_dir: Path | None) -> None:
-        download_root = self.settings.download_dir.expanduser().resolve()
-        allowed_roots = [download_root]
-        if job_download_dir:
-            with suppress(OSError):
-                allowed_roots.append(job_download_dir.expanduser().resolve())
+        """删除条目的产物。**路径安全的判定全部在 `safe_delete` 里**（可单测的纯函数），
+        本方法只做三件 IO：解析候选、`unlink` 文件、收走空掉的任务目录。"""
+        scope = delete_scope(self.settings.download_dir, job_download_dir)
 
         for output_path in output_paths:
             for candidate in output_file_candidates(output_path, job_download_dir):
                 with suppress(OSError):
                     resolved = candidate.expanduser().resolve()
-                    if not self._is_under_allowed_root(resolved, allowed_roots):
+                    if not is_deletion_allowed(resolved, scope):
                         continue
                     if resolved.is_file():
                         resolved.unlink()
 
-        if job_download_dir:
+        removable = removable_job_dir(scope)
+        if removable is not None:
             with suppress(OSError):
-                resolved_dir = job_download_dir.expanduser().resolve()
-                if resolved_dir != download_root and download_root in resolved_dir.parents and resolved_dir.exists():
-                    resolved_dir.rmdir()
-
-    def _is_under_allowed_root(self, path: Path, allowed_roots: list[Path]) -> bool:
-        return any(path == root or root in path.parents for root in allowed_roots)
+                if removable.exists():
+                    removable.rmdir()
 
     def _item_output_paths(self, item: JobItem, job_download_dir: Path | None) -> list[Path]:
         """条目可能关联的全部路径。候选链的唯一定义在 `output_paths.item_artifact_candidates`。"""

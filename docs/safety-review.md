@@ -38,7 +38,7 @@
 
 详情：
 
-- 文件删除在 [_delete_output_files](../backend/app/job_manager.py#L350) 中执行，所有候选路径通过 [_is_under_allowed_root](../backend/app/job_manager.py#L372) 验证，仅允许在下载根目录或任务下载子目录下操作
+- 文件删除在 [_delete_output_files](../backend/app/job_manager.py#L351) 中执行，所有候选路径通过 [_is_under_allowed_root](../backend/app/job_manager.py#L372) 验证，仅允许在下载根目录或任务下载子目录下操作
 - 本地播放/打开文件夹接口（[routers/job_files.py](../backend/app/routers/job_files.py#L16) 起）仅使用数据库记录的 `output_path` 和 `download_dir`，不接受前端传入任意路径
 - [safe_path_name](../backend/app/paths.py#L7) 为 playlist 目录名移除 `<>:"/\|?*` 等不安全字符，并限制长度为 120 字符
 - [discover_output_file_candidates](../backend/app/output_paths.py#L47) 仅在给定的 `job_download_dir` 内按 YouTube video ID 匹配文件，不遍历上级目录

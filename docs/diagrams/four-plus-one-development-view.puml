@@ -47,6 +47,7 @@ package "backend/app" {
   [ytdlp_formats.py] as FormatHelpers
   [stall_guard.py] as StallGuard
   [fallback_policy.py] as Fallback
+  [resolution_decisions.py] as Decisions
   [download_progress.py] as Progress
   [progress_persist.py] as PersistGate
   [transfer_stats.py] as TransferStats
@@ -164,6 +165,7 @@ Manager --> Models
 Manager --> Service
 Manager --> Broker
 Manager --> Fallback
+Manager --> Decisions
 Manager --> Progress
 Manager --> PersistGate
 Manager --> TransferStats
@@ -185,6 +187,8 @@ CookieHealth --> Connectivity
 CookieHealth --> ProxyResolver
 Connectivity --> ProxyResolver
 ErrorAdvice --> LogSafety
+Decisions --> Fallback
+Decisions --> FormatHelpers
 DB --> Models
 
 BackendTests ..> Main

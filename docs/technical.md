@@ -20,7 +20,7 @@
 
 ## 下载前预检测
 
-在实际下载前，`JobManager` 先调用 [prepare_download](../backend/app/ytdlp_service.py#L393) 让 yt-dlp 按当前 selector 选择计划下载格式。源视频清晰度匹配时不再额外 `extract_metadata`——这是上一轮性能修复的成果，见 [PLAN.md](../ai/perf/PLAN.md)。只有计划格式不可选时，才会再解析元数据并按降级原因分类。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L983) 写入：
+在实际下载前，`JobManager` 先调用 [prepare_download](../backend/app/ytdlp_service.py#L393) 让 yt-dlp 按当前 selector 选择计划下载格式。源视频清晰度匹配时不再额外 `extract_metadata`——这是上一轮性能修复的成果，见 [PLAN.md](../ai/perf/PLAN.md)。只有计划格式不可选时，才会再解析元数据并按降级原因分类。结果通过 [_apply_download_preparation](../backend/app/job_manager.py#L968) 写入：
 
 - `actual_width`
 - `actual_height`
@@ -39,7 +39,7 @@
 
 ## 分辨率降级原因
 
-降级原因常量在 [fallback_policy.py](../backend/app/fallback_policy.py#L4)。降级策略分为下载前自动处理和媒体流失败提示两类。
+降级原因常量在 [fallback_policy.py](../backend/app/fallback_policy.py#L4)，**决策**（降到哪、为什么、降不了时报哪句话）在 [resolution_decisions.py](../backend/app/resolution_decisions.py#L87) —— 后者是纯函数，不联网、不读库，所以每条规则都能在 `backend/tests/test_resolution_decisions.py` 里单独验。降级策略分为下载前自动处理和媒体流失败提示两类。
 
 | 原因 | 含义 | 是否自动降级 |
 | --- | --- | --- |
@@ -48,7 +48,7 @@
 | `requested_resolution_unselectable` | 元数据显示目标清晰度存在，但当前 selector 选不出可下载组合。 | 是，只降到 720p 或更高的安全清晰度。 |
 | `media_stream_blocked` | 目标清晰度媒体流被 403、连接重置、超时或 TLS 错误阻断。 | 否，只提供较低清晰度重启建议。 |
 
-720p 底线由 [DEFAULT_MIN_AUTO_FALLBACK_HEIGHT](../backend/app/ytdlp_formats.py#L6) 定义。自动降级计算见 [suggest_lower_resolution](../backend/app/ytdlp_formats.py#L148)。
+720p 底线由 [DEFAULT_MIN_AUTO_FALLBACK_HEIGHT](../backend/app/ytdlp_formats.py#L6) 定义，`resolution_decisions` 以 `MIN_AUTO_FALLBACK_HEIGHT` 暴露同一常量。候选计算见 [suggest_lower_resolution](../backend/app/ytdlp_formats.py#L148)；「要不要放弃自动降级、以及为什么」的判定不在那里，在 `resolution_decisions` 的四个 `decide_*` 函数里。
 
 ## 稳定下载策略
 
@@ -130,11 +130,11 @@ node --experimental-permission --no-warnings=ExperimentalWarning -e <probe>
 
 ## Cookies 与登录态
 
-Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/api_support.py#L87)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L720)。
+Cookies 用于合法账号态、年龄确认或 bot 校验场景。解析阶段逻辑见 [_extract_metadata_with_cookies](../backend/app/api_support.py#L87)，下载阶段刷新逻辑见 [_download_with_cookie_refresh](../backend/app/job_manager.py#L724)。
 
 浏览器导入器只保存 YouTube/Google 相关 cookies，过滤规则见 [YOUTUBE_COOKIE_DOMAIN_SUFFIXES](../backend/app/browser_cookies.py#L13)。Edge 锁库和 DPAPI fallback 处理见 [browser_cookies.py](../backend/app/browser_cookies.py#L117)。
 
-未配置 cookies 时，YouTube 媒体流 403 概率显著上升。任务中心的媒体流失败文案会前置「当前 cookies 状态：已配置 / 未配置」，见 [_media_stream_failure_message](../backend/app/job_manager.py#L1082)，便于先排除这个最常见的前置条件。
+未配置 cookies 时，YouTube 媒体流 403 概率显著上升。任务中心的媒体流失败文案会前置「当前 cookies 状态：已配置 / 未配置」，见 [_media_stream_failure_message](../backend/app/job_manager.py#L1055)，便于先排除这个最常见的前置条件。
 
 已配置的 cookies 是否真的可用，由 [cookie_health.py](../backend/app/cookie_health.py#L234) 判定（`POST /api/cookies/verify`）。它把两件事合成一个结论：
 

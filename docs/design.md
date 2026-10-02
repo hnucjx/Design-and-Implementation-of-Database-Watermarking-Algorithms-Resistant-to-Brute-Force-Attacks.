@@ -29,13 +29,14 @@
 | [config.py](../backend/app/config.py#L19) | L1 契约 | 声明全部设置字段、默认值与约束、目录准备。 | 不读数据库（`Setting` 覆盖在 `api_support.py` 里做）。 |
 | [schemas.py](../backend/app/schemas.py#L14) | L1 契约 | 定义 HTTP 线上模型与枚举。 | 不引用 yt-dlp 类型，不含业务逻辑。 |
 | [models.py](../backend/app/models.py#L27) | L1 契约 | 定义持久化表结构与 `JobStatus`。 | 不做读写编排。 |
-| [job_manager.py](../backend/app/job_manager.py#L39) | L2 编排 | 队列、worker、并发、暂停/重启/删除、进度 hook、错误分类、终态收敛、事件发布。 | 不直接调用 yt-dlp（经 `YtDlpService`），不解析 yt-dlp 内部结构（经 formats 工具）。 |
+| [job_manager.py](../backend/app/job_manager.py#L43) | L2 编排 | 队列、worker、并发、暂停/重启/删除、进度 hook、错误分类、终态收敛、事件发布。 | 不直接调用 yt-dlp（经 `YtDlpService`），不解析 yt-dlp 内部结构（经 formats 工具），**不做降级判定**（判定在 `resolution_decisions`）。 |
 | [job_read_model.py](../backend/app/job_read_model.py#L12) | L2 编排 | 把表投影成 API 读模型：聚合分辨率/格式、`elapsed_seconds`、降级消息。 | 不写库、不改状态。 |
 | [events.py](../backend/app/events.py#L7) | L2 编排 | 进程内 SSE 扇出（每个订阅者一个队列）。 | 不持久化事件（持久化在 `job_manager`）。 |
 | [ytdlp_service.py](../backend/app/ytdlp_service.py#L88) | L3 领域 | yt-dlp 边界：元数据、预检测、参数构建、profile 重试链、错误分类、依赖诊断。 | 不碰数据库，不决定任务状态。 |
 | [ytdlp_formats.py](../backend/app/ytdlp_formats.py#L9) | L3 领域 | 格式选择器、分辨率/大小/codec 提取、降级候选计算。 | 不导入 yt-dlp。 |
 | [stall_guard.py](../backend/app/stall_guard.py#L32) | L3 领域 | 纯函数式停滞判定与 `DownloadStalled`。 | 不写库、不发布事件。 |
-| [fallback_policy.py](../backend/app/fallback_policy.py#L10) | L3 领域 | 降级原因常量与用户可读文案、重启建议。 | 不做降级决策（决策在 `job_manager`）。 |
+| [fallback_policy.py](../backend/app/fallback_policy.py#L10) | L3 领域 | 降级原因常量与用户可读文案、重启建议。 | 不做降级决策（决策在 `resolution_decisions`）。 |
+| [resolution_decisions.py](../backend/app/resolution_decisions.py#L71) | L3 领域 | 降级**决策**：值不值得找降级候选、降到哪、为什么、降不了时报哪句话。纯函数，可单测。 | 不发请求、不读库、不改 `JobItem`；可用清晰度由 `job_manager` 取好传进来。 |
 | [download_progress.py](../backend/app/download_progress.py#L21) | L3 领域 | 多子流进度聚合与分母策略。 | 不知道数据库和 SSE 的存在。 |
 | [progress_persist.py](../backend/app/progress_persist.py#L5) | L3 领域 | 决定某个进度快照是否值得落库。 | 不执行写库。 |
 | [transfer_stats.py](../backend/app/transfer_stats.py#L5) | L3 领域 | 由字节增量累加平均速度。 | 不处理瞬时速度（瞬时速度直接取 payload）。 |
@@ -111,7 +112,7 @@ PlantUML 源文件：[runtime-concurrency.puml](diagrams/runtime-concurrency.pum
 由此推出三条必须遵守的约定：
 
 1. **进度 hook 在工作线程上执行**，所以它使用自己的 `Session` 写库，不能复用请求级 session。
-2. **从线程发布事件要跨回事件循环**：[_publish_threadsafe](../backend/app/job_manager.py#L1154) 先写 `JobEvent` 行，再 `loop.call_soon_threadsafe` 调度 `broker.publish`。异步路径直接用 [_publish](../backend/app/job_manager.py#L1141)。
+2. **从线程发布事件要跨回事件循环**：[_publish_threadsafe](../backend/app/job_manager.py#L1122) 先写 `JobEvent` 行，再 `loop.call_soon_threadsafe` 调度 `broker.publish`。异步路径直接用 [_publish](../backend/app/job_manager.py#L1109)。
 3. **锁只保护状态转换，不保护下载**：`_item_claim_lock` 只覆盖"刷新 → 校验 queued → 置 running → commit"；`_cookie_import_lock` 只在 403 后的 cookies 刷新导入期间持有。下载本身靠 `should_cancel` 回调协作取消，而不是靠锁。
 4. **单个条目的收尾出错不能带走 worker**：worker 循环对每条 item 的整段工作加了兜底 —— 崩溃的条目被标记为 `failed`（而不是永远停在 `running`），worker 继续消费队列。没有这层兜底，一个条目的记账错误就会静默地少掉一个并发口。见 [008](../ai/bug-fix/008-return-in-finally-swallows-the-real-error.md)。
 
@@ -141,15 +142,15 @@ worker 领取 item → 声明式预检测（`prepare_download`，命中则不再
 
 ### 删除与文件清理
 
-删除统一走 `JobManager`：先删数据库记录与关联 `JobEvent`，再按需删除文件。文件删除只在"下载根目录"或"该任务下载目录"之内执行，并对 `output_path`、合并后的最终文件与 sidecar 分别枚举候选，见 [_delete_output_files](../backend/app/job_manager.py#L346)。删除 playlist 的最后一个子项时父任务一并删除。
+删除统一走 `JobManager`：先删数据库记录与关联 `JobEvent`，再按需删除文件。文件删除只在"下载根目录"或"该任务下载目录"之内执行，并对 `output_path`、合并后的最终文件与 sidecar 分别枚举候选，见 [_delete_output_files](../backend/app/job_manager.py#L350)。删除 playlist 的最后一个子项时父任务一并删除。
 
 ## 状态机与一致性
 
 `Job` 与 `JobItem` 共用 `JobStatus` 六态，但驱动者不同：
 
 - `JobItem` 由 worker 驱动：认领时置 `running`，结束按结果置 `succeeded` / `failed` / `cancelled` / `paused`。
-- `Job` 由 [_maybe_finish_job](../backend/app/job_manager.py#L503) 收敛：只要还有 running 或 queued 子项就保持 `running`；全部结束才由 [_finish_job](../backend/app/job_manager.py#L777) 判定终态（有失败项 → `failed`；被暂停 → `paused`；被取消 → `cancelled`；否则 `succeeded`）。
-- 任务级进度是子项进度的算术平均，见 [_refresh_job_counts](../backend/app/job_manager.py#L825)。
+- `Job` 由 [_maybe_finish_job](../backend/app/job_manager.py#L507) 收敛：只要还有 running 或 queued 子项就保持 `running`；全部结束才由 [_finish_job](../backend/app/job_manager.py#L781) 判定终态（有失败项 → `failed`；被暂停 → `paused`；被取消 → `cancelled`；否则 `succeeded`）。
+- 任务级进度是子项进度的算术平均，见 [_refresh_job_counts](../backend/app/job_manager.py#L829)。
 
 并发一致性依赖三点：单条 `JobItem` 只会被一个 worker 认领（`_item_claim_lock` + 状态校验）；worker 线程各自持有 session 并独立 commit；读模型只读不写，避免与写入路径争抢状态。
 
@@ -165,7 +166,7 @@ worker 领取 item → 声明式预检测（`prepare_download`，命中则不再
 
 ## 错误分类与可观测性
 
-错误分类集中在 `YtDlpService` 的静态判定函数上，`job_manager` 只消费分类结果：
+错误分类集中在 `YtDlpService` 的静态判定函数上，降级判定集中在 [resolution_decisions.py](../backend/app/resolution_decisions.py#L87)，`job_manager` 只消费这两者的结果、负责 IO 与状态写入：
 
 | 分类 | 判定依据 | 处理 |
 | --- | --- | --- |
@@ -184,7 +185,7 @@ worker 领取 item → 声明式预检测（`prepare_download`，命中则不再
 | --- | --- |
 | 新增一个下载 profile（新的 player client / impersonation 组合） | 在 `ytdlp_service.py` 加常量并扩展 `_download_profiles()`、`_youtube_extractor_args()`、`_impersonation_target()`；若属于 anti-403 链路需同步 `YOUTUBE_ANTI403_PROFILES`。 |
 | 新增一个可配置项 | `config.py` 加字段 → 需要的话在 `api_support.py` 的 `apply_stored_settings` / `settings_response` 与 `Setting` 表打通 → 补 `/api/settings` 路由（`routers/settings.py`）与诊断字段 → 更新环境变量文档。 |
-| 新增一个降级原因 | 在 `fallback_policy.py` 加常量与文案，并补一条 `restart_resolution` 规则；不要在 `job_manager` 里内联中文字符串。 |
+| 新增一个降级原因 | 在 `fallback_policy.py` 加常量与文案、补一条 `restart_resolution` 规则，并在 `resolution_decisions.py` 里加上产出该常量的一条判定；不要在 `job_manager` 里内联中文字符串。`test_resolution_decisions.py` 有一条参数化用例会遍历所有 reason 常量，漏加文案会当场报错。 |
 | 新增一个 API | 在 `routers/` 下对应资源的模块里声明路由（新资源就新建一个模块并登记进 `API_ROUTERS`），模型放 `schemas.py`，跨路由复用的逻辑放 `api_support.py` / `job_artifacts.py`；涉及状态转换的一律委托 `JobManager`，不直接改表。 |
 | 新增一种错误分类 | 在 `YtDlpService` 加静态判定函数，在 `_log_item_failure` 加类别名，并补单测确认不会与其他分类互相误命中（尤其注意关键词冲突）。 |
 

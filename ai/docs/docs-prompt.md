@@ -49,24 +49,29 @@
 | `ai/refactor/refactor.md` | **重构总纲**：目标与非目标、判定准则、基线快照、路线图与逐轮索引。文档里解释「某处结构为什么这么分」时优先引用它。 |
 | `ai/refactor/NNN-*.md` | 逐轮重构记录（计划 / 实施方案 / 实施情况 / 验证 / 未覆盖），带明确时间戳。 |
 
-### 3.2 后端（`backend/app/`，28 个模块）
+### 3.2 后端（`backend/app/`，`app/*.py` 33 个 + `app/routers/` 8 个）
 
 分层含义：L0 入口 / L1 契约 / L2 编排 / L3 领域 / L4 基础设施 / L5 纯工具。依赖只向下，L3 不得反向依赖 L2 或 L0。
 
 | 模块 | 层 | 关注点 |
 | --- | --- | --- |
-| `main.py` | L0 | FastAPI 装配、全部路由（28 个操作）、错误状态码、静态资源托管、设置读写、cookies 端点、lifespan。 |
+| `main.py` | L0 | **只做装配**：建 `ApiContext`、挂载 `API_ROUTERS`、静态资源托管、lifespan；仅保留 1 条条件注册的 `GET /`。 |
+| `routers/*` | L0 | 按资源分模块声明 27 条路由（`diagnostics` / `cookies` / `analyze` / `jobs` / `job_files` / `settings` / `events`），`__init__.py` 的 `API_ROUTERS` 只声明挂载顺序。 |
+| `api_context.py` | L0 | `ApiContext`（`frozen` dataclass）+ `get_context` / `get_session` + `ContextDep` / `SessionDep`。 |
+| `api_support.py` | L0 | 路由支撑：任务/条目定位与 404、设置读写与响应构造、cookies 元数据提取、目录选择。 |
+| `job_artifacts.py` | L0 | 产物定位一条链（`output_file` / `item_folder` / `output_folder` / `job_folder`）与本机打开。 |
 | `__main__.py` | L0 | 本地启动入口：命令行解析、端口预检与占用者识别、`--port` / `--auto-port` / `--reload` / `--host`。 |
 | `config.py` | L1 | `AppSettings` 全部字段、`YTDL_` 前缀、默认值、约束、仓库根 `.env`（绝对路径）。 |
 | `schemas.py` | L1 | 全部请求/响应模型与 `Literal` 枚举，是 API 文档与 OpenAPI 的唯一真源。 |
 | `models.py` | L1 | `Job` / `JobItem` / `JobEvent` / `Setting` 表结构与 `JobStatus`。 |
-| `job_manager.py` | L2 | 队列、worker、并发、暂停/重启/删除、进度 hook、错误分类、终态聚合、cookies 刷新重试。 |
+| `job_manager.py` | L2 | 队列、worker、并发、暂停/重启/删除、进度 hook、错误分类、终态聚合、cookies 刷新重试；**降级只消费判定结果**，不做判定。 |
 | `job_read_model.py` | L2 | 读模型投影：聚合分辨率/格式、`elapsed_seconds`、降级消息。 |
 | `events.py` | L2 | SSE 事件代理（每订阅者一个队列）。 |
 | `ytdlp_service.py` | L3 | yt-dlp 边界层：元数据解析、预检测、下载参数、profile 重试链、依赖诊断、错误分类。 |
 | `ytdlp_formats.py` | L3 | 格式选择器、分辨率/格式/大小提取、降级候选计算、720p 底线。 |
 | `stall_guard.py` | L3 | 停滞看门狗与 `DownloadStalled` 语义。 |
-| `fallback_policy.py` | L3 | 降级原因常量与用户可读消息、重启建议。 |
+| `fallback_policy.py` | L3 | 降级原因常量与用户可读消息、重启建议（不做决策）。 |
+| `resolution_decisions.py` | L3 | 降级**决策**（纯函数）：值不值得找降级候选、降到哪、为什么、降不了时报哪句话。 |
 | `download_progress.py` | L3 | 多子流进度聚合与分母策略。 |
 | `progress_persist.py` | L3 | 进度落库节流门（首次/终态/250ms/0.5%）。 |
 | `transfer_stats.py` | L3 | 平均速度计算。 |
@@ -107,7 +112,7 @@
 ### 3.4 配置、脚本与测试
 
 - `backend/pyproject.toml`、`frontend/package.json`：依赖、脚本、测试配置。
-- `backend/tests/`：17 个 `test_*.py` + `fakes.py`（当前 **289 passed**）。
+- `backend/tests/`：18 个 `test_*.py` + `fakes.py`（当前 **320 passed**）。
 - `frontend/src/App.test.tsx`：当前 **69 passed**（`npx vitest run --environment jsdom`）。
 - `scripts/`：
   - `docs.py`：文档工具链（`bootstrap` / `render` / `check`），固定版本 PlantUML。
@@ -161,7 +166,7 @@
 - API 表格中的每个 endpoint 必须能在 `main.py` 找到对应路由函数；schema 字段必须能在 `schemas.py` 找到定义。
 - 环境变量表的每一项必须能在 `config.py` 找到字段，默认值逐字一致；表头若写「列出全部字段」，就不能漏项。
 - 性能与稳定性相关的数字（重试上限、停滞阈值、chunk 大小、并发默认值、profile 链顺序）必须与 `ytdlp_service.py`、`job_manager.py`、`config.py` 一致；可由环境变量覆盖的，写明变量名。
-- 测试命令与用例总数必须与当前实际运行结果一致（当前后端 289、前端 65）。
+- 测试命令与用例总数必须与当前实际运行结果一致（当前后端 320、前端 69）。
 - 前端组件、后端模块的增减必须反映到 `design.md` 的模块矩阵、`implementation.md` 的对应章节，以及受影响的 UML 图。
 - 同一事实只在一处详述；其他文档用链接引用。
 
@@ -234,7 +239,7 @@ python scripts\docs.py check       # 校验本地链接 + SVG 与源一致
 
 ```powershell
 python -m compileall backend\app
-python -m pytest backend\tests -q                 # 当前基线 289 passed
+python -m pytest backend\tests -q                 # 当前基线 320 passed
 cd frontend; npx vitest run --environment jsdom   # 当前基线 69 passed
 cd frontend; npx tsc --noEmit                     # 类型检查
 python scripts\docs.py check                      # 本地链接 + UML 产物一致
@@ -307,8 +312,8 @@ git ls-remote origin main   # 校验远端 sha 与本地一致
 
 | 项 | 值 |
 | --- | --- |
-| 后端模块 | 28 个（含 `__main__.py`） |
-| 后端测试 | 17 个 `test_*.py` + `fakes.py`，**289 passed** |
+| 后端模块 | 33 个 `.py`（其中 `app/*.py` 33 个，另有 `app/routers/` 8 个） |
+| 后端测试 | 18 个 `test_*.py` + `fakes.py`，**320 passed** |
 | 前端测试 | `App.test.tsx`，**69 passed** |
 | HTTP 操作 | 28 个（`openapi.yaml` 的 `operationId` 数：26 个 `/api/*` + `/health` + 静态首页 `/`） |
 | 环境变量 | `YTDL_` 前缀，`AppSettings` 共 22 个字段（另有 `YTDL_LOG_LEVEL` 不属于 `AppSettings`） |

@@ -12,7 +12,7 @@
 python -m compileall backend\app
 ```
 
-后端测试（当前基线：**289 passed**）：
+后端测试（当前基线：**320 passed**）：
 
 ```powershell
 python -m pytest backend\tests -q
@@ -116,6 +116,7 @@ cookies 体检与 `LOGGED_IN` 探针、端到端元数据提取（带与不带 c
 | [test_error_advice.py](../backend/tests/test_error_advice.py) | 异常翻译层：JS challenge / cookies / 代理 / 媒体流四类分类顺序、异常链展开不因环状引用死循环、无法归类时返回 `None` 而不硬凑。 |
 | [test_connectivity.py](../backend/tests/test_connectivity.py) | 代理探针：直连与走代理分别构造正确的 opener、HTTP 错误与网络异常都变成可展示证据、失败必带 `next_steps`、`direct` 失败文案说明「可能预期」。 |
 | [test_cookie_health.py](../backend/tests/test_cookie_health.py) | cookies 体检：格式、域名分布、鉴权项命中/缺失、过期、`LOGGED_IN` 三态（真/假/未知）、结论与下一步。 |
+| [test_resolution_decisions.py](../backend/tests/test_resolution_decisions.py) | 降级**判定**的纯单测（31 例，0.12 s）：四种降级原因各自的输入条件、"该不该找降级候选"的两个早退条件、两句失败文案不可互换、"元数据不可得"与"零个格式"必须区分、每个 reason 都能被 `fallback_policy` 翻成非空文案。 |
 | [fakes.py](../backend/tests/fakes.py) | API 测试的 fake service 和辅助对象，其中 `RaisingUnselectableProbeService` 刻意让 `prepare_download` **抛异常**而不是返回 `is_selectable=False` —— 复现真实 yt-dlp 的行为，防止降级分支再次退化成死代码。 |
 
 默认自动测试不依赖真实 YouTube 下载，避免网络、地区、cookies 和 YouTube 风控导致不稳定。

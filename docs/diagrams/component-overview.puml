@@ -66,6 +66,7 @@ package "Backend / support" {
   [models.py\nSQLModel tables] as Models
   [db.py\nengine + pragmas] as DB
   [fallback_policy.py\ndowngrade messages] as Fallback
+  [resolution_decisions.py\ndowngrade decisions] as Decisions
   [paths.py\nsafe names] as Paths
   [log_safety.py\nlog scrubbing] as LogSafety
   [logging_setup.py\nfile logging] as LoggingSetup
@@ -129,11 +130,14 @@ CookieHealth --> Connectivity
 CookieHealth --> ProxyResolver
 Connectivity --> ProxyResolver
 ErrorAdvice --> LogSafety
+Decisions --> Fallback
+Decisions --> Formats
 Manager --> Service
 Manager --> Progress
 Manager --> PersistGate
 Manager --> Stats
 Manager --> Fallback
+Manager --> Decisions
 Manager --> OutputPaths
 Manager --> Paths
 Manager --> LogSafety

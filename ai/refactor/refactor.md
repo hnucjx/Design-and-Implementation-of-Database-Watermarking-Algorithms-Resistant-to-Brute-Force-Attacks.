@@ -20,7 +20,7 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 | 位置 | 现状 | 为什么现在是问题 |
 | --- | --- | --- |
 | `frontend/src/App.tsx` | **1128 行**，一个文件里塞了 1 个状态容器 + 7 个内部组件（5 个展示组件 + 2 个基础件）+ 5 个文案/映射函数 | 展示改版要碰状态容器；状态改动要通读 1100 行。两者变化频率完全不同，却被绑在一个文件里 |
-| `backend/app/main.py` | **722 行**，其中 `create_app` 一个函数 **455 行**、内联声明 **24 条路由** | 组合根同时承担了「路由声明 + 请求校验 + 路径解析 + 设置读写」。新增一个接口要在一个 455 行的函数里找位置 |
+| `backend/app/main.py` | **722 行**，其中 `create_app` 一个函数 **458 行**、内联声明 **28 条路由** | 组合根同时承担了「路由声明 + 请求校验 + 路径解析 + 设置读写」。新增一个接口要在一个 458 行的函数里找位置 |
 | `backend/app/job_manager.py` | **1174 行**，其中「清晰度降级」的**决策 + 原因 + 用户文案**散在 10 个方法里 | 降级是本项目历史上唯一反复出缺陷的策略（[010](../bug-fix/010-unselectable-probe-raise-skips-the-fallback.md) 整段降级曾是死代码），而它的判据至今只能靠跑整条下载链路来验 |
 
 本总纲据此定下路线图（[§4](#4-路线图)），并把「什么样才算做完」写成可执行判据（[§3](#3-判定准则) + [§5](#5-每轮的固定流程dod)）。
@@ -59,15 +59,16 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 上表是**写这份总纲时**的快照。每轮重构都会改动其中若干项，因此每轮结束时把新值记在这里，
 而不是回头改写上表（保留"改之前长什么样"的证据）。
 
-| 项 | 写总纲时（R1 前） | **R2 后（当前）** | 取证命令 |
-| --- | --- | --- | --- |
-| 后端模块 | 29 个 `.py` / 6026 行 | **32 个 `.py` / 5791 行**，另有 `routers/` 8 个 `.py` / 596 行 | `ls backend/app/*.py \| wc -l`、`wc -l backend/app/*.py \| tail -1` |
-| 前端源码 | 13 个文件 / 4699 行 | **23 个文件 / 4790 行**（R1 后） | `find frontend/src -name '*.ts' -o -name '*.tsx' \| wc -l` |
-| `backend/app/main.py` | 722 行 | **130 行** | `wc -l backend/app/main.py` |
-| `frontend/src/App.tsx` | 1128 行 | **446 行**（R1 后） | `wc -l frontend/src/App.tsx` |
-| 后端测试 | 289 passed | **289 passed** | 见上表命令 |
-| 前端测试 | 69 passed | **69 passed** | 见上表命令 |
-| 文档锚点 | 无漂移 / 111 处待复核 | **无漂移 / 148 处待复核** | `python scripts/check_doc_anchors.py` |
+| 项 | 写总纲时（R1 前） | R2 后 | **R3 后（当前）** | 取证命令 |
+| --- | --- | --- | --- | --- |
+| 后端模块 | 29 个 `.py` / 6026 行 | 32 个 `.py` / 5791 行，另有 `routers/` 8 个 `.py` / 596 行 | **33 个 `.py`**，另有 `routers/` 8 个 | `ls backend/app/*.py \| wc -l`、`wc -l backend/app/*.py \| tail -1` |
+| 前端源码 | 13 个文件 / 4699 行 | 23 个文件 / 4790 行（R1 后） | **23 个文件 / 4790 行** | `find frontend/src -name '*.ts' -o -name '*.tsx' \| wc -l` |
+| `backend/app/main.py` | 722 行 | 130 行 | **130 行** | `wc -l backend/app/main.py` |
+| `backend/app/job_manager.py` | 1174 行 | 1174 行 | **1142 行**（−32，判定外移到新模块） | `wc -l backend/app/job_manager.py` |
+| `frontend/src/App.tsx` | 1128 行 | 446 行（R1 后） | **446 行** | `wc -l frontend/src/App.tsx` |
+| 后端测试 | 289 passed | 289 passed | **320 passed** | 见上表命令 |
+| 前端测试 | 69 passed | 69 passed | **69 passed** | 见上表命令 |
+| 文档锚点 | 无漂移 / 111 处待复核 | 无漂移 / 148 处待复核 | **无漂移 / 153 处待复核** | `python scripts/check_doc_anchors.py` |
 
 ---
 
@@ -140,7 +141,7 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
 | --- | --- | --- |
 | 1 | 写**计划**（边界、不动什么、风险） | 计划里必须写明「本轮不做的事」 |
 | 2 | 实施（一次只做一个主题） | `git status` 只出现本轮范围内的文件 |
-| 3 | **验证** | 后端 `289 passed`、前端 `69 passed`、`npm run build` 通过；改了 `backend/app/**` 或 `frontend/src/**` 后跑 `python scripts/check_doc_anchors.py`（需 `--fix`）与 `python scripts/docs.py check` |
+| 3 | **验证** | 后端 `320 passed`、前端 `69 passed`、`npm run build` 通过；改了 `backend/app/**` 或 `frontend/src/**` 后跑 `python scripts/check_doc_anchors.py`（需 `--fix`）与 `python scripts/docs.py check` |
 | 4 | 写**记录**（本目录 `00N-*.md`） | 含明确时间戳；含「未覆盖 / 如实说明」小节 |
 | 5 | 单独 `git commit` + `git push` | `git ls-remote` 校验 sha；提交列表显式列文件，**不用 `git add -A`** |
 
@@ -170,8 +171,8 @@ hash 只能在**下一次触碰本目录时**回填；查某条改动用 `git lo
 | # | 标题 | 提交 | 一句话 |
 | --- | --- | --- | --- |
 | [001](001-frontend-view-layer.md) | 前端视图层解耦：`App.tsx` 只留状态编排 | `c385646` | 1128 行里 7 个内部组件 + 5 个纯函数外移到 9 个新文件，展示改版与状态编排从此可以各改各的 |
-| [002](002-backend-api-layer.md) | 后端 API 层解耦：`main.py` 退化为装配根 | 回填 | 455 行的 `create_app` 拆成 7 个 `APIRouter` + 3 个支撑模块（`api_context` / `api_support` / `job_artifacts`），新增接口不必再在巨型函数里找位置 |
-| [003](003-resolution-decisions.md) | 降级决策纯化：从「跑一次下载才知道」到「可直接单测」 | 回填 | 降级候选/原因/文案收敛成纯函数，`JobManager` 只保留 IO 与状态写入 |
+| [002](002-backend-api-layer.md) | 后端 API 层解耦：`main.py` 退化为装配根 | `046e4de` | 458 行的 `create_app` 拆成 7 个 `APIRouter` + 3 个支撑模块（`api_context` / `api_support` / `job_artifacts`），新增接口不必再在巨型函数里找位置 |
+| [003](003-resolution-decisions.md) | 降级决策纯化：从「跑一次下载才知道」到「可直接单测」 | 回填 | 判定收进 `resolution_decisions.py`（4 个纯函数），`job_manager` 只剩 IO 与状态写入；新增 31 例单测，8 个场景在 HEAD 与重构后逐字段相同 |
 
 ---
 

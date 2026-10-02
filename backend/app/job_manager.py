@@ -15,18 +15,22 @@ from .config import AppSettings
 from .download_progress import DownloadProgressAggregator
 from .events import EventBroker
 from .progress_persist import ProgressPersistGate
-from .fallback_policy import (
-    MEDIA_STREAM_BLOCKED,
-    REQUESTED_RESOLUTION_MISSING,
-    REQUESTED_RESOLUTION_UNSELECTABLE,
-    SOURCE_BELOW_720_ONLY,
-)
 from .log_safety import sanitize_log_message
 from .models import Job, JobEvent, JobItem, JobStatus, utc_now
 from .output_paths import discover_output_file_candidates, output_file_candidates, resolve_existing_output_path
-from .schemas import DownloadOptions
+from .resolution_decisions import (
+    ResolutionDecision,
+    ResolutionDecisionKind,
+    decide_media_stream_fallback,
+    decide_probe_fallback,
+    decide_unavailable_format_fallback,
+    media_stream_failure_message,
+    should_look_for_fallback,
+    unselectable_resolution_message,
+)
+from .schemas import DownloadOptions, FormatOption
 from .transfer_stats import TransferStats
-from .ytdlp_service import DownloadCancelled, MIN_AUTO_FALLBACK_HEIGHT, YtDlpService
+from .ytdlp_service import DownloadCancelled, YtDlpService
 
 
 logger = logging.getLogger(__name__)
@@ -927,52 +931,33 @@ class JobManager:
         return preparation
 
     def _prepare_download(self, session: Session, item: JobItem, options: DownloadOptions) -> DownloadOptions:
+        """探测目标清晰度；不可选时按 `resolution_decisions` 的判定降级。
+
+        本方法只保留**IO 与时序**：探测、取元数据、写状态、提交。判定全部在
+        [`resolution_decisions`](resolution_decisions.py) 里，那里可被单测。
+        """
         preparation = self._probe_preparation(item, options)
         if preparation is not None:
             self._apply_download_preparation(session, item, preparation)
             return options
-        if options.format_id or YtDlpService._resolution_height(options.resolution) is None:
+
+        # 早退必须在取元数据**之前**：这两种情况不需要元数据，多取一次就是白付一次网络开销。
+        if not should_look_for_fallback(options):
             return options
 
-        try:
-            analysis = self.service.extract_metadata(item.source_url, cookies_path=self._cookies_path())
-        except Exception:
-            analysis = None
+        analysis_formats = self._extract_formats_or_none(item)
+        decision = decide_probe_fallback(options.resolution, analysis_formats)
+        if decision.kind is ResolutionDecisionKind.fail:
+            raise RuntimeError(decision.message)
+        if decision.kind is ResolutionDecisionKind.skip:
+            return options
 
-        requested_height = YtDlpService._resolution_height(options.resolution)
-        available_heights = {
-            int(format.height)
-            for format in (analysis.formats if analysis is not None else [])
-            if format.height is not None
-        }
-        height_missing = analysis is None or requested_height not in available_heights
-        fallback = None
-        if analysis is not None:
-            fallback = YtDlpService.suggest_lower_resolution(
-                options.resolution,
-                analysis.formats,
-                allow_below_min_if_source_below_min=height_missing,
-            )
-        if not fallback:
-            if height_missing:
-                raise RuntimeError(self._no_supported_fallback_message(options.resolution))
-            raise RuntimeError(self._unselectable_resolution_message(options.resolution))
-
-        if height_missing:
-            reason = (
-                SOURCE_BELOW_720_ONLY
-                if analysis is not None and not YtDlpService.has_resolution_at_or_above(analysis.formats)
-                else REQUESTED_RESOLUTION_MISSING
-            )
-        else:
-            reason = REQUESTED_RESOLUTION_UNSELECTABLE
-
-        fallback_options = self._options_with_resolution(options, fallback)
+        fallback_options = self._options_with_resolution(options, decision.fallback_resolution)
         fallback_preparation = self._probe_preparation(item, fallback_options)
         if fallback_preparation is None:
-            raise RuntimeError(self._unselectable_resolution_message(options.resolution))
+            raise RuntimeError(unselectable_resolution_message(options.resolution))
 
-        self._set_resolution_fallback(item, options.resolution, fallback, reason)
+        self._set_resolution_fallback(item, decision, options.resolution)
         item.error = None
         item.updated_at = utc_now()
         session.add(item)
@@ -1016,77 +1001,60 @@ class JobManager:
         return options.model_copy(update={"speed_limit_kbps": speed_limit_kbps, "retries": retries})
 
     def _annotate_media_stream_fallback(self, item: JobItem, options: DownloadOptions) -> None:
+        """媒体流 403 / 连接重置后，标注一个可重启的清晰度。判定见 `resolution_decisions`。
+
+        注意本方法**不碰 `item.error`**：媒体流失败的文案由 `_media_stream_failure_message` 给，
+        它要带上 cookies 状态，是另一件事。
+        """
         if options.format_id:
             return
-        fallback = self._fallback_resolution_for_item(
-            item,
-            options,
-            allow_below_min_if_source_below_min=True,
-        )
-        if not fallback:
+        decision = decide_media_stream_fallback(options.resolution, self._extract_formats_or_none(item))
+        if decision.kind is not ResolutionDecisionKind.fallback:
             return
-        self._set_resolution_fallback(item, options.resolution, fallback, MEDIA_STREAM_BLOCKED)
+        self._set_resolution_fallback(item, decision, options.resolution)
 
     def _annotate_resolution_fallback(self, item: JobItem, options: DownloadOptions, exc: Exception) -> None:
+        """「Requested format is not available」失败后标注降级，并改写 `item.error`。
+
+        为什么要改写 `item.error`：走到这里时任务已经 `failed`，用户看到的原因必须能解释
+        "为什么降过级仍然失败"。判定与文案都来自 `resolution_decisions`。
+        """
         if options.format_id or not YtDlpService.is_requested_format_unavailable_error(exc):
             return
-        fallback = self._fallback_resolution_for_item(
-            item,
-            options,
-            allow_below_min_if_source_below_min=False,
-        )
-        if not fallback:
+        decision = decide_unavailable_format_fallback(options.resolution, self._extract_formats_or_none(item))
+        if decision.kind is not ResolutionDecisionKind.fallback:
             return
-        self._set_resolution_fallback(item, options.resolution, fallback, REQUESTED_RESOLUTION_UNSELECTABLE)
-        item.error = self._resolution_fallback_message(options.resolution, fallback)
+        self._set_resolution_fallback(item, decision, options.resolution)
+        # 该路径上的 `message` 保证非空（由 `decide_unavailable_format_fallback` 负责）。
+        item.error = decision.message
 
-    def _fallback_resolution_for_item(
-        self,
-        item: JobItem,
-        options: DownloadOptions,
-        allow_below_min_if_source_below_min: bool,
-    ) -> str | None:
+    def _extract_formats_or_none(self, item: JobItem) -> list[FormatOption] | None:
+        """取一次元数据，返回可用格式；**取不到返回 `None` 而不是空列表**。
+
+        `None` 与 `[]` 表示的是两件事（"这次没取到" vs "取到了但没有格式"），类型上分开是为了不让
+        调用方把前者顺手写成后者。**但 `resolution_decisions` 里三条判定路径对两者的结论当前相同**，
+        所以这不是一处行为差异，而是接口约定 + 一道防止语义漂移的栅栏。
+        """
         try:
             analysis = self.service.extract_metadata(item.source_url, cookies_path=self._cookies_path())
         except Exception:
             return None
-        return YtDlpService.suggest_lower_resolution(
-            options.resolution,
-            analysis.formats,
-            allow_below_min_if_source_below_min=allow_below_min_if_source_below_min,
-        )
+        return list(analysis.formats)
 
     def _set_resolution_fallback(
         self,
         item: JobItem,
+        decision: ResolutionDecision,
         requested_resolution: str,
-        fallback_resolution: str,
-        reason: str,
     ) -> None:
+        """把降级决策写回条目。调用前必须已确认 `decision.kind is fallback`。"""
         item.requested_resolution = requested_resolution
-        item.fallback_resolution = fallback_resolution
-        item.fallback_reason = reason
-
-    def _resolution_fallback_message(self, requested_resolution: str, fallback_resolution: str) -> str:
-        return f"当前没有 {requested_resolution} 的视频，低于选定分辨率的最高可用分辨率是 {fallback_resolution}。"
-
-    def _no_supported_fallback_message(self, requested_resolution: str) -> str:
-        return f"当前没有 {requested_resolution} 的视频，也没有 {MIN_AUTO_FALLBACK_HEIGHT}p 或更高的可用降级清晰度。"
-
-    def _unselectable_resolution_message(self, requested_resolution: str) -> str:
-        return (
-            f"检测到 {requested_resolution} 清晰度，但该清晰度当前没有可下载的视频/音频组合，"
-            f"也没有 {MIN_AUTO_FALLBACK_HEIGHT}p 或更高的可用降级清晰度。"
-        )
+        item.fallback_resolution = decision.fallback_resolution
+        item.fallback_reason = decision.reason
 
     def _media_stream_failure_message(self) -> str:
         cookie_state = "已配置" if self.settings.cookies_path.exists() else "未配置"
-        return (
-            f"当前 cookies 状态：{cookie_state}。"
-            "YouTube 拒绝了媒体流下载（HTTP 403）或重置了媒体流连接。后台已在当前清晰度下尝试 PO-token provider、"
-            "浏览器 impersonation、断点续传和传输重试；请重新导入 cookies 后重试。若浏览器可正常播放但仍失败，"
-            "请检查网络/代理是否能稳定访问 YouTube 媒体域名，或配置有效的 YouTube PO token。"
-        )
+        return media_stream_failure_message(cookie_state)
 
     def _log_item_failure(self, item: JobItem, options: DownloadOptions, exc: Exception) -> None:
         if YtDlpService.is_js_challenge_error(exc):

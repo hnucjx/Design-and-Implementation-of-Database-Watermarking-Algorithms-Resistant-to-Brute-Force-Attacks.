@@ -29,6 +29,7 @@ package "L3 domain and policy" {
   [ytdlp_formats.py\nselectors, fallback math] as Formats
   [stall_guard.py\nstall watchdog] as Stall
   [fallback_policy.py\nreason and message] as Fallback
+  [resolution_decisions.py\ndowngrade decisions] as Decisions
   [browser_cookies.py\ncookie import] as Cookies
   [cookie_health.py\ncookie verification] as CookieHealth
   [proxy.py\nproxy resolution] as Proxy
@@ -97,6 +98,7 @@ Manager --> Gate
 Manager --> Stats
 Manager --> Stall
 Manager --> Fallback
+Manager --> Decisions
 Manager --> Outputs
 Manager --> Broker
 Manager --> Paths
@@ -114,6 +116,8 @@ CookieHealth --> Connectivity
 CookieHealth --> Proxy
 Connectivity --> Proxy
 Advice --> LogSafe
+Decisions --> Fallback
+Decisions --> Formats
 DB --> Models
 Broker --> Schemas : JSON payloads
 

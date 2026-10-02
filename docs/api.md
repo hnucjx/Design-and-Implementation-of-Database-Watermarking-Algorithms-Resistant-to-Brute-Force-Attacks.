@@ -4,7 +4,7 @@
 
 ## 机器可读规范
 
-[openapi.yaml](openapi.yaml) 是本 API 的 OpenAPI 3.1.0 描述，覆盖全部 28 个操作、28 个 schema、复用的路径参数/错误响应组件与逐接口请求/响应示例。它由人工从 [main.py](../backend/app/main.py)（路由与状态码）与 [schemas.py](../backend/app/schemas.py)（字段与必填性）编写；**这两个文件仍是唯一事实来源**，规范只做投影。
+[openapi.yaml](openapi.yaml) 是本 API 的 OpenAPI 3.1.0 描述，覆盖全部 28 个操作、28 个 schema、复用的路径参数/错误响应组件与逐接口请求/响应示例。它由人工从 [routers/](../backend/app/routers/__init__.py)（路由与状态码）与 [schemas.py](../backend/app/schemas.py)（字段与必填性）编写；**这两个文件仍是唯一事实来源**，规范只做投影。
 
 可直接用于：
 

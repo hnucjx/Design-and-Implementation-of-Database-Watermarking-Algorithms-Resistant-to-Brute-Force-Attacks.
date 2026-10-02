@@ -10,6 +10,7 @@ from yt_dlp.cookies import YoutubeDLCookieJar
 from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.utils import DownloadError
 
+from app.browser_cookies import BrowserCookieImporter
 from app.config import AppSettings
 from app.schemas import DownloadOptions, FormatOption
 from app import ytdlp_service
@@ -363,7 +364,7 @@ def test_mweb_pot_chrome_download_options_use_provider_and_stability_profile(mon
 def test_po_token_browser_path_prefers_configured_over_detected(monkeypatch, tmp_path: Path) -> None:
     configured = str(tmp_path / "chrome.exe")
     service = YtDlpService(download_dir=tmp_path, youtube_po_browser_path=configured)
-    monkeypatch.setattr(service, "_detect_chromium_executable", lambda: str(tmp_path / "msedge.exe"))
+    monkeypatch.setattr(ytdlp_service, "detect_chromium_executable", lambda: str(tmp_path / "msedge.exe"))
 
     assert service._po_token_browser_path() == configured
 
@@ -374,7 +375,7 @@ def test_po_token_provider_args_fall_back_to_detected_chromium(monkeypatch, tmp_
     detected = str(tmp_path / "msedge.exe")
     service = YtDlpService(download_dir=tmp_path)
     monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
-    monkeypatch.setattr(service, "_detect_chromium_executable", lambda: detected)
+    monkeypatch.setattr(ytdlp_service, "detect_chromium_executable", lambda: detected)
 
     opts = service.build_download_options(
         DownloadOptions(mode="video_subtitles", resolution="720p"),
@@ -388,7 +389,7 @@ def test_po_token_provider_args_fall_back_to_detected_chromium(monkeypatch, tmp_
 def test_po_token_provider_args_absent_when_no_browser_is_found(monkeypatch, tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
     monkeypatch.setattr(service, "_ffmpeg_executable", lambda: str(tmp_path / "ffmpeg.exe"))
-    monkeypatch.setattr(service, "_detect_chromium_executable", lambda: None)
+    monkeypatch.setattr(ytdlp_service, "detect_chromium_executable", lambda: None)
 
     opts = service.build_download_options(
         DownloadOptions(mode="video_subtitles", resolution="720p"),
@@ -875,7 +876,7 @@ def test_actual_format_can_be_extracted_from_progress_payload_requested_formats(
 def test_filesize_sums_requested_formats_for_prepared_download(tmp_path: Path) -> None:
     service = YtDlpService(download_dir=tmp_path)
 
-    filesize = service._filesize_from_info_dict(
+    filesize = ytdlp_service.filesize_from_info_dict(
         {
             "requested_formats": [
                 {"format_id": "137", "filesize": 12_000},
@@ -1078,7 +1079,7 @@ def test_import_browser_cookies_saves_only_youtube_related_cookies(monkeypatch, 
             raise RuntimeError("edge is not available")
         return jar
 
-    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+    monkeypatch.setattr("app.browser_cookies.extract_cookies_from_browser", fake_extract)
 
     result = YtDlpService(download_dir=tmp_path).import_browser_cookies("auto", tmp_path / "cookies.txt")
 
@@ -1095,7 +1096,7 @@ def test_import_browser_cookies_reports_locked_edge_database(monkeypatch, tmp_pa
     def fake_extract(browser_name, profile=None, logger=None, *, keyring=None, container=None):
         raise RuntimeError("Could not copy Chrome cookie database. See https://github.com/yt-dlp/yt-dlp/issues/7271")
 
-    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+    monkeypatch.setattr("app.browser_cookies.extract_cookies_from_browser", fake_extract)
 
     with pytest.raises(BrowserCookieImportError) as exc_info:
         YtDlpService(download_dir=tmp_path).import_browser_cookies("edge", tmp_path / "cookies.txt")
@@ -1120,8 +1121,14 @@ def test_import_browser_cookies_closes_edge_and_retries_when_allowed(monkeypatch
         return jar
 
     service = YtDlpService(download_dir=tmp_path)
-    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
-    monkeypatch.setattr(service, "_close_browser_for_cookie_import", lambda browser: closed.append(browser), raising=False)
+    monkeypatch.setattr("app.browser_cookies.extract_cookies_from_browser", fake_extract)
+    # 打桩要打在**类**上：importer 实例是 service.import_browser_cookies 调用时才 new 的，
+    # 而它的 __init__ 会把「关浏览器」这个方法绑定到实例上
+    # （`close_browser_for_cookie_import or self._close_browser_for_cookie_import`）。
+    monkeypatch.setattr(
+        "app.browser_cookies.BrowserCookieImporter._close_browser_for_cookie_import",
+        lambda self, browser: closed.append(browser),
+    )
 
     result = service.import_browser_cookies("edge", tmp_path / "cookies.txt", close_browser_if_locked=True)
 
@@ -1141,8 +1148,11 @@ def test_import_browser_cookies_uses_edge_cdp_fallback_after_dpapi_failure(monke
         raise RuntimeError("Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927")
 
     service = YtDlpService(download_dir=tmp_path)
-    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
-    monkeypatch.setattr(service, "_extract_edge_cookies_via_cdp", lambda: cdp_calls.append(True) or jar, raising=False)
+    monkeypatch.setattr("app.browser_cookies.extract_cookies_from_browser", fake_extract)
+    monkeypatch.setattr(
+        "app.browser_cookies.BrowserCookieImporter._extract_edge_cookies_via_cdp",
+        lambda self: cdp_calls.append(True) or jar,
+    )
 
     result = service.import_browser_cookies("edge", tmp_path / "cookies.txt")
 
@@ -1162,13 +1172,14 @@ def test_edge_cdp_fallback_never_launches_a_browser(monkeypatch, tmp_path: Path)
         raise AssertionError("CDP fallback must not launch a browser process.")
 
     # 先把服务构造完再打桩：构造时会合法地跑一次 `node --version` 做运行时自检，
-    # 那是产品行为，不该被算成「CDP 启动了进程」。
-    service = YtDlpService(download_dir=tmp_path)
+    # 那是产品行为，不该被算成「CDP 启动了进程」。自检走 `app.ytdlp_service`，与这里
+    # 打桩的 `app.browser_cookies.subprocess` 不是同一个模块；保留顺序只是为了不改变前提。
+    YtDlpService(download_dir=tmp_path)
 
     monkeypatch.setattr("app.browser_cookies.subprocess.Popen", forbidden_popen)
 
     with pytest.raises(BrowserCookieImportError) as exc_info:
-        service._extract_edge_cookies_via_cdp()
+        BrowserCookieImporter()._extract_edge_cookies_via_cdp()
 
     assert exc_info.value.code == "edge_app_bound"
     assert launched == []
@@ -1180,7 +1191,7 @@ def test_import_browser_cookies_reports_edge_app_bound_after_dpapi_failure(monke
         raise RuntimeError("Failed to decrypt with DPAPI. See https://github.com/yt-dlp/yt-dlp/issues/10927")
 
     service = YtDlpService(download_dir=tmp_path)
-    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+    monkeypatch.setattr("app.browser_cookies.extract_cookies_from_browser", fake_extract)
 
     with pytest.raises(BrowserCookieImportError) as exc_info:
         service.import_browser_cookies("edge", tmp_path / "cookies.txt")
@@ -1196,7 +1207,7 @@ def test_auto_browser_cookie_import_prioritizes_edge_app_bound(monkeypatch, tmp_
         raise RuntimeError(f"could not find {browser_name} profile")
 
     service = YtDlpService(download_dir=tmp_path)
-    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+    monkeypatch.setattr("app.browser_cookies.extract_cookies_from_browser", fake_extract)
 
     with pytest.raises(BrowserCookieImportError) as exc_info:
         service.import_browser_cookies("auto", tmp_path / "cookies.txt")
@@ -1215,7 +1226,7 @@ def test_auto_browser_cookie_import_prioritizes_locked_edge_error(monkeypatch, t
         return empty_jar
 
     monkeypatch.setattr("app.ytdlp_service.AUTO_BROWSER_COOKIE_CANDIDATES", ["edge", "chrome"])
-    monkeypatch.setattr("app.ytdlp_service.extract_cookies_from_browser", fake_extract, raising=False)
+    monkeypatch.setattr("app.browser_cookies.extract_cookies_from_browser", fake_extract)
 
     with pytest.raises(BrowserCookieImportError) as exc_info:
         YtDlpService(download_dir=tmp_path).import_browser_cookies("auto", tmp_path / "cookies.txt")

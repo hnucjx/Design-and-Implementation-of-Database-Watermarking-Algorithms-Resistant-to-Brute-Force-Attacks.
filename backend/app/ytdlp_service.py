@@ -10,7 +10,6 @@ import subprocess
 from typing import Any
 
 import yt_dlp
-from yt_dlp.cookies import YoutubeDLCookieJar, extract_cookies_from_browser
 from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.version import __version__ as yt_dlp_version
 
@@ -31,13 +30,8 @@ from .ytdlp_formats import (
     filesize_from_info_dict,
     format_selector,
     has_resolution_at_or_above,
-    positive_int,
     requires_ffmpeg,
     resolution_from_info_dict,
-    resolution_from_mapping,
-    resolution_height,
-    short_codec,
-    single_file_format_selector,
     suggest_lower_resolution,
 )
 
@@ -335,22 +329,15 @@ class YtDlpService:
         target_path: Path,
         close_browser_if_locked: bool = False,
     ) -> BrowserCookieImportResult:
-        return BrowserCookieImporter(
-            candidates=AUTO_BROWSER_COOKIE_CANDIDATES,
-            extract_browser_cookie_jar=self._extract_browser_cookie_jar,
-            close_browser_for_cookie_import=self._close_browser_for_cookie_import,
-            extract_edge_cookies_via_cdp=self._extract_edge_cookies_via_cdp,
-        ).import_browser_cookies(browser, target_path, close_browser_if_locked)
-
-    def _extract_browser_cookie_jar(self, browser: str) -> YoutubeDLCookieJar:
-        return extract_cookies_from_browser(browser)
-
-    def _close_browser_for_cookie_import(self, browser: str) -> None:
-        BrowserCookieImporter()._close_browser_for_cookie_import(browser)
-
-    def _extract_edge_cookies_via_cdp(self) -> YoutubeDLCookieJar:
-        """Edge cookies 无法离线读取，见 ``BrowserCookieImporter._extract_edge_cookies_via_cdp``。"""
-        return BrowserCookieImporter()._extract_edge_cookies_via_cdp()
+        # 三个可注入接缝（取 cookie jar / 关掉占用库的浏览器 / DPAPI 失败后走 CDP）都住在
+        # ``BrowserCookieImporter`` 里，由它自己的默认实现提供。本类**不再**把转发方法传进去：
+        # 那三个方法原本只是「new 一个 importer 再调它的私有方法」，传进去等于让 importer
+        # 绕一圈回来调自己。测试要打桩时改 ``app.browser_cookies.*``（实现所在模块）。
+        return BrowserCookieImporter(candidates=AUTO_BROWSER_COOKIE_CANDIDATES).import_browser_cookies(
+            browser,
+            target_path,
+            close_browser_if_locked,
+        )
 
     def extract_metadata(self, url: str, cookies_path: Path | None = None) -> AnalyzeResponse:
         opts: dict[str, Any] = {
@@ -433,9 +420,9 @@ class YtDlpService:
             return DownloadPreparation(is_selectable=False)
 
         selected_format = selected[0]
-        resolution = self._resolution_from_info_dict(selected_format)
-        actual_format = self._actual_format_from_info_dict(selected_format)
-        filesize = self._filesize_from_info_dict(selected_format)
+        resolution = resolution_from_info_dict(selected_format)
+        actual_format = actual_format_from_info_dict(selected_format)
+        filesize = filesize_from_info_dict(selected_format)
         return DownloadPreparation(
             is_selectable=True,
             width=resolution[0] if resolution else None,
@@ -505,12 +492,12 @@ class YtDlpService:
         if options.mode != "subtitles_only":
             ffmpeg_path = self._ffmpeg_executable()
             ffmpeg_available = ffmpeg_path is not None
-            if not ffmpeg_available and self._requires_ffmpeg(options):
+            if not ffmpeg_available and requires_ffmpeg(options):
                 requested = options.format_id or options.resolution
                 raise RuntimeError(
                     f"ffmpeg is required to download {requested} without silently falling back to a lower resolution."
                 )
-            ydl_opts["format"] = self._format_selector(
+            ydl_opts["format"] = format_selector(
                 options,
                 allow_merge=ffmpeg_available,
                 prefer_hls=youtube_profile == "safari_hls",
@@ -618,22 +605,13 @@ class YtDlpService:
         info = payload.get("info_dict")
         if not isinstance(info, dict):
             return None
-        return self._resolution_from_info_dict(info)
-
-    def _resolution_from_info_dict(self, info: dict[str, Any]) -> tuple[int, int] | None:
         return resolution_from_info_dict(info)
 
     def actual_format_from_progress_payload(self, payload: dict[str, Any]) -> str | None:
         info = payload.get("info_dict")
         if not isinstance(info, dict):
             return None
-        return self._actual_format_from_info_dict(info)
-
-    def _actual_format_from_info_dict(self, info: dict[str, Any]) -> str | None:
         return actual_format_from_info_dict(info)
-
-    def _filesize_from_info_dict(self, info: dict[str, Any]) -> int | None:
-        return filesize_from_info_dict(info)
 
     def detect_file_resolution(self, file_path: Path) -> tuple[int, int] | None:
         ffmpeg_path = self._ffmpeg_executable()
@@ -682,7 +660,7 @@ class YtDlpService:
 
     @staticmethod
     def is_http_403_error(exc: BaseException) -> bool:
-        for current in YtDlpService._exception_chain(exc):
+        for current in exception_chain(exc):
             message = str(current).lower()
             if "http error 403" in message or ("403" in message and "forbidden" in message):
                 return True
@@ -703,7 +681,7 @@ class YtDlpService:
         """
         return any(
             any(hint in str(current).lower() for hint in COOKIE_REQUIRED_AUTH_HINTS)
-            for current in YtDlpService._exception_chain(exc)
+            for current in exception_chain(exc)
         )
 
     @staticmethod
@@ -716,7 +694,7 @@ class YtDlpService:
         """
         return any(
             any(hint in str(current).lower() for hint in JS_CHALLENGE_HINTS)
-            for current in YtDlpService._exception_chain(exc)
+            for current in exception_chain(exc)
         )
 
     @classmethod
@@ -759,12 +737,12 @@ class YtDlpService:
         )
         return any(
             any(hint in str(current).lower() for hint in reset_hints)
-            for current in YtDlpService._exception_chain(exc)
+            for current in exception_chain(exc)
         )
 
     @staticmethod
     def readable_error_message(exc: BaseException) -> str:
-        for current in YtDlpService._exception_chain(exc):
+        for current in exception_chain(exc):
             message = str(current).strip()
             if message:
                 return message
@@ -787,27 +765,13 @@ class YtDlpService:
         )
 
     @staticmethod
-    def _exception_chain(exc: BaseException):
-        # 实现搬到 error_advice，保证「分类」和「给用户的建议」看的是同一条异常链。
-        return exception_chain(exc)
-
-    @staticmethod
     def is_cookie_required_error(exc: Exception) -> bool:
-        for current in YtDlpService._exception_chain(exc):
+        for current in exception_chain(exc):
             message = str(current).lower()
             cookie_hint = "cookies-from-browser" in message or "--cookies" in message or "cookie" in message
             if cookie_hint and any(hint in message for hint in COOKIE_REQUIRED_AUTH_HINTS):
                 return True
         return False
-
-    def _format_selector(self, options: DownloadOptions, allow_merge: bool = True, prefer_hls: bool = False) -> str:
-        return format_selector(options, allow_merge=allow_merge, prefer_hls=prefer_hls)
-
-    def _single_file_format_selector(self, options: DownloadOptions) -> str:
-        return single_file_format_selector(options)
-
-    def _requires_ffmpeg(self, options: DownloadOptions) -> bool:
-        return requires_ffmpeg(options)
 
     def _normalize_youtube_profile(self, youtube_profile: str) -> str:
         return YOUTUBE_PROFILE_ALIASES.get(youtube_profile, youtube_profile)
@@ -874,9 +838,6 @@ class YtDlpService:
         """wpc provider 要用的浏览器路径：显式配置优先，否则自动探测 Edge/Chrome。"""
         if self.youtube_po_browser_path:
             return self.youtube_po_browser_path
-        return self._detect_chromium_executable()
-
-    def _detect_chromium_executable(self) -> str | None:
         return detect_chromium_executable()
 
     def _po_token_provider_args(self, youtube_profile: str) -> dict[str, list[str]]:
@@ -1069,19 +1030,6 @@ class YtDlpService:
             return None
         output = (completed.stdout or completed.stderr).strip().splitlines()
         return output[0] if output else None
-
-    def _resolution_from_mapping(self, value: dict[str, Any]) -> tuple[int, int] | None:
-        return resolution_from_mapping(value)
-
-    def _positive_int(self, value: Any) -> int | None:
-        return positive_int(value)
-
-    def _short_codec(self, value: Any) -> str | None:
-        return short_codec(value)
-
-    @staticmethod
-    def _resolution_height(resolution: str) -> int | None:
-        return resolution_height(resolution)
 
     def _node_version_supported(self, version: str | None) -> bool:
         if not version:

@@ -1,15 +1,15 @@
 """任务产物的**定位**与**本机打开**。
 
 一个条目下载完之后，界面上能对它做的本地操作只有两类：播放、打开它所在的文件夹。
-「文件在哪」这件事在两类操作里走的是同一条候选链：数据库里记的 `output_path` →
-按视频 id 在下载目录里发现的候选 → 合并/后缀变体（`.f137.mp4` 这类）。
-本模块把这条链与 `system_open` 的调用包在一起，路由层只写状态码。
+「文件在哪」走的是一条候选链：数据库里记的 `output_path` → 按视频 id 在下载目录里发现的候选
+→ 合并/后缀变体（`.f137.mp4` 这类）。
 
-**本模块是「产物定位只有一条链」的落点**：`job_manager` 里另有一套为删除而写的路径计算
-（`_item_output_paths`），两者的收敛已登记为下一轮候选，见 [ai/refactor/refactor.md §4.1](../../ai/refactor/refactor.md)。
-在收敛之前，请**不要**在路由层再写第三处候选计算。
+**这条链只定义一次**，在 [`output_paths.py`](output_paths.py)（`existing_output_file` /
+`existing_item_folder`）。本模块只做两件事：把「找不到」翻译成合适的状态码，以及把打开动作
+交给 [`system_open`](system_open.py)。
 
-不负责：删文件（删除带白名单校验，属 `job_manager`），不负责决定用什么播放器（属 `system_open`）。
+不负责：删文件（删除带白名单校验，属 [`job_manager.py`](job_manager.py)），
+不负责决定用什么播放器（属 [`system_open.py`](system_open.py)）。
 """
 
 from __future__ import annotations
@@ -22,16 +22,13 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from .models import Job, JobItem
-from .output_paths import discover_existing_output_path, discover_output_file_candidates, resolve_existing_output_path
+from .output_paths import existing_item_folder, existing_output_file
 from .system_open import LocalOpenError
 
 
 def output_file(item: JobItem, base_dir: str | Path | None = None) -> Path:
     """条目的成品视频文件。**找不到就 409**，不是 404：资源存在（这个条目在库里），只是产物还没就绪。"""
-    base_path = Path(base_dir) if base_dir else None
-    path = resolve_existing_output_path(Path(item.output_path), base_path) if item.output_path else None
-    if path is None:
-        path = discover_existing_output_path(item.source_url, base_path)
+    path = existing_output_file(item.output_path, item.source_url, _base_path(base_dir))
     if path is None:
         raise HTTPException(status_code=409, detail="视频文件尚不可用。")
     if not path.is_file():
@@ -41,15 +38,10 @@ def output_file(item: JobItem, base_dir: str | Path | None = None) -> Path:
 
 def item_folder(item: JobItem, base_dir: str | Path | None = None) -> Path:
     """条目产物所在的文件夹。产物还没出现时退回到任务下载目录 —— 打开文件夹比「不存在」有用。"""
-    base_path = Path(base_dir) if base_dir else None
-    path = resolve_existing_output_path(Path(item.output_path), base_path) if item.output_path else None
-    if not path:
-        discovered = discover_output_file_candidates(item.source_url, base_path)
-        path = discovered[0] if discovered else None
-    if path:
-        folder = path.parent
-        if folder.is_dir():
-            return folder
+    base_path = _base_path(base_dir)
+    folder = existing_item_folder(item.output_path, item.source_url, base_path)
+    if folder is not None and folder.is_dir():
+        return folder
     if base_path and base_path.is_dir():
         return base_path
     raise HTTPException(status_code=409, detail="视频文件夹不存在。")
@@ -70,6 +62,10 @@ def job_folder(session: Session, job: Job) -> Path:
     if not folder.is_dir():
         raise HTTPException(status_code=409, detail="合集文件夹不存在。")
     return folder
+
+
+def _base_path(base_dir: str | Path | None) -> Path | None:
+    return Path(base_dir) if base_dir else None
 
 
 async def open_local_path(path_opener: Callable[[Path], None], path: Path) -> None:

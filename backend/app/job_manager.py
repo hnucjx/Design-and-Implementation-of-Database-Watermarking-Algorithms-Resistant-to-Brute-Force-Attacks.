@@ -17,7 +17,7 @@ from .events import EventBroker
 from .progress_persist import ProgressPersistGate
 from .log_safety import sanitize_log_message
 from .models import Job, JobEvent, JobItem, JobStatus, utc_now
-from .output_paths import discover_output_file_candidates, output_file_candidates, resolve_existing_output_path
+from .output_paths import item_artifact_candidates, output_file_candidates, resolve_existing_output_path
 from .resolution_decisions import (
     ResolutionDecision,
     ResolutionDecisionKind,
@@ -373,18 +373,8 @@ class JobManager:
         return any(path == root or root in path.parents for root in allowed_roots)
 
     def _item_output_paths(self, item: JobItem, job_download_dir: Path | None) -> list[Path]:
-        paths: list[Path] = []
-        if item.output_path:
-            paths.append(Path(item.output_path))
-        paths.extend(discover_output_file_candidates(item.source_url, job_download_dir))
-        deduped: list[Path] = []
-        seen: set[Path] = set()
-        for path in paths:
-            if path in seen:
-                continue
-            seen.add(path)
-            deduped.append(path)
-        return deduped
+        """条目可能关联的全部路径。候选链的唯一定义在 `output_paths.item_artifact_candidates`。"""
+        return item_artifact_candidates(item.output_path, item.source_url, job_download_dir)
 
     async def _worker(self, worker_index: int) -> None:
         assert self._queue is not None

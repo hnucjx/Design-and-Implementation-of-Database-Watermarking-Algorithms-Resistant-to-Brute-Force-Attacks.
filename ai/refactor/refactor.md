@@ -1,6 +1,6 @@
 # 重构总纲（refactor charter）
 
-> 最后更新：**2026-10-02 17:20 +08:00** ｜ 基线 commit：`3643e76`（main）
+> 最后更新：**2026-10-02 17:28 +08:00** ｜ 基线 commit：`3643e76`（main）
 > 本文件是重构的**总纲与索引**。每轮重构的「计划 / 实施方案 / 实施情况」各自成文，见 [§6 轮次索引](#6-轮次索引)。
 
 本仓库已有的三份记录目录各管一件事，不要混：
@@ -128,6 +128,7 @@ cookies 导入、格式工具、前端工具、任务中心、测试夹具陆续
    **✅ 已完成 → [005](005-safe-delete.md)（2026-10-02）**
 3. **`openapi.yaml` 与 `frontend/src/types.ts` 是两份手写的同一契约**（28 operations / 206 行类型）。
    理想形态是单一来源 + 生成，但生成器会引入工具链与 npm 依赖，违反 §3.1 第 6 条，需单独决策。
+   **✅ 已完成（次优形态：单一来源 + 漂移校验，未生成）→ [006](006-api-contract-drift.md)（2026-10-02）**
 4. **没有 lint / format / CI 门槛**：仓库无 `.github/`、无 ruff/eslint/prettier 配置。
    引入它们会对 6000+ 行既有代码产生大量机械改动，属独立议题。
 5. **`frontend/src/App.test.tsx`（1521 行 / 69 用例）未按功能拆分。**
@@ -178,6 +179,7 @@ hash 只能在**下一次触碰本目录时**回填；查某条改动用 `git lo
 | [003](003-resolution-decisions.md) | 降级决策纯化：从「跑一次下载才知道」到「可直接单测」 | 回填 | 判定收进 `resolution_decisions.py`（4 个纯函数），`job_manager` 只剩 IO 与状态写入；新增 31 例单测，8 个场景在 HEAD 与重构后逐字段相同 |
 | [004](004-artifact-paths.md) | 产物路径收敛：候选链只有一个计算处 | 回填 | `job_artifacts` 与 `job_manager._item_output_paths` 的候选链下沉到 `output_paths.py`；12 场景 × 3 入口的旧/新逐项对照（§4.1 第 1 项） |
 | [005](005-safe-delete.md) | 安全删除纯化：白名单判定可单测 | 回填 | 路径安全判定收进 `safe_delete.py`（`DeleteScope` + 3 个纯函数）；16 例含「字符串前缀」陷阱与 Windows 大小写；8 处端到端删除回归（§4.1 第 2 项） |
+| [006](006-api-contract-drift.md) | 契约漂移校验：单一来源是运行时 `app.openapi()` | 回填 | 新增 `scripts/check_api_contract.py`；`types.ts` 15 接口字段 + `openapi.yaml` 48 条目；两次注入式取证（§4.1 第 3 项，次优形态） |
 
 ---
 

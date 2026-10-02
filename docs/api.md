@@ -20,6 +20,25 @@
 
 改动路由或 schema 后必须同步 `openapi.yaml`；这一步已写进 [维护文档的变更 checklist](maintenance.md#变更-checklist)。
 
+### 与运行时契约的漂移校验
+
+上面那一步靠自觉。而**运行时契约**（`create_app().openapi()`，由 [schemas.py](../backend/app/schemas.py)
+与各路由的响应模型生成）才是唯一「改代码就跟着变」的那一份 —— `openapi.yaml` 与
+[types.ts](../frontend/src/types.ts) 都只是它的**手写副本**。两者有没有分叉，可以直接跑：
+
+```bash
+.venv/Scripts/python.exe scripts/check_api_contract.py
+```
+
+以运行时契约为单一来源，校验两件事：
+
+- `frontend/src/types.ts`：每个接口的**字段名集合**与对应运行时 schema 完全相同（当前 15 个接口）；
+- `docs/openapi.yaml`：**路径 × 方法**集合与 **paths 引用的 schema** 集合（当前 48 个条目）。
+
+有意不跟随运行时命名的两处（文档用 `Error` / `CookieImportError`，运行时用 `HTTPValidationError` /
+`Body_upload_*`）在脚本里登记为已知差异，只有**未登记**的差异才会失败。
+注意它**只比字段名、不比类型**，覆盖边界与已知缺口见 [006](../ai/refactor/006-api-contract-drift.md)。
+
 ## 基本约定
 
 - 后端应用由 [create_app](../backend/app/main.py#L39) 创建；API 默认绑定 `127.0.0.1:8000`（可用仓库根 `.env` 的 `YTDL_API_PORT` 或 `python -m app --port` 覆盖，见 [开发文档](development.md#端口被占用时)），单端口模式下同时托管 `frontend/dist`。

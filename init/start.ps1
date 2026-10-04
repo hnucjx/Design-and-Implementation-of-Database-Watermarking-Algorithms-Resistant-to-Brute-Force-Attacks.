@@ -19,6 +19,24 @@ $ErrorActionPreference = 'Stop'
 # 让 Python 子进程（后端）的输出不被块缓冲，便于脚本实时解析自动选择的端口
 $env:PYTHONUNBUFFERED = '1'
 
+# PowerShell 5.1 的 Start-Process 会把环境复制到一个大小写不敏感的字典；若同时出现
+# HTTP_PROXY 与 http_proxy（本机很常见）会抛 "Item has already been added"。下面仅在「大写副本也存在」
+# 时才删小写副本，避免误删仅以小写存在的代理（Python 两种大小写都认，删掉小写、留大写即可消除冲突）。
+$proxyPairs = @(
+    @('http_proxy',  'HTTP_PROXY'),
+    @('https_proxy', 'HTTPS_PROXY'),
+    @('no_proxy',    'NO_PROXY'),
+    @('all_proxy',   'ALL_PROXY'),
+    @('ftp_proxy',   'FTP_PROXY')
+)
+$rawEnv = [System.Environment]::GetEnvironmentVariables()
+foreach ($p in $proxyPairs) {
+    $lower, $upper = $p[0], $p[1]
+    if ($rawEnv.ContainsKey($lower) -and $rawEnv.ContainsKey($upper)) {
+        try { [System.Environment]::SetEnvironmentVariable($lower, $null) } catch { }
+    }
+}
+
 $RepoRoot    = Resolve-Path (Join-Path $PSScriptRoot '..')
 $FrontendDir = Join-Path $RepoRoot 'frontend'
 $BackendDir  = Join-Path $RepoRoot 'backend'
@@ -106,25 +124,26 @@ if ($Mode -eq 'dev') {
     $backendArgs.Add('-m'); $backendArgs.Add('app'); $backendArgs.Add('--reload')
     $backendArgs.AddRange($BackendExtra)
 
-    $backendJob  = Start-Process -FilePath $Python -ArgumentList $backendArgs  -WorkingDirectory $BackendDir  -PassThru
-    $frontendJob = Start-Process -FilePath 'npm'  -ArgumentList @('run','dev','--','--port','5173') -WorkingDirectory $FrontendDir -PassThru
+    $script:backendJob  = Start-Process -FilePath $Python -ArgumentList $backendArgs  -WorkingDirectory $BackendDir  -PassThru
+    $script:frontendJob = Start-Process -FilePath 'npm'  -ArgumentList @('run','dev','--','--port','5173') -WorkingDirectory $FrontendDir -PassThru
 
-    $cleanup = {
+    $script:cleanup = {
         Write-Host ""
         Write-Host "==> 正在停止前后端..."
-        if ($backendJob  -and -not $backendJob.HasExited)  { Stop-Process -Id $backendJob.Id  -Force }
-        if ($frontendJob -and -not $frontendJob.HasExited) { Stop-Process -Id $frontendJob.Id -Force }
+        if ($script:backendJob  -and -not $script:backendJob.HasExited)  { Stop-Process -Id $script:backendJob.Id  -Force }
+        if ($script:frontendJob -and -not $script:frontendJob.HasExited) { Stop-Process -Id $script:frontendJob.Id -Force }
     }
     # Ctrl+C 时先清理子进程，避免 Vite / uvicorn 成为孤儿进程
-    [Console]::CancelKeyPress.Add({ param($s,$e) $e.Cancel = $true; & $cleanup })
+    # 注意：本机 Windows PowerShell 5.1 中 [Console]::CancelKeyPress 为 $null，必须用 CLR 访问器 add_CancelKeyPress
+    [Console]::add_CancelKeyPress({ param($s,$e) $e.Cancel = $true; & $script:cleanup })
 
     try {
         while ($true) {
             Start-Sleep -Seconds 1
-            if ($backendJob.HasExited -or $frontendJob.HasExited) { break }
+            if ($script:backendJob.HasExited -or $script:frontendJob.HasExited) { break }
         }
     } finally {
-        & $cleanup
+        & $script:cleanup
     }
 } else {
     Write-Host ""
@@ -136,44 +155,48 @@ if ($Mode -eq 'dev') {
     $backendArgs.Add('-m'); $backendArgs.Add('app'); $backendArgs.Add('--auto-port')
     $backendArgs.AddRange($BackendExtra)
 
-    $log    = Join-Path $env:TEMP ("ytdl-start-" + [System.Guid]::NewGuid().ToString("N") + ".log")
-    $logErr = Join-Path $env:TEMP ("ytdl-start-" + [System.Guid]::NewGuid().ToString("N") + ".err")
+    $script:log    = Join-Path $env:TEMP ("ytdl-start-" + [System.Guid]::NewGuid().ToString("N") + ".log")
+    $script:logErr = Join-Path $env:TEMP ("ytdl-start-" + [System.Guid]::NewGuid().ToString("N") + ".err")
 
-    $backendProc = Start-Process -FilePath $Python -ArgumentList $backendArgs -WorkingDirectory $BackendDir -PassThru -NoNewWindow -RedirectStandardOutput $log -RedirectStandardError $logErr
+    $script:backendProc = Start-Process -FilePath $Python -ArgumentList $backendArgs -WorkingDirectory $BackendDir -PassThru -NoNewWindow -RedirectStandardOutput $script:log -RedirectStandardError $script:logErr
 
-    $cleanup = {
-        if ($backendProc -and -not $backendProc.HasExited) { Stop-Process -Id $backendProc.Id -Force }
-        Remove-Item $log    -ErrorAction SilentlyContinue
-        Remove-Item $logErr -ErrorAction SilentlyContinue
+    $script:cleanup = {
+        if ($script:backendProc -and -not $script:backendProc.HasExited) { Stop-Process -Id $script:backendProc.Id -Force }
+        Remove-Item $script:log    -ErrorAction SilentlyContinue
+        Remove-Item $script:logErr -ErrorAction SilentlyContinue
     }
     # Ctrl+C 时先清理子进程，避免 uvicorn 成为孤儿进程
-    [Console]::CancelKeyPress.Add({ param($s,$e) $e.Cancel = $true; & $cleanup })
+    # 注意：本机 Windows PowerShell 5.1 中 [Console]::CancelKeyPress 为 $null，必须用 CLR 访问器 add_CancelKeyPress
+    [Console]::add_CancelKeyPress({ param($s,$e) $e.Cancel = $true; & $script:cleanup })
 
     $port = $null
     $shown = 0
-    while (-not $backendProc.HasExited) {
-        if (Test-Path $log) {
-            $lines = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
-            if ($lines.Count -gt $shown) {
-                for ($j = $shown; $j -lt $lines.Count; $j++) {
-                    $l = $lines[$j]
-                    Write-Host $l
-                    if ($l -match '服务地址：http://127\.0\.0\.1:(\d+)') { $port = $Matches[1] }
+    try {
+        while (-not $script:backendProc.HasExited) {
+            if (Test-Path $script:log) {
+                $lines = @(Get-Content -Path $script:log -ErrorAction SilentlyContinue)
+                if ($lines.Count -gt $shown) {
+                    for ($j = $shown; $j -lt $lines.Count; $j++) {
+                        $l = $lines[$j]
+                        Write-Host $l
+                        if ($l -match '服务地址：http://127\.0\.0\.1:(\d+)') { $port = $Matches[1] }
+                    }
+                    $shown = $lines.Count
                 }
-                $shown = $lines.Count
             }
-        }
-        if ($port) {
+            if ($port) {
             Write-Host "==> 已自动选择端口 $port，正在打开浏览器 http://127.0.0.1:$port ..."
             Start-Sleep -Seconds 1
-            Start-Process "http://127.0.0.1:$port"
+            try { Start-Process "http://127.0.0.1:$port" } catch { Write-Host "提示：未能自动打开浏览器，请手动访问 http://127.0.0.1:$port" -ForegroundColor Yellow }
             $port = $null
+            }
+            Start-Sleep -Milliseconds 300
         }
-        Start-Sleep -Milliseconds 300
+    } finally {
+        & $script:cleanup
     }
 
     # 排空剩余日志
-    if (Test-Path $log)    { @(Get-Content -Path $log    -ErrorAction SilentlyContinue) | Select-Object -Skip $shown | ForEach-Object { Write-Host $_ } }
-    if (Test-Path $logErr) { @(Get-Content -Path $logErr -ErrorAction SilentlyContinue) | ForEach-Object { Write-Host $_ -ForegroundColor Red } }
-    & $cleanup
+    if (Test-Path $script:log)    { @(Get-Content -Path $script:log    -ErrorAction SilentlyContinue) | Select-Object -Skip $shown | ForEach-Object { Write-Host $_ } }
+    if (Test-Path $script:logErr) { @(Get-Content -Path $script:logErr -ErrorAction SilentlyContinue) | ForEach-Object { Write-Host $_ -ForegroundColor Red } }
 }

@@ -4,7 +4,7 @@
 #   powershell -ExecutionPolicy Bypass -File init\start.ps1
 #   powershell -ExecutionPolicy Bypass -File init\start.ps1 dev          # 开发模式：后端 + 前端 Vite 并发
 #   powershell -ExecutionPolicy Bypass -File init\start.ps1 --no-build   # 单端口模式跳过前端构建
-#   powershell -ExecutionPolicy Bypass -File init\start.ps1 --auto-port  # 端口被占用时自动往后找（透传给 python -m app）
+#   （单端口模式默认已带 --auto-port 自动选端口；如要固定端口可传 --port 8010）
 #
 # 任意未知参数都会原样透传给 `python -m app`，例如：
 #   powershell -ExecutionPolicy Bypass -File init\start.ps1 --port 8010
@@ -15,6 +15,9 @@
 # 若仓库根或 backend\ 下已存在 .venv，脚本会自动使用；否则使用 PATH 中的 python。
 
 $ErrorActionPreference = 'Stop'
+
+# 让 Python 子进程（后端）的输出不被块缓冲，便于脚本实时解析自动选择的端口
+$env:PYTHONUNBUFFERED = '1'
 
 $RepoRoot    = Resolve-Path (Join-Path $PSScriptRoot '..')
 $FrontendDir = Join-Path $RepoRoot 'frontend'
@@ -125,16 +128,52 @@ if ($Mode -eq 'dev') {
     }
 } else {
     Write-Host ""
-    Write-Host "==> 单端口模式：启动后端（由它同时托管前端页面与 API）"
-    Write-Host "    启动后请打开后端打印的「服务地址」。默认 http://127.0.0.1:8000"
+    Write-Host "==> 单端口模式：启动后端（默认带 --auto-port 自动选择可用端口，并自动打开浏览器）"
     Write-Host "    按 Ctrl+C 停止。"
     Write-Host ""
 
     $backendArgs = [System.Collections.Generic.List[string]]::new()
-    $backendArgs.Add('-m'); $backendArgs.Add('app')
+    $backendArgs.Add('-m'); $backendArgs.Add('app'); $backendArgs.Add('--auto-port')
     $backendArgs.AddRange($BackendExtra)
 
-    Push-Location $BackendDir
-    try { & $Python @backendArgs; if ($LASTEXITCODE -ne 0) { Fail "后端启动失败（退出码 $LASTEXITCODE）。" } }
-    finally { Pop-Location }
+    $log    = Join-Path $env:TEMP ("ytdl-start-" + [System.Guid]::NewGuid().ToString("N") + ".log")
+    $logErr = Join-Path $env:TEMP ("ytdl-start-" + [System.Guid]::NewGuid().ToString("N") + ".err")
+
+    $backendProc = Start-Process -FilePath $Python -ArgumentList $backendArgs -WorkingDirectory $BackendDir -PassThru -NoNewWindow -RedirectStandardOutput $log -RedirectStandardError $logErr
+
+    $cleanup = {
+        if ($backendProc -and -not $backendProc.HasExited) { Stop-Process -Id $backendProc.Id -Force }
+        Remove-Item $log    -ErrorAction SilentlyContinue
+        Remove-Item $logErr -ErrorAction SilentlyContinue
+    }
+    # Ctrl+C 时先清理子进程，避免 uvicorn 成为孤儿进程
+    [Console]::CancelKeyPress.Add({ param($s,$e) $e.Cancel = $true; & $cleanup })
+
+    $port = $null
+    $shown = 0
+    while (-not $backendProc.HasExited) {
+        if (Test-Path $log) {
+            $lines = @(Get-Content -Path $log -ErrorAction SilentlyContinue)
+            if ($lines.Count -gt $shown) {
+                for ($j = $shown; $j -lt $lines.Count; $j++) {
+                    $l = $lines[$j]
+                    Write-Host $l
+                    if ($l -match '服务地址：http://127\.0\.0\.1:(\d+)') { $port = $Matches[1] }
+                }
+                $shown = $lines.Count
+            }
+        }
+        if ($port) {
+            Write-Host "==> 已自动选择端口 $port，正在打开浏览器 http://127.0.0.1:$port ..."
+            Start-Sleep -Seconds 1
+            Start-Process "http://127.0.0.1:$port"
+            $port = $null
+        }
+        Start-Sleep -Milliseconds 300
+    }
+
+    # 排空剩余日志
+    if (Test-Path $log)    { @(Get-Content -Path $log    -ErrorAction SilentlyContinue) | Select-Object -Skip $shown | ForEach-Object { Write-Host $_ } }
+    if (Test-Path $logErr) { @(Get-Content -Path $logErr -ErrorAction SilentlyContinue) | ForEach-Object { Write-Host $_ -ForegroundColor Red } }
+    & $cleanup
 }

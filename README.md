@@ -21,7 +21,7 @@ Linux/macOS：bash init/start.sh
 `init\start.ps1 dev` 或 `bash init/start.sh dev`。脚本会自动检测并使用已有的 `.venv`（仓库根或 backend/ 下），
 未检测到时使用 PATH 中的 Python 3.12+ 与 Node.js 20+。进阶启动参数见下方说明。
 
-启动时命令会把实际监听地址打印出来，默认是 `http://127.0.0.1:8000`：
+脚本默认带 `--auto-port`：若 `8000` 可用就用它，被占用则自动往后找一个空闲端口，并把实际监听地址打印出来。脚本会**自动用系统默认浏览器打开**该地址；若自动打开失败，请手动访问它打印的「服务地址」（通常为 `http://127.0.0.1:8000`，被占用时自动顺延）：
 
 ```text
 服务地址：http://127.0.0.1:8000
@@ -40,7 +40,7 @@ Linux/macOS：bash init/start.sh
 
 端口只有一个来源：仓库根 `.env` 里的 `YTDL_API_PORT`（默认 `8000`，取值范围 `1..65535`）。后端读它，`frontend/vite.config.ts` 里前端开发服务器的 `/api` 代理读的也是它 —— 只有一处来源，才不会出现「后端换了端口、前端还代理旧端口」这种静默错配。
 
-init 脚本底层调用的就是 `python -m app`，其进阶参数（`--port` / `--auto-port` / `--reload` / `--host` 等）可直接透传，例如 `bash init/start.sh --auto-port` 或 `init\start.ps1 --port 8010`。完整开关与「不要把 `--host` 放宽到 `0.0.0.0`」的安全警告见 [开发文档：本地运行](docs/development.md#本地运行)。
+init 脚本底层调用的就是 `python -m app`，其进阶参数（`--port` / `--reload` / `--host` 等）可直接透传，例如 `bash init/start.sh --port 8010` 固定端口（默认已是 `--auto-port` 自动选端口）。完整开关与「不要把 `--host` 放宽到 `0.0.0.0`」的安全警告见 [开发文档：本地运行](docs/development.md#本地运行)。
 
 端口**不在设置面板里**（`GET/PUT /api/settings` 不含它），要改就用上面的方式。默认的 `8000` 在开发机上常被别的程序占用（例如 IncrediBuild 的 Coordinator 就长期监听它），此时 `python -m app` 不会只丢一句 `WinError 10013` —— 它会指名占用者并给出下一步，换端口与前端代理如何保持一致见
 [开发文档：端口被占用时](docs/development.md#端口被占用时)，症状驱动的处置见 [排障手册](docs/troubleshooting.md#启动就失败端口被占用)。

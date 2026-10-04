@@ -56,7 +56,7 @@ npm install
 
 ### 普通单端口模式
 
-普通使用和手动验收直接运行 [README 快速启动](../README.md#快速启动) 的 `init/` 一键脚本即可（默认模式）：脚本先构建前端、再启动后端，打开它打印的地址（默认 `http://127.0.0.1:8000`）。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L117)。
+普通使用和手动验收直接运行 [README 快速启动](../README.md#快速启动) 的 `init/` 一键脚本即可（默认模式）：脚本先构建前端、再启动后端（默认带 `--auto-port` 自动选端口），并自动打开浏览器访问它打印的地址（通常为 `http://127.0.0.1:8000`，被占用时自动顺延）。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L117)。
 
 启动命令是 [`python -m app`](../backend/app/__main__.py)（即 `init/` 脚本底层调用者），它比裸 `python -m uvicorn app.main:app` 多做两件事：**启动前先检查端口**（见 [端口被占用时](#端口被占用时)），以及**把实际监听地址打印出来** —— 因为端口是可配的，不再是一个可以写死在文档里的常量。
 
@@ -69,7 +69,7 @@ npm install
 | `--auto-port` | 关闭 | 端口被占时自动往后找一个可用端口（最多试 20 个），并打印前端该设的值。 |
 | `--reload` | 关闭 | 源码变更自动重启。 |
 
-以上参数都可由 `init/` 脚本透传（`init/start.sh --auto-port`、`init/start.ps1 --port 8010` 等），脚本会原样转交给 `python -m app`。
+以上参数都可由 `init/` 脚本透传（`init/start.sh --port 8010`、`init/start.ps1 --reload` 等），脚本会原样转交给 `python -m app`。注意单端口模式**已默认带 `--auto-port`**，无需再显式传；dev 模式为保留 Vite 代理一致性不自动改端口。
 
 ### 前端热更新开发模式
 

@@ -2,10 +2,10 @@
 # YouTube Downloader 一键启动脚本（Linux / macOS）
 #
 # 用法（在仓库根目录执行）：
-#   bash init/start.sh                # 单端口模式（默认）：安装依赖 → 构建前端 → 启动后端，由后端在同一端口托管页面与 API
+#   bash init/start.sh                # 单端口模式（默认）：安装依赖 → 构建前端 → 自动选端口启动后端，并自动打开浏览器
 #   bash init/start.sh dev            # 开发模式：后端（--reload）与前端 Vite dev server 并发运行
 #   bash init/start.sh --no-build     # 单端口模式但跳过前端构建（仅改了后端、想快速重启时）
-#   bash init/start.sh --auto-port    # 单端口模式，端口被占用时自动往后找（透传给 python -m app）
+#   （单端口模式默认已带 --auto-port 自动选端口；如要固定端口可传 --port 8010）
 #
 # 任意未知参数都会原样透传给 `python -m app`，例如：
 #   bash init/start.sh --port 8010
@@ -15,6 +15,9 @@
 # 若仓库根或 backend/ 下已存在 .venv，脚本会自动使用；否则使用 PATH 中的 python3 / python。
 
 set -euo pipefail
+
+# 让 Python 子进程（后端）的输出不被块缓冲，便于脚本实时解析自动选择的端口
+export PYTHONUNBUFFERED=1
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FRONTEND_DIR="$REPO_ROOT/frontend"
@@ -38,6 +41,18 @@ while [ $# -gt 0 ]; do
 done
 
 err() { echo "错误：$1" >&2; exit 1; }
+
+# 用系统默认程序打开 URL（Linux 用 xdg-open，macOS 用 open）
+open_browser() {
+  local url="$1"
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 &
+  elif command -v open >/dev/null 2>&1; then
+    open "$url" >/dev/null 2>&1 &
+  else
+    echo "提示：未能自动打开浏览器，请手动访问 $url" >&2
+  fi
+}
 
 # ---- 前端依赖检查 ----
 command -v node >/dev/null 2>&1 || err "未找到 node。请先安装 Node.js 20+（https://nodejs.org）。"
@@ -111,14 +126,49 @@ if [ "$MODE" = "dev" ]; then
   wait
 else
   echo ""
-  echo "==> 单端口模式：启动后端（由它同时托管前端页面与 API）"
-  echo "    启动后请打开后端打印的「服务地址」。默认 http://127.0.0.1:8000"
+  echo "==> 单端口模式：启动后端（默认带 --auto-port 自动选择可用端口，并自动打开浏览器）"
   echo "    按 Ctrl+C 停止。"
   echo ""
 
-  if [ ${#BACKEND_EXTRA[@]} -eq 0 ]; then
-    (cd "$BACKEND_DIR" && "$PYTHON" -m app)
-  else
-    (cd "$BACKEND_DIR" && "$PYTHON" -m app "${BACKEND_EXTRA[@]}")
+  # 后台启动后端，捕获输出以解析自动选择的端口
+  BACKEND_ARGS=("--auto-port")
+  if [ ${#BACKEND_EXTRA[@]} -gt 0 ]; then
+    BACKEND_ARGS+=("${BACKEND_EXTRA[@]}")
   fi
+  LOG="$(mktemp -t ytdl-start.XXXXXX.log)"
+  ( cd "$BACKEND_DIR" && exec "$PYTHON" -m app "${BACKEND_ARGS[@]}" ) >"$LOG" 2>&1 &
+  BACKEND_PID=$!
+
+  cleanup() {
+    echo ""
+    echo "==> 正在停止后端..."
+    kill "$BACKEND_PID" 2>/dev/null || true
+    wait "$BACKEND_PID" 2>/dev/null || true
+    rm -f "$LOG"
+  }
+  trap cleanup EXIT INT TERM
+
+  PORT=""
+  for _ in $(seq 1 60); do
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+      echo "错误：后端启动失败，最近日志：" >&2
+      tail -n 20 "$LOG" >&2
+      rm -f "$LOG"
+      exit 1
+    fi
+    PORT="$(grep -oE '服务地址：http://127\.0\.0\.1:[0-9]+' "$LOG" | grep -oE '[0-9]+$' | head -n1)"
+    [ -n "$PORT" ] && break
+    sleep 0.5
+  done
+
+  if [ -n "$PORT" ]; then
+    echo "==> 已自动选择端口 $PORT，正在打开浏览器 http://127.0.0.1:$PORT ..."
+    sleep 1
+    open_browser "http://127.0.0.1:$PORT"
+  else
+    echo "警告：未能从日志解析出服务地址，请手动打开后端打印的「服务地址」。" >&2
+  fi
+
+  echo "==> 后端日志（Ctrl+C 停止）："
+  tail -f "$LOG"
 fi

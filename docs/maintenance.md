@@ -15,7 +15,7 @@
 | 修改任务状态、进度、速度或错误显示 | [API 文档](api.md)、[实现文档](implementation.md)、[用户手册](user-manual.md) |
 | 修改本地播放、打开文件夹或本地文件错误提示 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |
 | 修改任务删除或文件清理行为 | [用户手册](user-manual.md)、[API 文档](api.md)、[实现文档](implementation.md)、[测试文档](testing.md) |
-| 修改配置或依赖 | [开发文档](development.md)、[技术文档](technical.md)、README 快速启动 |
+| 修改配置或依赖 | [开发文档](development.md)、[技术文档](technical.md)、[README 快速启动](../README.md#快速启动)（`init/` 一键启动脚本） |
 | 修改数据库模型或补列 | [实现文档](implementation.md)、[架构设计](architecture.md)、[data-model.puml](diagrams/data-model.puml) |
 | 修改测试命令或测试策略 | [测试文档](testing.md)、README 测试摘要入口 |
 | 重构模块边界或调整依赖方向 | [设计文档](design.md)、[架构设计](architecture.md)、[4+1 架构视图](4-plus-1-view.md)、[实现文档](implementation.md)、组件图、模块依赖图、4+1 逻辑视图和开发视图 |

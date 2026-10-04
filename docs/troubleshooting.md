@@ -54,7 +54,7 @@
 
 ### 现在做什么
 
-1. **用 `python -m app` 启动**（而不是裸 `uvicorn`）：它会直接打印占用者是谁，并给出三条下一步。
+1. **用 `python -m app` 启动**（而不是裸 `uvicorn`）：它会直接打印占用者是谁，并给出三条下一步。（日常直接运行仓库根 `init/` 一键脚本即可，它底层调用的就是 `python -m app`。）
    本机开发机上长期占着 `8000` 的是 IncrediBuild 的 `Manager.exe`（PID 通常每次开机都变）。
 2. **换端口**：把 `YTDL_API_PORT=8001` 写进仓库根 `.env`（前端 Vite 读的是同一个变量，会自动一致），
    或临时 `python -m app --port 8001`。

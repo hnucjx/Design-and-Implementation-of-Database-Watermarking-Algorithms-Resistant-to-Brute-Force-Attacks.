@@ -6,19 +6,20 @@ YouTube Downloader 是一个本机单用户下载控制台：FastAPI 后端负�
 
 ## 快速启动
 
-普通使用建议走单端口模式：先构建前端，再由 FastAPI 在同一个端口上同时托管页面和 API。
+普通使用建议走单端口模式：脚本先构建前端，再由 FastAPI 在同一个端口上同时托管页面和 API。
 
-```powershell
-cd frontend
-npm install
-npm run build
+在仓库根目录运行对应平台的启动脚本，即可一次完成「安装依赖 → 构建前端 → 启动后端」：
+
+```text
+Windows：    powershell -ExecutionPolicy Bypass -File init\start.ps1
+            （也可直接双击 init\start.bat）
+Linux/macOS：bash init/start.sh
+            （或先 chmod +x init/start.sh 再 ./init/start.sh）
 ```
 
-```powershell
-cd ..\backend
-python -m pip install -e .
-python -m app
-```
+默认即单端口模式。需要前端热更新开发（后端与 Vite dev server 两个进程同时跑）时，加 `dev` 参数：
+`init\start.ps1 dev` 或 `bash init/start.sh dev`。脚本会自动检测并使用已有的 `.venv`（仓库根或 backend/ 下），
+未检测到时使用 PATH 中的 Python 3.12+ 与 Node.js 20+。进阶启动参数见下方说明。
 
 启动时命令会把实际监听地址打印出来，默认是 `http://127.0.0.1:8000`：
 
@@ -30,7 +31,7 @@ python -m app
 
 ![YouTube Downloader 首页](docs/assets/screenshots/home.png)
 
-> 改过 `frontend/src` 之后要**重新 `npm run build`**，并在浏览器里**硬刷新**（Windows `Ctrl+Shift+R`）。
+> 改过 `frontend/src` 之后要**重新构建前端并硬刷新**（Windows `Ctrl+Shift+R`）。`init/` 脚本默认每次都会重新 `npm run build`；若你用 `--no-build` 跳过构建，则需手动 `npm run build`。
 > 单端口模式发的是 `frontend/dist` 下的构建产物，重启后端只会换掉磁盘上的文件、**不会让已打开的标签页
 > 重新加载**；而 `/api/events` 这条 SSE 长连接会自动重连，进度照旧滚动，很容易被误当成「页面已经是新的」。
 > 症状驱动的处置见 [排障手册：重启服务后页面还是旧样子](docs/troubleshooting.md#重启服务后页面还是旧样子)。
@@ -39,16 +40,7 @@ python -m app
 
 端口只有一个来源：仓库根 `.env` 里的 `YTDL_API_PORT`（默认 `8000`，取值范围 `1..65535`）。后端读它，`frontend/vite.config.ts` 里前端开发服务器的 `/api` 代理读的也是它 —— 只有一处来源，才不会出现「后端换了端口、前端还代理旧端口」这种静默错配。
 
-`python -m app` 的开关：
-
-| 命令 | 效果 |
-| --- | --- |
-| `python -m app` | 用 `YTDL_API_PORT`（默认 `8000`）启动，监听 `127.0.0.1`。 |
-| `python -m app --port 8010` | 本次临时换端口；写进 `.env` 才能让前端代理一起跟着变。 |
-| `python -m app --auto-port` | 端口被占时自动往后找一个可用端口，并打印前端该设的值。 |
-| `python -m app --reload` | 源码变更自动重启，用于前端热更新开发模式。 |
-
-它还接受 `--host`，但**不要把监听地址放宽到 `0.0.0.0`**：应用没有认证，也从未按多用户或公网场景设计。
+init 脚本底层调用的就是 `python -m app`，其进阶参数（`--port` / `--auto-port` / `--reload` / `--host` 等）可直接透传，例如 `bash init/start.sh --auto-port` 或 `init\start.ps1 --port 8010`。完整开关与「不要把 `--host` 放宽到 `0.0.0.0`」的安全警告见 [开发文档：本地运行](docs/development.md#本地运行)。
 
 端口**不在设置面板里**（`GET/PUT /api/settings` 不含它），要改就用上面的方式。默认的 `8000` 在开发机上常被别的程序占用（例如 IncrediBuild 的 Coordinator 就长期监听它），此时 `python -m app` 不会只丢一句 `WinError 10013` —— 它会指名占用者并给出下一步，换端口与前端代理如何保持一致见
 [开发文档：端口被占用时](docs/development.md#端口被占用时)，症状驱动的处置见 [排障手册](docs/troubleshooting.md#启动就失败端口被占用)。

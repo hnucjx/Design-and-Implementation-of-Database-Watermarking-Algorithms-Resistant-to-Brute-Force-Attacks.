@@ -32,7 +32,7 @@ winget install aria2.aria2      # 可选：仅在启用 aria2c fallback 时需�
 
 ## 安装依赖
 
-README 的快速启动只安装运行依赖；开发者建议安装后端 `dev` extras，以获得 pytest/httpx 等测试依赖。
+README 的快速启动只安装运行依赖；开发者建议安装后端 `dev` extras，以获得 pytest/httpx 等测试依赖。`init/` 一键脚本已自动完成运行依赖的安装，下面仅用于需要 dev extras 或单独操作的场景。
 
 后端：
 
@@ -56,9 +56,9 @@ npm install
 
 ### 普通单端口模式
 
-普通使用和手动验收优先使用 [README 快速启动](../README.md#快速启动)：先执行 `npm run build` 生成完整的 `frontend/dist/index.html` 和 `frontend/dist/assets/`，再启动后端并打开它打印的地址（默认 `http://127.0.0.1:8000`）。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L117)。
+普通使用和手动验收直接运行 [README 快速启动](../README.md#快速启动) 的 `init/` 一键脚本即可（默认模式）：脚本先构建前端、再启动后端，打开它打印的地址（默认 `http://127.0.0.1:8000`）。此时 FastAPI 同时提供页面、静态资源和 `/api` 接口；入口逻辑见 [main.py](../backend/app/main.py#L117)。
 
-启动命令是 [`python -m app`](../backend/app/__main__.py)，它比裸 `python -m uvicorn app.main:app` 多做两件事：**启动前先检查端口**（见 [端口被占用时](#端口被占用时)），以及**把实际监听地址打印出来** —— 因为端口是可配的，不再是一个可以写死在文档里的常量。
+启动命令是 [`python -m app`](../backend/app/__main__.py)（即 `init/` 脚本底层调用者），它比裸 `python -m uvicorn app.main:app` 多做两件事：**启动前先检查端口**（见 [端口被占用时](#端口被占用时)），以及**把实际监听地址打印出来** —— 因为端口是可配的，不再是一个可以写死在文档里的常量。
 
 命令行参数（全部由 [__main__.py](../backend/app/__main__.py#L64) 解析）：
 
@@ -69,20 +69,15 @@ npm install
 | `--auto-port` | 关闭 | 端口被占时自动往后找一个可用端口（最多试 20 个），并打印前端该设的值。 |
 | `--reload` | 关闭 | 源码变更自动重启。 |
 
+以上参数都可由 `init/` 脚本透传（`init/start.sh --auto-port`、`init/start.ps1 --port 8010` 等），脚本会原样转交给 `python -m app`。
+
 ### 前端热更新开发模式
 
-需要修改 React UI 时，先启动后端 API：
+需要修改 React UI 时，直接运行 `init/` 脚本的 `dev` 参数即可并发拉起后端（带 `--reload`）与前端 Vite dev server：
 
-```powershell
-cd backend
-python -m app --reload
-```
-
-再启动 Vite dev server：
-
-```powershell
-cd frontend
-npm run dev -- --port 5173
+```text
+Windows：    powershell -ExecutionPolicy Bypass -File init\start.ps1 dev
+Linux/macOS：bash init/start.sh dev
 ```
 
 开发时打开 `http://127.0.0.1:5173`。Vite 会热更新前端代码，并将 `/api` 请求代理到后端端口，代理配置见 [vite.config.ts](../frontend/vite.config.ts)。

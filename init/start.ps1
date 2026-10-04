@@ -1,0 +1,140 @@
+# YouTube Downloader 一键启动脚本（Windows / PowerShell）
+#
+# 用法（在仓库根目录的 PowerShell 中执行）：
+#   powershell -ExecutionPolicy Bypass -File init\start.ps1
+#   powershell -ExecutionPolicy Bypass -File init\start.ps1 dev          # 开发模式：后端 + 前端 Vite 并发
+#   powershell -ExecutionPolicy Bypass -File init\start.ps1 --no-build   # 单端口模式跳过前端构建
+#   powershell -ExecutionPolicy Bypass -File init\start.ps1 --auto-port  # 端口被占用时自动往后找（透传给 python -m app）
+#
+# 任意未知参数都会原样透传给 `python -m app`，例如：
+#   powershell -ExecutionPolicy Bypass -File init\start.ps1 --port 8010
+#
+# 也可直接双击 init\start.bat（它已带上 -ExecutionPolicy Bypass）。
+#
+# 前置依赖：Node.js 20+、Python 3.12+、npm；ffmpeg 可选。
+# 若仓库根或 backend\ 下已存在 .venv，脚本会自动使用；否则使用 PATH 中的 python。
+
+$ErrorActionPreference = 'Stop'
+
+$RepoRoot    = Resolve-Path (Join-Path $PSScriptRoot '..')
+$FrontendDir = Join-Path $RepoRoot 'frontend'
+$BackendDir  = Join-Path $RepoRoot 'backend'
+
+$Mode         = 'prod'
+$NoBuild      = $false
+$BackendExtra = [System.Collections.Generic.List[string]]::new()
+
+foreach ($arg in $args) {
+    switch ($arg) {
+        'dev'        { $Mode = 'dev' }
+        '--no-build' { $NoBuild = $true }
+        '-h'         { Get-Help $MyInvocation.MyCommand; exit 0 }
+        '--help'     { Get-Help $MyInvocation.MyCommand; exit 0 }
+        default      { $BackendExtra.Add($arg) }   # --port / --auto-port / --reload / --host 等透传给后端
+    }
+}
+
+function Fail([string]$msg) {
+    Write-Host "错误：$msg" -ForegroundColor Red
+    exit 1
+}
+
+# ---- 前端依赖检查 ----
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "未找到 node。请先安装 Node.js 20+（https://nodejs.org）。" }
+if (-not (Get-Command npm  -ErrorAction SilentlyContinue)) { Fail "未找到 npm。请先安装 Node.js（npm 随 Node 一起提供）。" }
+
+$nodeVer    = (node -v).TrimStart('v')
+$nodeMajor  = [int]($nodeVer.Split('.')[0])
+if ($nodeMajor -lt 20) { Fail "Node.js 版本过低（当前 v$nodeVer），需要 20+。" }
+
+# ---- 选择 Python 解释器 ----
+$Python = $null
+if ($env:VIRTUAL_ENV -and (Test-Path (Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'))) {
+    $Python = Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe'
+} elseif (Test-Path (Join-Path $RepoRoot '.venv\Scripts\python.exe')) {
+    $Python = Join-Path $RepoRoot '.venv\Scripts\python.exe'
+} elseif (Test-Path (Join-Path $BackendDir '.venv\Scripts\python.exe')) {
+    $Python = Join-Path $BackendDir '.venv\Scripts\python.exe'
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    $Python = 'python'
+} else {
+    Fail "未找到 Python 3.12+。请先安装 Python（https://www.python.org）。"
+}
+
+$pyVer = & $Python -c "import sys; print('%d.%d' % sys.version_info[:2])" 2>$null
+if (-not $pyVer) { Fail "无法运行 Python 解释器：$Python" }
+$pyMajor = [int]($pyVer.Split('.')[0])
+$pyMinor = [int]($pyVer.Split('.')[1])
+if ($pyMajor -lt 3 -or ($pyMajor -eq 3 -and $pyMinor -lt 12)) { Fail "Python 版本过低（当前 $pyVer），需要 3.12+。" }
+
+Write-Host "使用 Python：$Python ($pyVer)"
+
+# ---- 前端依赖与构建 ----
+if (-not (Test-Path (Join-Path $FrontendDir 'node_modules'))) {
+    Write-Host "==> 安装前端依赖（npm install）..."
+    Push-Location $FrontendDir
+    try { & npm install; if ($LASTEXITCODE -ne 0) { Fail "前端依赖安装失败。" } }
+    finally { Pop-Location }
+}
+
+if ($Mode -eq 'prod' -and -not $NoBuild) {
+    Write-Host "==> 构建前端（npm run build）..."
+    Push-Location $FrontendDir
+    try { & npm run build; if ($LASTEXITCODE -ne 0) { Fail "前端构建失败。" } }
+    finally { Pop-Location }
+}
+
+# ---- 后端依赖 ----
+Write-Host "==> 安装后端依赖（pip install -e .）..."
+Push-Location $BackendDir
+try { & $Python -m pip install -e .; if ($LASTEXITCODE -ne 0) { Fail "后端依赖安装失败。" } }
+finally { Pop-Location }
+
+# ---- 启动 ----
+if ($Mode -eq 'dev') {
+    Write-Host ""
+    Write-Host "==> 开发模式：并发启动后端（--reload）与前端 Vite dev server"
+    Write-Host "    后端地址：http://127.0.0.1:${env:YTDL_API_PORT}（默认 8000，可被仓库根 .env 覆盖）"
+    Write-Host "    前端地址：http://127.0.0.1:5173"
+    Write-Host "    关闭窗口或按 Ctrl+C 同时停止两者。"
+    Write-Host ""
+
+    $backendArgs = [System.Collections.Generic.List[string]]::new()
+    $backendArgs.Add('-m'); $backendArgs.Add('app'); $backendArgs.Add('--reload')
+    $backendArgs.AddRange($BackendExtra)
+
+    $backendJob  = Start-Process -FilePath $Python -ArgumentList $backendArgs  -WorkingDirectory $BackendDir  -PassThru
+    $frontendJob = Start-Process -FilePath 'npm'  -ArgumentList @('run','dev','--','--port','5173') -WorkingDirectory $FrontendDir -PassThru
+
+    $cleanup = {
+        Write-Host ""
+        Write-Host "==> 正在停止前后端..."
+        if ($backendJob  -and -not $backendJob.HasExited)  { Stop-Process -Id $backendJob.Id  -Force }
+        if ($frontendJob -and -not $frontendJob.HasExited) { Stop-Process -Id $frontendJob.Id -Force }
+    }
+    # Ctrl+C 时先清理子进程，避免 Vite / uvicorn 成为孤儿进程
+    [Console]::CancelKeyPress.Add({ param($s,$e) $e.Cancel = $true; & $cleanup })
+
+    try {
+        while ($true) {
+            Start-Sleep -Seconds 1
+            if ($backendJob.HasExited -or $frontendJob.HasExited) { break }
+        }
+    } finally {
+        & $cleanup
+    }
+} else {
+    Write-Host ""
+    Write-Host "==> 单端口模式：启动后端（由它同时托管前端页面与 API）"
+    Write-Host "    启动后请打开后端打印的「服务地址」。默认 http://127.0.0.1:8000"
+    Write-Host "    按 Ctrl+C 停止。"
+    Write-Host ""
+
+    $backendArgs = [System.Collections.Generic.List[string]]::new()
+    $backendArgs.Add('-m'); $backendArgs.Add('app')
+    $backendArgs.AddRange($BackendExtra)
+
+    Push-Location $BackendDir
+    try { & $Python @backendArgs; if ($LASTEXITCODE -ne 0) { Fail "后端启动失败（退出码 $LASTEXITCODE）。" } }
+    finally { Pop-Location }
+}

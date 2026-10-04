@@ -10,19 +10,19 @@ YouTube Downloader 是本机单用户工具。前端提供链接解析、下载�
 
 ## 启动应用
 
-普通用户按 [README 快速启动](../README.md#快速启动) 执行即可。该方式会先生成 `frontend/dist`，再由 FastAPI 托管静态页面。启动时命令会打印实际监听地址，默认是 `http://127.0.0.1:8000`：
+普通用户按 [README 快速启动](../README.md#快速启动) 运行 `init/` 下对应平台的脚本即可（一键完成「安装依赖 → 构建前端 → 启动后端」的单端口模式）。启动后命令会打印实际监听地址，默认是 `http://127.0.0.1:8000`：
 
 ```text
 服务地址：http://127.0.0.1:8000
 ```
 
-端口不是固定的：唯一来源是仓库根 `.env` 里的 `YTDL_API_PORT`（默认 `8000`），也可以用 `python -m app --port 8010` 临时换、`python -m app --auto-port` 让它在被占用时自己往后找。它**不在设置面板里**。如果启动时提示 `WinError 10013`，**那不是权限问题**，而是默认端口已被别的程序占着 —— 启动命令会直接告诉你占用者是谁，处置办法见 [排障手册](troubleshooting.md#启动就失败端口被占用)。
+端口只有一个来源：仓库根 `.env` 里的 `YTDL_API_PORT`（默认 `8000`），也可以用 `init` 脚本透传 `--port 8010` 临时换、`--auto-port` 让它在被占用时自己往后找，详见 [README 快速启动](../README.md#快速启动) 与 [开发文档](development.md#端口被占用时)。它**不在设置面板里**。如果启动时提示 `WinError 10013`，**那不是权限问题**，而是默认端口已被别的程序占着 —— 启动命令会直接告诉你占用者是谁，处置办法见 [排障手册](troubleshooting.md#启动就失败端口被占用)。
 
 打开后预期看到 YouTube Downloader 首页：左侧包含“解析链接”和“任务中心”，右侧包含“下载选项”和“设置”，顶部状态条会显示 `ffmpeg` 和 `cookies` 状态。首页示例：
 
 ![YouTube Downloader 首页](assets/screenshots/home.png)
 
-`http://127.0.0.1:5173` 是开发者热更新入口；只有按 [开发文档的开发模式](development.md#本地运行) 启动 Vite dev server 后才应访问该端口。
+`http://127.0.0.1:5173` 是开发者热更新入口；只有按 [开发文档的开发模式](development.md#本地运行)（或 `init` 脚本的 `dev` 参数）启动 Vite dev server 后才应访问该端口。
 
 ### 辅助说明的查看方式
 

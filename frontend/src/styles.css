@@ -266,6 +266,97 @@ select:focus {
   font-weight: 700;
 }
 
+/* --------------------------------------------- 页面级错误回执条（吸顶） */
+/* 报错原来就是上面那段普通内容，排在页头下面。任务中心一滚到 1000px 以下，那条红字
+   落在视口**上方之外** —— 用户既看不到报错，也看不到别的东西在变，只会以为「卡住了」
+   （ai/ui/009，探针实测：滚到 scrollY=1073 时它的 top 是 -1019px）。
+   改成 `sticky`：不滚动时位置与原来一致（页头下方），一旦滚过就贴住视口顶边，
+   **任何滚动位置都在视野里**，而且仍然只占内容列那一块，不会横跨整屏去盖住别的东西。
+   **不选 `fixed`**：固定定位从出现那一刻就盖住内容，用户还得先关掉它才能看被压住的东西；
+   sticky 静止时不遮任何东西，滚动时接管顶部一条，行为与「页面级」这个语义相符。
+   `top: 12px` 而不是 0：贴死顶边会与浏览器自身的边界糊在一起；留一条缝，滚动时
+   能看出它是浮在内容之上的。 */
+.error-banner {
+  position: sticky;
+  top: 12px;
+  /* 要压在面板（阴影、层级 auto）与语言下拉（20）之上，但**必须低于**上传弹窗遮罩（50）
+     与右下角提醒（60）：弹窗打开时错误在弹窗里就近显示，页面级回执不该浮到遮罩上面。 */
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid #f1b5a5;
+  border-left: 4px solid #dc2626;
+  border-radius: 8px;
+  background: #fff1ed;
+  color: #9a3412;
+  /* 吸顶之后它下面就是滚动的正文，必须有阴影才分得清「浮在上面」与「排在里面」。 */
+  box-shadow: 0 10px 24px rgba(154, 52, 18, 0.12);
+  white-space: normal;
+  animation: error-banner-in 0.16s ease-out;
+}
+
+.error-banner-icon {
+  flex: none;
+  margin-top: 1px;
+  color: #dc2626;
+}
+
+/* 错误文本里会出现 Windows 路径、接口原话、长 URL：必须能断行，否则 flex item 的
+   `min-width: auto` 会把内容列顶宽（与 ai/ui/002/003 同一条判据）。 */
+.error-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.error-banner-close {
+  flex: none;
+  display: inline-flex;
+  padding: 2px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: #b45309;
+}
+
+.error-banner-close:hover,
+.error-banner-close:focus-visible {
+  background: #ffe3d9;
+  color: #7c2d12;
+}
+
+@keyframes error-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 窄屏：`.app-shell` 的内边距收到 18px、页头折成两行，吸顶的缝跟着收一点，
+   左右内边距也收窄 —— 文本自己换行，不靠省略号（「藏起来」不等于「放得下」，见 003）。 */
+@media (max-width: 680px) {
+  .error-banner {
+    top: 8px;
+    padding: 10px 10px 10px 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .error-banner {
+    animation: none;
+  }
+}
+
 .media-heading img,
 .thumbnail-placeholder {
   width: 112px;

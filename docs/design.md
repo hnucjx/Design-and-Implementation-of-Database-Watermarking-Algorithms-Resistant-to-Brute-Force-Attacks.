@@ -134,6 +134,7 @@
 | [CookieSection.tsx](../frontend/src/cookies/CookieSection.tsx#L121) | cookies 状态、校验按钮与结论展示；两个说明浮层（[获取方式](../frontend/src/cookies/CookieSection.tsx#L53)、[结论解读](../frontend/src/cookies/CookieSection.tsx#L96)）就近挂在这里。 | 不决定用哪份 cookies（后端决定），不构造请求体。 |
 | [ProxySection.tsx](../frontend/src/settings/ProxySection.tsx#L140) | 代理检测结果展示与「真的发一次请求」的入口；[常用端口](../frontend/src/settings/ProxySection.tsx#L75)与[排查顺序](../frontend/src/settings/ProxySection.tsx#L112)两个说明浮层。 | 不解析代理来源（后端回传 `proxy_source`），不保存设置（保存由 `SettingsPanel` 触发）。 |
 | [HelpPopover.tsx](../frontend/src/shared/ui/HelpPopover.tsx#L42) | **通用非模态说明浮层**：定位、钉住、关闭、记忆，以及窄屏抽屉形态。所有辅助说明共用它。 | 不含任何业务文案（文案由调用方以 children 传入）。 |
+| [ErrorBanner.tsx](../frontend/src/shared/ui/ErrorBanner.tsx#L23) | **页面级错误回执条**：`position: sticky` + `top: 12px`，不滚动时排在页头下方、滚过之后贴住视口顶边，任何滚动位置都在视野里；`role="alert"`、可关闭、焦点在条内时按 `Esc` 也能关。 | 不含业务文案（文案由 `App` 的 `error` 状态给）；不判断哪条失败该不该上升到这里（调用点决定，判据见 [ai/ui/009](../ai/ui/009-page-level-errors-scroll-out-of-view.md)）；**没有计时器** —— 不自动消失。 |
 | [JobQueue.tsx](../frontend/src/task-center/JobQueue.tsx#L23) | 任务中心展示与本地文件操作入口（播放 / 打开文件夹 / 打开字幕 / 删除）。 | 不直接访问本机文件系统（一律走后端受控打开/删除接口）。 |
 | [SubtitleOpenButton.tsx](../frontend/src/task-center/SubtitleOpenButton.tsx#L19) | 「打开字幕」的**一颗**按钮：点它弹系统的「打开方式」，由用户当场挑程序。 | 不维护编辑器清单、不记住「上次用的程序」（那是系统的职责，见 [technical.md](technical.md#打开字幕文件)），不发请求（`onOpen` 归 `App`）。 |
 | [BiliIcon.tsx](../frontend/src/bilibili/BiliIcon.tsx#L12) | B站 图标：圆角机身 + 两根天线 + 两只眼睛的**手绘** SVG，描边走 `currentColor` 由调用方决定颜色。 | 不含任何布局与文案；品牌色只落在这个图标上，不扩散成按钮配色。 |

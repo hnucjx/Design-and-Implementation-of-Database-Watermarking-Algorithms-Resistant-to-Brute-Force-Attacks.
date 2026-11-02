@@ -52,6 +52,13 @@ export const mockState = {
   analyzeLockedByEdgeCookies: false,
   /** 本地文件操作（播放 / 打开文件夹）的失败文案；`null` 表示成功。 */
   localFileActionFailure: null as string | null,
+  /**
+   * 任务动作（暂停 / 删除 / 批量）的失败文案；`null` 表示成功。
+   *
+   * 它存在的理由只有一个：**页面级错误回执**（`.error-banner`）要有一条从任务中心发起的
+   * 真实路径可测 —— 只测 cookies 那条，等于把「任务行上点出来的错误」交给人工看。
+   */
+  jobActionFailure: null as string | null,
   /** 本地文件动作的人为延迟（毫秒），用来观察「正在打开…」这一态。 */
   localFileDelayMs: 0,
   /** `PUT /api/settings` 的人为延迟（毫秒），用来观察「保存中...」这一态。 */
@@ -154,6 +161,7 @@ function resetMockState(): void {
   mockState.browserCookieImportLocked = false;
   mockState.analyzeLockedByEdgeCookies = false;
   mockState.localFileActionFailure = null;
+  mockState.jobActionFailure = null;
   mockState.localFileDelayMs = 0;
   mockState.settingsUpdateDelayMs = 0;
   mockState.settingsUpdateShouldFail = false;
@@ -283,9 +291,15 @@ export function installAppHarness(): void {
           return Response.json(mockState.jobs);
         }
         if (url.endsWith("/api/jobs/batch")) {
+          if (mockState.jobActionFailure) {
+            return Response.json({ detail: mockState.jobActionFailure }, { status: 500 });
+          }
           return Response.json({ affected_job_ids: ["job-running", "job-paused"], jobs: [] });
         }
         if (url.endsWith("/api/jobs/job-running/pause")) {
+          if (mockState.jobActionFailure) {
+            return Response.json({ detail: mockState.jobActionFailure }, { status: 500 });
+          }
           return Response.json({ ...jobPayload, status: "paused" });
         }
         if (url.endsWith("/api/jobs/job-paused/restart")) {

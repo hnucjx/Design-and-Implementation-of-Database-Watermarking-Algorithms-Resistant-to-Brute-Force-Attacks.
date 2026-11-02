@@ -1,4 +1,4 @@
-﻿import { CheckCircle2, Info, XCircle } from "lucide-react";
+﻿import { CheckCircle2, Info } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
@@ -33,6 +33,7 @@ import {
 import { AnalysisPanel } from "./download-request/AnalysisPanel";
 import { BiliUploadDialog } from "./bilibili/BiliUploadDialog";
 import { CompletionToasts } from "./notifications/CompletionToasts";
+import { ErrorBanner } from "./shared/ui/ErrorBanner";
 import { DownloadOptionsPanel } from "./download-request/DownloadOptionsPanel";
 import { JobQueue } from "./task-center/JobQueue";
 import { SettingsPanel } from "./settings/SettingsPanel";
@@ -288,6 +289,15 @@ export default function App() {
     applyAnalysisResult(await analyzeUrl(targetUrl));
   }
 
+  /**
+   * 收回页面级错误回执。**一份实现、三个入口**：关闭按钮、条内按 Esc、以及每次动作开始时
+   * （旧报错描述的那次操作已经不成立了，留着它比没有更坏 —— 用户会照着一条过期的红条去重做
+   * 刚做成的事）。
+   */
+  function clearError() {
+    setError(null);
+  }
+
   function handleAppError(err: unknown, fallback: string, pendingAnalyzeUrl: string | null = null) {
     const lock = browserCookieLockFromError(err, pendingAnalyzeUrl);
     if (lock) {
@@ -300,7 +310,7 @@ export default function App() {
 
   async function handleAnalyze(event: FormEvent) {
     event.preventDefault();
-    setError(null);
+    clearError();
     setIsAnalyzing(true);
     const targetUrl = url.trim();
     try {
@@ -314,7 +324,7 @@ export default function App() {
 
   async function handleCreateJob() {
     if (!analysis) return;
-    setError(null);
+    clearError();
     // 浏览器只允许用户手势之后出声。提交任务这一步用户**必然**会点，顺手在这里把音频解锁，
     // 否则等任务跑完再去 resume 已经没有手势了 —— 那时多半被拒，表现为「选了提示音却不响」。
     chime.prime();
@@ -394,18 +404,21 @@ export default function App() {
 
   async function handleCookieUpload(file: File | null) {
     if (!file) return;
+    clearError();
     await uploadCookies(file);
     applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
   async function handleCookieDelete() {
+    clearError();
     await deleteCookies();
     applySettings(await getSettings());
     setBrowserCookieLock(null);
   }
 
   async function handleBrowserCookieImport(browser: string, closeBrowserIfLocked = false) {
+    clearError();
     await importBrowserCookies(browser, closeBrowserIfLocked);
     applySettings(await getSettings());
     setBrowserCookieLock(null);
@@ -416,7 +429,7 @@ export default function App() {
     const confirmed = window.confirm("将关闭所有 Edge 窗口以释放 cookies 数据库，然后重新导入。是否继续？");
     if (!confirmed) return;
     const pendingAnalyzeUrl = browserCookieLock.pendingAnalyzeUrl;
-    setError(null);
+    clearError();
     await handleBrowserCookieImport("edge", true);
     if (!pendingAnalyzeUrl) return;
     setIsAnalyzing(true);
@@ -480,7 +493,7 @@ export default function App() {
    * 由服务端在 `prefill.kind` 里告诉我们该走哪种表单 —— **不在前端按条目数自己判断**。
    */
   async function handleBiliUpload(jobId: string, itemId: string | null) {
-    setError(null);
+    clearError();
     showBiliNotice(null);
     // 合集列表**不在这里读**（见 loadBiliSeasons）：开窗只做一件必须的事，读预填。
     resetSeasonList();
@@ -563,6 +576,7 @@ export default function App() {
     request: () => Promise<{ message: string }>,
     fallback: string
   ): Promise<boolean> {
+    clearError();
     try {
       showBiliNotice((await request()).message);
       await refreshBiliUploads();
@@ -587,6 +601,7 @@ export default function App() {
    */
   async function handleBiliRetryMany(uploadIds: string[]) {
     if (!uploadIds.length) return;
+    clearError();
     try {
       const results: Array<{ action: string; message: string }> = [];
       for (const uploadId of uploadIds) {
@@ -600,6 +615,7 @@ export default function App() {
   }
 
   async function handleBiliRetrySeason(seasonRecordId: string): Promise<boolean> {
+    clearError();
     try {
       const result = await retryBiliSeason(seasonRecordId);
       // **回执的色调按「这一次做了什么」选**：`grouped` 才是绿色的「做成了」；
@@ -628,14 +644,17 @@ export default function App() {
   }
 
   async function handlePauseJob(jobId: string) {
+    clearError();
     updateJobInList(await pauseJob(jobId));
   }
 
   async function handleRestartJob(jobId: string, resolution?: string) {
+    clearError();
     updateJobInList(await restartJob(jobId, resolution));
   }
 
   async function handleRestartJobItem(jobId: string, itemId: string, resolution?: string) {
+    clearError();
     updateJobInList(await restartJobItem(jobId, itemId, resolution));
   }
 
@@ -643,6 +662,7 @@ export default function App() {
     if (deleteFiles && !window.confirm("将删除该任务记录及其已下载的视频、字幕、metadata、缩略图和 description 等相关文件。是否继续？")) {
       return;
     }
+    clearError();
     await deleteJob(jobId, deleteFiles);
     setJobs((current) => current.filter((job) => job.id !== jobId));
   }
@@ -652,6 +672,7 @@ export default function App() {
     if (deleteFiles && !window.confirm("将删除所选视频任务记录及其已下载的视频、字幕、metadata、缩略图和 description 等相关文件。是否继续？")) {
       return;
     }
+    clearError();
     const response = await deleteJobItems(jobId, itemIds, deleteFiles);
     if (response.job_deleted) {
       setJobs((current) => current.filter((job) => job.id !== jobId));
@@ -673,6 +694,7 @@ export default function App() {
     if (action === "delete" && deleteFiles && !window.confirm("将删除所选任务记录及其已下载的视频、字幕、metadata、缩略图和 description 等相关文件。是否继续？")) {
       return;
     }
+    clearError();
     const response = await batchJobAction(action, jobIds, action === "delete" ? deleteFiles : false);
     if (action === "delete") {
       const deleted = new Set(response.affected_job_ids);
@@ -686,6 +708,7 @@ export default function App() {
   }
 
   async function handleCopySourceLink(sourceUrl: string) {
+    clearError();
     try {
       const clipboard = navigator.clipboard;
       if (!clipboard?.writeText) {
@@ -718,12 +741,9 @@ export default function App() {
           </div>
         </header>
 
-        {error && (
-          <div className="alert" role="alert">
-            <XCircle size={18} />
-            {error}
-          </div>
-        )}
+        {/* 页面级错误：吸顶回执条。任何滚动位置都在视野里 —— 详见 ErrorBanner 的注释
+            与 ai/ui/009（它原来就是这里的一段普通内容，滚过之后会跑到视口上方）。 */}
+        <ErrorBanner message={error} onDismiss={clearError} />
 
         {biliNotice && (
           <div className={`notice ${biliNotice.tone === "info" ? "is-info" : ""}`} role="status">

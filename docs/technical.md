@@ -342,7 +342,7 @@ B站 投稿与 YouTube 下载是**两套凭据、两条队列**，互不共用�
 `timeout`，于是 `timeout=20` 实测走了 **160 秒**。修法在 [bili_http.py](../backend/app/bilibili/bili_http.py)：
 只解析 IPv4，并让整段地址共享一个截止时刻（见 [ai/bug-fix/031](../ai/bug-fix/031-bili-requests-fall-into-an-ipv6-black-hole.md)）。
 
-现在的两道保险都在前端 [App.tsx](../frontend/src/App.tsx#L400)：
+现在的两道保险都在前端 [App.tsx](../frontend/src/App.tsx#L476)：
 `seasonsRequested` 去重（弹窗每收到一条 SSE 事件就重渲染一次，没有去重会反复发请求），
 以及 `SEASON_LIST_TIMEOUT_MS = BILI_CALL_TIMEOUT_MS`（25 s，与体检共用）到点写下一个**读完了、但读不到**的结论
 （`SEASON_LIST_UNREADABLE`，带可操作的建议）。迟到的真结果会**覆盖**这条兜底 ——

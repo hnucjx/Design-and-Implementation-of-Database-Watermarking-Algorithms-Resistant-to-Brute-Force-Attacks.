@@ -86,4 +86,33 @@ describe("styles.css · 源文不变式", () => {
       expect(body).not.toMatch(/(?<![-\w])(justify-self|margin|padding|width|font-size)\s*:/);
     }
   });
+
+  // 页面级错误回执条必须**跟着视口**，不能跟着文档流走。
+  // 它原来就是页头下面的一段普通内容：任务中心滚到 1000px 以下时，那条红字落在视口
+  // 上方之外，用户既看不到报错也看不到进展（ai/ui/009，探针实测 scrollY=1200 时 top=-1090px）。
+  // jsdom 不做布局、也不算 sticky，所以这里盯住让修复成立的那条声明本身。
+  test("keeps the page-level error receipt pinned to the viewport", () => {
+    const bodies = cssRuleBodies(stylesCss);
+    const banner = bodies.get(".error-banner") ?? [];
+    expect(banner.length).toBeGreaterThan(0);
+    const declaration = banner.join("\n");
+
+    // `sticky` 是这条修复的全部：`static`/`relative` 会退回「滚过就消失」的老病，
+    // `fixed` 则会从出现那一刻就盖住内容（正文宽度还与内容列对不齐）。
+    expect(declaration).toMatch(/position:\s*sticky/);
+    expect(declaration).toMatch(/(?<![-\w])top:\s*\d/);
+
+    // 层级：要压过面板与语言下拉（20），但必须低于上传弹窗遮罩（50）与右下角提醒（60）——
+    // 弹窗里的错误在弹窗内就近显示，页面级回执不该浮到遮罩上面去。
+    const zIndex = /z-index:\s*(\d+)/.exec(declaration);
+    expect(zIndex).not.toBeNull();
+    const level = Number(zIndex?.[1]);
+    expect(level).toBeGreaterThan(20);
+    expect(level).toBeLessThan(50);
+
+    // 错误文本里会出现 Windows 路径与接口原话：必须能断行，否则 flex item 的
+    // `min-width: auto` 会把内容列顶宽（与 002/003 同一条判据）。
+    const text = bodies.get(".error-banner-text") ?? [];
+    expect(text.join("\n")).toMatch(/overflow-wrap:\s*anywhere/);
+  });
 });

@@ -228,6 +228,29 @@ B站 上传的界面由四个组件加一个图标组成：[BiliIcon](../fronten
 - [formatting.ts](../frontend/src/shared/formatting.ts)：时长、百分比、日期、文件大小、分辨率和速度格式化。
 - [quality.ts](../frontend/src/shared/quality.ts)：清晰度选项、可用高度、降级按钮标签和选中清晰度显示。
 
+**报错按「它在说谁的事」分三层，页面级那层必须跟着视口走。**
+页面级（一次动作失败了的回执）走 [ErrorBanner](../frontend/src/shared/ui/ErrorBanner.tsx)：
+`.error-banner` 是 `position: sticky; top: 12px; z-index: 30` —— 不滚动时仍排在页头下方，
+一旦滚过就贴住视口顶边，**任何滚动位置都在视野里**。区域级（解析面板的锁库提示、
+任务行上的本地文件操作错误）与弹窗级（上传表单的错误）**刻意不上升**到页面级：
+它们解释的是「这个输入框 / 这一行 / 这个弹窗」，离得越近越好读。判据与逐场景清单见
+[ai/ui/009](../ai/ui/009-page-level-errors-scroll-out-of-view.md)。
+
+四条行为约定（`App.clearError()` 是唯一出口）：
+
+- **不自动消失**：错误里常带着要照着做的信息（路径、建议、该重试还是先改设置），
+  定时缩回等于「还没读完就走了」。消失只有三条路：点「关闭」、焦点在条内按 `Esc`、
+  以及**下一次动作开始时被收回** —— 旧报错描述的那次操作已经不成立，留着它用户会拿一条
+  过期的失败去解释刚做成的另一件事（[api.ts](../frontend/src/shared/api.ts#L59) 的注释里记着这类误读）。
+- **同刻只有一条**：新错误替换旧错误，不排队、不堆叠。
+- **不替用户滚动、不抢焦点**：出现时不调 `scrollTo` 也不 `focus()`；条子插在内容之上，
+  浏览器用**滚动锚定**把用户正在读的那一行钉在原地（实测参照卡片 `Δ=0px`，`scrollY` 由 1073 调到 1138）。
+- **层级低于弹窗与完成提醒**（`z-index: 30` < 遮罩 50 < 右下角提醒 60）：弹窗开着时错误在弹窗里就近显示，
+  页面级回执不该浮到遮罩上面。
+
+这层容器的必要性有实测依据：它原来是页头下面一段普通内容，滚到任务中心（`scrollY=1073`）
+时旧位置 `top=-1019px`，整条在视口上方一屏之外 —— 用户看到的只是「点了没反应」。
+
 **每个请求都有截止时间**：[api.ts](../frontend/src/shared/api.ts#L51) 的 `request()` 用 `AbortController` 挂一个定时器，
 默认 60 秒（[REQUEST_TIMEOUT_MS](../frontend/src/shared/api.ts#L51)），超时后把 `AbortError` 翻译成一句
 **能照做的话**（[timeoutError](../frontend/src/shared/api.ts#L59)：区分「没响应」与「失败」，并指向日志文件与重启后端）。

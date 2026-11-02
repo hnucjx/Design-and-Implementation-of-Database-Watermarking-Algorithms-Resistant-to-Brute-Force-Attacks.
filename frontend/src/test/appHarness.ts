@@ -78,8 +78,12 @@ export const mockState = {
   biliStatusQueries: [] as boolean[],
   /** 非 0 时状态接口延迟这么久才返回 —— 用来观察「体检中…」那一态。 */
   biliStatusDelayMs: 0,
-  /** true 时**账号探测**（`probe_account=true`）永不返回，离线体检照常 —— 用来验 12 秒兜底。 */
+  /** true 时**账号探测**（`probe_account=true`）永不返回，离线体检照常 —— 用来验超时兜底。 */
   biliProbeHangs: false,
+  /** true 时**账号探测**（`probe_account=true`）返回 502，离线体检照常 —— 验「失败也退回离线结论」。 */
+  biliStatusFails: false,
+  /** true 时**两个**体检都返回 502 —— 那才是真的读不到，用来验「只剩一条红条」与旧红条的清理。 */
+  biliStatusAllFails: false,
   /** `GET /api/bilibili/uploads/summary` 的任务级徽标。**出厂为空** —— 任务卡片保持原样。 */
   biliUploads: [] as BiliJobUploads[],
   /** `GET /api/bilibili/prefill` 的返回值。 */
@@ -163,6 +167,8 @@ function resetMockState(): void {
   mockState.biliStatusQueries = [];
   mockState.biliStatusDelayMs = 0;
   mockState.biliProbeHangs = false;
+  mockState.biliStatusFails = false;
+  mockState.biliStatusAllFails = false;
   mockState.biliUploads = [];
   mockState.biliPrefill = biliPrefillSinglePayload;
   mockState.biliSubmitResult = biliJobUploadsPayload;
@@ -357,6 +363,10 @@ export function installAppHarness(): void {
           mockState.biliStatusQueries.push(probe);
           // 卡住的只有**账号探测**：离线那一半必须还能答上来，否则验不出「超时后退回离线结论」。
           if (probe && mockState.biliProbeHangs) return new Promise<Response>(() => {});
+          if (mockState.biliStatusAllFails || (probe && mockState.biliStatusFails)) {
+            // 真实后端在 B站 连不上时给的是 502 + 一句话（`upstream connect failed: …`）。
+            return Response.json({ detail: "upstream connect failed: 由于目标计算机积极拒绝" }, { status: 502 });
+          }
           if (mockState.biliStatusDelayMs) {
             await new Promise((resolve) => setTimeout(resolve, mockState.biliStatusDelayMs));
           }

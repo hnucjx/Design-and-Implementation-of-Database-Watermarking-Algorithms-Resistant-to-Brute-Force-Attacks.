@@ -1496,6 +1496,39 @@ describe("App · B站 设置里的体检与登录", () => {
     expect(screen.getByText(/上次体检/)).toBeInTheDocument();
   });
 
+  test("账号探测失败时仍给离线结论，并说明原因（不是只剩一条红条）", async () => {
+    // 复现本机的真实形态：B站 连不上 → 后端 502 `upstream connect failed`。
+    // 原先这条路径直接抛：页顶一条红条，**面板还是上一次的旧结论** —— 用户既不知道
+    // 投稿工具现在还在不在，也不知道那条红条指哪件事。
+    mockState.biliStatusFails = true;
+    render(<App />);
+
+    expect(await screen.findByText(/账号探测失败/)).toBeInTheDocument();
+    // 原因要带出来：只说「失败」等于把问题丢回给用户。
+    expect(screen.getByText(/upstream connect failed/)).toBeInTheDocument();
+    // 离线那一半照旧有结论（它与网络无关）。
+    expect(screen.getByText("ffmpeg 可用")).toBeInTheDocument();
+  });
+
+  test("点「扫码登录」时，页顶那条与它无关的旧错误会消失", async () => {
+    // 错误横幅是页面级的：上一条别的动作遗留的红条会一直挂着，用户把它读成
+    // 「我刚点的这个失败了」—— 实测有人把「重试投稿超时」读成「扫码登录失败」。
+    mockState.biliStatusAllFails = true;
+    const user = userEvent.setup();
+    render(<App />);
+
+    const alert = await screen.findByRole("alert");
+    // 内容就是后端给的那句（`errorMessage` 优先用 `err.message`）——本用例只关心它**会不会被清掉**。
+    expect(alert).toHaveTextContent(/upstream connect failed/);
+
+    mockState.biliStatusAllFails = false;
+    await user.click(screen.getByRole("button", { name: "扫码登录" }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    // 二维码照常出来 —— 清错误不能把正常流程一起清掉。
+    await waitFor(() => expect(document.querySelector(".bili-qr-image svg")).not.toBeNull());
+  });
+
   test("lists every prerequisite with the next step attached", async () => {
     render(<App />);
 

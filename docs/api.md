@@ -44,7 +44,7 @@
 
 - 后端应用由 [create_app](../backend/app/main.py#L40) 创建；API 默认绑定 `127.0.0.1:8000`（可用仓库根 `.env` 的 `YTDL_API_PORT` 或 `python -m app --port` 覆盖，见 [开发文档](development.md#端口被占用时)），单端口模式下同时托管 `frontend/dist`。
 - API 返回 JSON；`DELETE /api/jobs/{id}` 与四个本地打开接口成功时返回 `204`。
-- 前端统一请求封装在 [request](../frontend/src/shared/api.ts#L70)，非 2xx 响应会抛出 `ApiError`，并保留结构化 `detail`。
+- 前端统一请求封装在 [request](../frontend/src/shared/api.ts#L74)，非 2xx 响应会抛出 `ApiError`，并保留结构化 `detail`。
 - Cookies 导入锁库错误使用结构化 `detail`，字段见 [BrowserCookieImportError.to_detail](../backend/app/host/browser_cookies.py#L58)。
 - **所有时间字段是 UTC，且以 `Z` 结尾**（`started_at` / `finished_at` / `created_at` / `updated_at`）。
   SQLite 不存时区，读回来是 naive 的墙上时间，读模型补成 aware 之后才发出 —— 少了这个 `Z`，消费方 `Date.parse` 会把同一串数字按**本地**时间解析（ECMAScript 规定），于是每个时长都凭空多出一个时区偏移（本机 UTC+8 上实测 52 秒显示成 8 小时，见 [020](../ai/bug-fix/020-the-progress-clock-is-eight-hours-off.md)）。
@@ -105,7 +105,7 @@
 
 ### AnalyzeRequest
 
-`url` 是待解析链接；`cookies_enabled` 控制解析时是否使用本地 cookies。前端默认传 `true`，见 [analyzeUrl](../frontend/src/shared/api.ts#L118)。
+`url` 是待解析链接；`cookies_enabled` 控制解析时是否使用本地 cookies。前端默认传 `true`，见 [analyzeUrl](../frontend/src/shared/api.ts#L127)。
 
 ### DownloadOptions
 

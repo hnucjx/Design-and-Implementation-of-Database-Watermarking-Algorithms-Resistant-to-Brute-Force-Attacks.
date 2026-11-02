@@ -56,10 +56,14 @@ export const REQUEST_TIMEOUT_MS = 60_000;
  */
 export const ANALYZE_TIMEOUT_MS = 180_000;
 
-function timeoutError(url: string, timeoutMs: number): ApiError {
+function timeoutError(url: string, timeoutMs: number, label?: string): ApiError {
   const seconds = Math.round(timeoutMs / 1000);
+  // **必须点名是哪个动作**：错误横幅是页面级的，上一条别的动作遗留的红条会一直挂着，
+  // 用户会把它读成「我刚点的这个失败了」——实测有人把「重试投稿超时」读成「扫码登录失败」。
+  // 只给 URL 不够：`/api/bilibili/uploads/<id>/retry` 里没有一个字是用户认识的。
+  const what = label ? `「${label}」` : "";
   return new ApiError(
-    `请求超时：${seconds} 秒内后端没有响应（${url}）。` +
+    `${what}请求超时：${seconds} 秒内后端没有响应（${url}）。` +
       "这不代表请求失败，而是连「失败」都没回来 —— 后端可能卡住、代理或 DNS 挂起。" +
       "可以先看 data/logs/app.log 的最后一条，或重启后端再试。",
     0,
@@ -67,7 +71,12 @@ function timeoutError(url: string, timeoutMs: number): ApiError {
   );
 }
 
-async function request<T>(url: string, init?: RequestInit, timeoutMs: number = REQUEST_TIMEOUT_MS): Promise<T> {
+async function request<T>(
+  url: string,
+  init?: RequestInit,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+  label?: string
+): Promise<T> {
   // 超时和「用户主动取消」必须分得开：前者要报一句能照做的话，后者应该安静地结束。
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
@@ -92,7 +101,7 @@ async function request<T>(url: string, init?: RequestInit, timeoutMs: number = R
   } catch (error) {
     // `AbortError` 只可能来自我们自己（调用方目前都不传 signal），所以直接翻译成超时。
     if (controller.signal.aborted) {
-      throw timeoutError(url, timeoutMs);
+      throw timeoutError(url, timeoutMs, label);
     }
     throw error;
   } finally {
@@ -259,7 +268,12 @@ export function getDiagnostics(): Promise<Diagnostics> {
  * `probeAccount=false` 只做离线体检（不请求 B站）：没有网络时也能看出「工具装没装、登录文件在不在」。
  */
 export function getBiliStatus(probeAccount = true): Promise<BiliStatus> {
-  return request<BiliStatus>(`/api/bilibili/status?probe_account=${probeAccount ? "true" : "false"}`);
+  return request<BiliStatus>(
+    `/api/bilibili/status?probe_account=${probeAccount ? "true" : "false"}`,
+    undefined,
+    REQUEST_TIMEOUT_MS,
+    probeAccount ? "重新体检" : "读取 B 站 状态"
+  );
 }
 
 /** 修复 WinGet `Links` 下那个 0 字节的 `biliup.exe` 空壳，然后返回重新体检的结论。 */
@@ -269,7 +283,7 @@ export function repairBiliTool(): Promise<BiliStatus> {
 
 /** 生成扫码登录二维码。返回 **SVG 文本**（内联渲染），不是位图。 */
 export function createBiliQrcode(): Promise<BiliQrcode> {
-  return request<BiliQrcode>("/api/bilibili/login/qrcode", { method: "POST" });
+  return request<BiliQrcode>("/api/bilibili/login/qrcode", { method: "POST" }, REQUEST_TIMEOUT_MS, "扫码登录");
 }
 
 export function pollBiliLogin(qrcodeKey: string): Promise<BiliLoginPoll> {
@@ -305,7 +319,7 @@ export function getBiliUploadsSummary(): Promise<BiliJobUploadsSummary> {
  * 界面要显示那句原因，而不是把它变成一句「加载失败」。
  */
 export function listBiliSeasons(): Promise<BiliSeasonList> {
-  return request<BiliSeasonList>("/api/bilibili/seasons");
+  return request<BiliSeasonList>("/api/bilibili/seasons", undefined, REQUEST_TIMEOUT_MS, "读取合集列表");
 }
 
 export function getBiliJobUploads(jobId: string): Promise<BiliJobUploads> {
@@ -383,14 +397,22 @@ export function createBiliCollection(
 
 /** 重试一条稿件。已成功的条目不会被重投（服务端保证），返回 `action` 说明实际做了什么。 */
 export function retryBiliUpload(uploadId: string): Promise<BiliRetry> {
-  return request<BiliRetry>(`/api/bilibili/uploads/${encodeURIComponent(uploadId)}/retry`, { method: "POST" });
+  return request<BiliRetry>(
+    `/api/bilibili/uploads/${encodeURIComponent(uploadId)}/retry`,
+    { method: "POST" },
+    REQUEST_TIMEOUT_MS,
+    "重试投稿"
+  );
 }
 
 /** 重试合集归集。已有合集时只补加视频，不会重复建合集。 */
 export function retryBiliSeason(seasonRecordId: string): Promise<BiliSeasonRetry> {
-  return request<BiliSeasonRetry>(`/api/bilibili/collections/${encodeURIComponent(seasonRecordId)}/group`, {
-    method: "POST"
-  });
+  return request<BiliSeasonRetry>(
+    `/api/bilibili/collections/${encodeURIComponent(seasonRecordId)}/group`,
+    { method: "POST" },
+    REQUEST_TIMEOUT_MS,
+    "重试归集"
+  );
 }
 
 function restartRequest(resolution?: string): RequestInit {

@@ -7,7 +7,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ANALYZE_TIMEOUT_MS, ApiError, REQUEST_TIMEOUT_MS, analyzeUrl, listJobs, updateSettings } from "./api";
+import {
+  ANALYZE_TIMEOUT_MS,
+  ApiError,
+  REQUEST_TIMEOUT_MS,
+  analyzeUrl,
+  createBiliQrcode,
+  listJobs,
+  updateSettings
+} from "./api";
 
 /** 一个「永远不回话」的 fetch：只有信号被 abort 时才拒绝（与真实 fetch 的行为一致）。 */
 function hangingFetch() {
@@ -64,6 +72,33 @@ describe("request 的超时兜底", () => {
     expect(error.message).toContain("/api/jobs");
     // 必须真的把连接掐掉，否则后端那条请求会在后台继续跑。
     expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it("超时消息要点名**是哪个动作**，而不只是给一个 URL", async () => {
+    // 错误横幅是页面级的：上一条别的动作遗留的红条会一直挂着，用户会把它读成
+    // 「我刚点的这个失败了」—— 实测有人把「重试投稿超时」读成「扫码登录失败」（ai/bug-fix/031）。
+    const { fn } = hangingFetch();
+    vi.stubGlobal("fetch", fn);
+
+    const state = track(createBiliQrcode());
+
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+    expect(state.settled).toBe(true);
+    const message = (state.error as ApiError).message;
+    expect(message).toContain("「扫码登录」");
+    // URL 仍然要在：它才是排障时唯一能贴给别人的东西。
+    expect(message).toContain("/api/bilibili/login/qrcode");
+  });
+
+  it("没有动作名的请求保持原样（不凭空造一个「」）", async () => {
+    const { fn } = hangingFetch();
+    vi.stubGlobal("fetch", fn);
+
+    const state = track(listJobs());
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    // 判据是「没有前缀」，不能查「」——消息正文里本来就有「连「失败」都没回来」。
+    expect((state.error as ApiError).message.startsWith("请求超时")).toBe(true);
   });
 
   it("解析链接的预算更长，但同样有上限", async () => {

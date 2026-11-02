@@ -9,7 +9,7 @@ import {
   uploadBiliCookies
 } from "../shared/api";
 import { errorMessage } from "../shared/errors";
-import { runHealthCheck } from "./biliHealth";
+import { BILI_CALL_TIMEOUT_MS, runHealthCheck } from "./biliHealth";
 import type { BiliQrcode, BiliStatus } from "../contracts/types";
 
 /** 轮询间隔。B站 的扫码状态没有推送，只能轮询；1.5 秒在「反应够快」与「不打扰服务端」之间。 */
@@ -28,8 +28,11 @@ const POLL_INTERVAL_MS = 1500;
  *    比「没登录」严重得多，且用户通常完全不知道。
  * 4. **「重新体检」必须看得出它跑了**：点下去立刻变「体检中…」，结束后写上「上次体检 11:58:03」。
  *    原先这个按钮只做一次静默请求 —— 结论没变时界面**一个像素都不动**，用户合理地认为它没实现。
+ * 5. **点任何一个动作就先清掉页顶那条旧错误**。错误横幅是页面级的（不在这个面板里），
+ *    上一条别的动作遗留的红条会一直挂在页顶，用户把它读成「我刚点的这个失败了」——
+ *    实测有人把「重试投稿超时」读成「扫码登录失败」。见 ai/bug-fix/031。
  */
-export function BiliLoginSection({ onError }: { onError: (message: string) => void }) {
+export function BiliLoginSection({ onError }: { onError: (message: string | null) => void }) {
   const [status, setStatus] = useState<BiliStatus | null>(null);
   const [qrcode, setQrcode] = useState<BiliQrcode | null>(null);
   const [pollMessage, setPollMessage] = useState("");
@@ -57,6 +60,7 @@ export function BiliLoginSection({ onError }: { onError: (message: string) => vo
   async function refresh() {
     setChecking(true);
     setCheckNote("");
+    onError(null);
     try {
       // 超时不是失败：离线体检（不请求 B站）仍然能回答「工具装没装、登录文件在不在」。
       // 停在原来的界面上什么都不说，才是真正的失败 —— 策略本身在 `biliHealth` 里，可单测。
@@ -64,7 +68,14 @@ export function BiliLoginSection({ onError }: { onError: (message: string) => vo
       setStatus(result.status);
       if (result.timedOut) {
         setCheckNote(
-          "账号探测 12 秒还没回来（本机直连 B站 时域名解析可能卡住），下面是离线结论：投稿工具与登录文件的存在性。"
+          `账号探测 ${Math.round(BILI_CALL_TIMEOUT_MS / 1000)} 秒还没回来（B站 此刻连不上），` +
+            "下面是离线结论：投稿工具与登录文件的存在性。等网络恢复后再点一次「重新体检」就能拿到账号信息。"
+        );
+      } else if (result.probeError) {
+        // 探测**失败了**（不是慢）：原因要说出来，否则用户看着「没有账号名」只能猜。
+        // 离线结论仍然给 —— 投稿工具与登录文件的存在性本来就不需要网络。
+        setCheckNote(
+          `账号探测失败（${result.probeError}），下面是离线结论：投稿工具与登录文件的存在性。`
         );
       }
       setCheckedAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
@@ -78,6 +89,7 @@ export function BiliLoginSection({ onError }: { onError: (message: string) => vo
   async function startLogin() {
     setBusy(true);
     setPollMessage("");
+    onError(null);
     try {
       const challenge = await createBiliQrcode();
       setQrcode(challenge);

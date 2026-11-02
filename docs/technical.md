@@ -334,13 +334,17 @@ B站 投稿与 YouTube 下载是**两套凭据、两条队列**，互不共用�
 
 **合集列表按需读，不放在开窗路径上**。`GET /api/bilibili/seasons` 只服务于「加入已有合集」
 这一个选项，而另外两个默认选项（合集「新建」、单视频「不归集」）都不看它。把它挂在开窗上
-曾是**一次真实回归**：本机直连 `member.bilibili.com` 时 `gethostbyname` 解析卡死，
-`curl --max-time 40` 实测 **40 秒不返回** —— 而网络层用的 `socket` 超时**不覆盖 DNS 解析**，
-所以那次请求等于没有超时，界面上是一个**没有终点**的「正在读取…」。
+曾是**一次真实回归**：一次请求实测 **40 秒不返回**，界面上是一个**没有终点**的「正在读取…」。
+
+病因当时记成了「DNS 解析不受 `socket` 超时覆盖」——**那不是真因**（2026-11-02 实测：
+`getaddrinfo` 只用 0.02 秒）。真因是**地址族**与**预算单位**：`getaddrinfo` 把 6 个 IPv6 排在前面，
+而本机到 B站 的 IPv6 是黑洞；`socket.create_connection` 会把**每个**地址都试一遍、每次都拿满
+`timeout`，于是 `timeout=20` 实测走了 **160 秒**。修法在 [bili_http.py](../backend/app/bilibili/bili_http.py)：
+只解析 IPv4，并让整段地址共享一个截止时刻（见 [ai/bug-fix/031](../ai/bug-fix/031-bili-requests-fall-into-an-ipv6-black-hole.md)）。
 
 现在的两道保险都在前端 [App.tsx](../frontend/src/App.tsx#L400)：
 `seasonsRequested` 去重（弹窗每收到一条 SSE 事件就重渲染一次，没有去重会反复发请求），
-以及 `SEASON_LIST_TIMEOUT_MS = 12_000` 到点写下一个**读完了、但读不到**的结论
+以及 `SEASON_LIST_TIMEOUT_MS = BILI_CALL_TIMEOUT_MS`（25 s，与体检共用）到点写下一个**读完了、但读不到**的结论
 （`SEASON_LIST_UNREADABLE`，带可操作的建议）。迟到的真结果会**覆盖**这条兜底 ——
 先给一个结论，再被更好的结论替换。触发点在弹窗的副作用里：只有 `groupMode === "existing"`
 且列表还是 `null` 时才调 `loadSeasons()`。

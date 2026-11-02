@@ -182,3 +182,82 @@ def test_a_non_json_body_is_reported_as_a_http_error() -> None:
 def test_the_default_timeout_is_long_enough_for_a_slow_platform() -> None:
     # 20 s：比任何一次正常往返都长，又不至于让界面等成「没有终点」。
     assert DEFAULT_TIMEOUT == 20.0
+
+
+# ================================================================ 地址族与总预算
+def test_all_addresses_share_one_deadline(monkeypatch) -> None:
+    """`timeout` 是**这次请求**的预算，不是每个地址各给一份。
+
+    缺陷原样（ai/bug-fix/031）：`http.client` 会把解析出来的地址逐个试一遍，每次都拿满
+    `timeout`。本机到 B站 有 6 个 IPv6 地址全是黑洞 ⇒ 写 `timeout=20` 实测走了 **160 秒**，
+    于是「重新体检」永远超时、扫码永远转圈。
+
+    用**假 socket** 而不是真地址：`127.0.0.1` 的关闭端口是**立即拒连**，给几份预算都是毫秒级，
+    测不出差别；只有「连上去没回应」的黑洞才能把预算问题暴露出来。
+    """
+    from app.bilibili import bili_http
+
+    slept: list[float] = []
+
+    class _BlackHole:
+        """连上去就等到自己那份 timeout 用完 —— 与 IPv6 黑洞的行为一致。"""
+
+        def __init__(self, *args, **kwargs) -> None:
+            self._timeout: float | None = None
+
+        def settimeout(self, value: float) -> None:
+            self._timeout = value
+
+        def connect(self, address) -> None:
+            waited = max(0.0, float(self._timeout or 0.0))
+            slept.append(waited)
+            time.sleep(waited)
+            raise OSError("timed out")
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(bili_http.socket, "socket", _BlackHole)
+    addresses = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 443)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.2", 443)),
+    ]
+
+    started = time.monotonic()
+    with pytest.raises(OSError):
+        bili_http._connect_within(addresses, timeout=0.4)
+    elapsed = time.monotonic() - started
+
+    # 判据一：总耗时守住 0.4 秒（每个地址各给一份的话是 0.8 秒）。
+    assert elapsed < 0.7
+    # 判据二：预算用完就**不再试下一个地址** —— 只尝试过 1 次。
+    # 这条是刻意的取舍：宁可报「超时」，也不让一次请求拖成 N 倍；
+    # 只试一个地址的代价是「第一个地址不通但第二个通」时这次会失败，下一次重试仍会用到第二个。
+    assert len(slept) == 1
+    assert slept[0] <= 0.45
+
+
+def test_the_transport_only_resolves_ipv4(monkeypatch) -> None:
+    """只解析 IPv4。
+
+    判据是**解析时传的 `family`**，不是「连没连上」：本机 IPv6 是黑洞（`getaddrinfo` 正常返回、
+    连上去没回应），所以「连上了」这件事在 IPv6 被黑洞时也能通过（只是慢 160 秒）。
+    只有盯住 `family` 才拦得住下一次有人把这段改回默认顺序。
+    """
+    import socket as socket_module
+
+    from app.bilibili.bili_http import UrllibTransport
+
+    real = socket_module.getaddrinfo
+    families: list[int] = []
+
+    def spy(host, port, family=0, *args, **kwargs):
+        families.append(family)
+        return real(host, port, family, *args, **kwargs)
+
+    monkeypatch.setattr(socket_module, "getaddrinfo", spy)
+    with pytest.raises(HttpError):
+        # 连一个必然失败的本机端口：只要它走到了解析这一步就够了。
+        UrllibTransport().request("GET", f"http://127.0.0.1:{closed_port()}/x", timeout=1.0)
+
+    assert families == [socket_module.AF_INET]

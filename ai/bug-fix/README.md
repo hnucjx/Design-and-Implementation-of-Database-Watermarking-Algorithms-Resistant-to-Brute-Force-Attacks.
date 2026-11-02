@@ -58,6 +58,7 @@
 | [028](028-upload-timestamp-test-races-the-worker.md) | 时间戳用例与 worker 抢时序，同一份代码跑三次两种结果 | 本次 | 用例用的是**真的** `BiliManager`，`POST` 返回时上传还在跑；worker 收尾写 `finished_at`，与用例手工写值抢先后 —— 谁在后谁生效。证据是只有 `finished_at` 被改成「现在」而 `started_at` 没动。夹具里本来就有 `wait_until_finished`，这条漏了调用；改后整文件 3/3 绿、全量 2/2 绿 |
 | [029](029-open-with-list-is-never-read.md) | 自带「打开方式」的清单里，系统登记的一个都不在里面 | `—` | `_registered_handlers` 读 `OpenWithList` 时用 `name.isdigit()` 判「不是程序项」，而真实键名是 `a`/`b`/`c`/`MRUList` ⇒ **两个来源恒为空**；即便过滤修好，值也只是裸 exe 名（`QQ.exe`），`is_file()` 仍为假；第三个来源在 ProgID 没有显示名时把 GUID 印给用户。修法：只跳过 `MRUList`、裸名经 `PATH` / `App Paths` 解析、标识不当作名字 |
 | [030](030-the-layer-check-blames-the-wrong-thing.md) | 分层校验把「反向依赖」报成「模块没登记」 | `—` | `imports_of` 对 `from ..pkg import submod` 只记到 `pkg`（真实依赖是 `pkg/submod`）⇒ 目标未登记，先撞上「未登记」分支，方向判据根本没执行。照着这条报错去补文档，反向依赖就被永久掩盖。修法：用「该子模块是否真实存在」把它与符号分开；顺手补 15 条用例（这个闸门此前零测试） |
+| [031](031-bili-requests-fall-into-an-ipv6-black-hole.md) | 点「扫码登录」「重新体检」都只得到一句超时 | `—` | 两条投诉看着无关，其实是同一个根因：`bili_http` 的 `timeout=20` 只是**单次 socket 操作**的预算，而 `create_connection` 会把解析出的每个地址都试一遍（本机 6 个 IPv6 全黑洞）⇒ 实测 **160 秒**。于是「重新体检」的 12 s 预算永远先到（每次只剩离线结论），「扫码登录」挂满 60 s 被前端掐断，而用户看到的是**上一条重试请求**遗留的页面级红条。修法：只解析 IPv4 + 整段共享一个截止时刻；前端预算改为 25 s 并**必须大于后端那 20 秒**，探测失败也退回离线结论，超时消息点名动作，开始动作时清掉旧红条 |
 
 ## 本轮（2026-10-01）背景
 

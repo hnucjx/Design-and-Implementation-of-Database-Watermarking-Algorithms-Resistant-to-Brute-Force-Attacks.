@@ -76,7 +76,9 @@ export function SettingsPanel({
   settings: Settings;
   onSettingsChange: (settings: Settings) => void;
   /** B站 区的失败提示。这里只负责上报，显示交给页面顶部的公共提示条（与其它错误同一个出口）。 */
-  onError: (message: string) => void;
+  // `null` = 清掉页顶那条旧错误（开始新动作时用）。B站 区是自包含的，
+  // 它得能把上一条与自己无关的红条撤掉，否则用户会把它读成本次失败。
+  onError: (message: string | null) => void;
   /**
    * 按**当前选中的方式**演示一次提醒（声音就响、弹窗就弹）。
    *

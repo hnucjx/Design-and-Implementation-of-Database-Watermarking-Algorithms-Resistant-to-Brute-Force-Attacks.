@@ -39,6 +39,7 @@ import { SettingsPanel } from "./settings/SettingsPanel";
 import { StatusPill } from "./shared/ui/StatusPill";
 import { UrlAnalyzer } from "./download-request/UrlAnalyzer";
 import { groupNotice, noticeTarget } from "./bilibili/biliForm";
+import { BILI_CALL_TIMEOUT_MS } from "./bilibili/biliHealth";
 import { browserCookieLockFromError, type BrowserCookieLock } from "./cookies/cookieLock";
 import { errorMessage } from "./shared/errors";
 import { chooseAvailableResolution } from "./shared/quality";
@@ -110,15 +111,15 @@ const SEASON_LIST_UNREADABLE: BiliSeasonList = {
 /**
  * 「正在读取账号里的合集…」的最长等待。到点就落成上面那条**结论**。
  *
- * 为什么需要它，而不是指望网络层自己的超时：那层用的是 `socket` 超时，
- * **DNS 解析不在它的覆盖范围内**。实测本机直连 B站 域名时，`gethostbyname` 超过 60 秒
- * 仍不返回 —— 也就是说别人给的 `timeout` 在这里等于没有，界面上会挂一个**没有终点**的
- * 「正在读取…」，而「加入已有合集」也因此永远选不了。
+ * 为什么需要它，而不是指望网络层自己的超时：**前端比后端先放弃时，那句「读不到」就是假话** ——
+ * 后端明明还在合法地等（它自己有 20 秒的上游预算）。原来的 12 秒比 20 小，于是任何一次
+ * 12~20 秒的正常往返都会被写成「读不到」，而用户据此改选「新建合集」，账号里就多一个重复合集。
  *
- * 12 秒是「比本地请求慢很多、但短到用户还愿意等」的取值。真结果晚到时会**覆盖**这条兜底：
+ * 预算与「重新体检」共用同一个常量（`BILI_CALL_TIMEOUT_MS`）：它们等的是同一类请求，
+ * 两处各写一个数正是这条缺陷的来源之一。真结果晚到时仍会**覆盖**这条兜底：
  * 先给一个结论，再被更好的结论替换。
  */
-const SEASON_LIST_TIMEOUT_MS = 12_000;
+const SEASON_LIST_TIMEOUT_MS = BILI_CALL_TIMEOUT_MS;
 
 /** 「上传已完成」那条提示在页面上挂多久。与 `BiliLoginSection` 的轮询间隔同属「界面节奏」常量。 */
 const BILI_NOTICE_MS = 10_000;
